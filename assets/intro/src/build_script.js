@@ -593,7 +593,7 @@ function shot(name, t0, t1, fn, desc, opt = {}) {
     keys.push([r2(t), r2(c.pos[0]), r2(c.pos[1]), r2(c.pos[2]), r2(yaw), r2(pitch), r2(roll), r2(c.fov || fov0)]);
   }
   const s = { name, t0: r2(t0), t1: r2(t1), desc, cam: keys };
-  for (const k of ['lens', 'rig', 'attach', 'hud', 'vibe', 'in']) if (opt[k] != null) s[k] = opt[k];
+  for (const k of ['scene', 'lens', 'rig', 'attach', 'hud', 'vibe', 'in']) if (opt[k] != null) s[k] = opt[k];
   S.shots.push(s);
 }
 // a camera bolted to an actor
@@ -636,22 +636,28 @@ function flatFrame(a, t, tau, tmin) {
   const v = smooth(tt => state(a, tt).vel, t, tau, tmin), f = norm([v[0], 0, v[2]]);
   return { f, side: norm(cross([0, 1, 0], f)) };
 }
-// 1 Sunrise, 300 mm: across a kilometre of sea the island slides across the rising sun; heat haze
-shot('sunrise', 0, 5.5, t => {
-  const isl = deck(2.6, 28, -40, 0), pos = add(sub(isl, mul(SUNH, 900)), [0, 6, 0]);
-  const yaw = Math.atan2(SUNH[0], SUNH[2]) / D2R;
-  return { pos, yaw: yaw + 0.75 - 0.25 * t, pitch: 2.3 + 0.015 * t, fov: lerp(lensFov(280), lensFov(340), easeOut(t / 5.5)) };
-}, 'The sun comes up behind the island of CVN-90 Stormhaven, seen from a kilometre away through a 300 mm lens.', { lens: 300, rig: 'long lens from a boat', vibe: { a: 0.006, f: 0.5 } });
+// 1 Flyby at dawn: in from high off the carrier's stern, down her port side over the deck edge, turning to hold the whole
+// ship as we pass the bow; the lens closes from 55 to 45 degrees as we come down
+shot('sunrise', 0, 5.2, t => {
+  const u = clamp(t / 5.2, 0, 1), e = ease(u), c = carPos(t);
+  const pos = [c[0] - 75 - 25 * Math.sin(Math.PI * u), 210 - 165 * e, c[2] - 760 + 900 * (0.35 * u + 0.65 * e)];
+  return { pos, look: [c[0], 22, c[2] - 40 + 80 * e], roll: -5 * Math.sin(Math.PI * u), fov: 55 - 10 * e };
+}, 'A fast flyby along CVN-90 Stormhaven at dawn: in from high off the stern, down her port side over the deck edge, turning to hold the whole ship as we pass the bow.', { lens: 300, rig: 'long lens from a boat', vibe: { a: 0.006, f: 0.5 } });
+// 2 The control room (combat information centre), drawn by the engine rather than rendered from the world: the radar
+// operator calls the contacts, the supervisor sounds the alert, the commander sends the alert fighters. The camera
+// keys only hold a pose for engines that need one.
+const CIC_POSE = { pos: deck(5.5, 2.2, 100, DECK + 0.7), look: deck(5.5, 4, 60, DECK + 2.2), fov: lensFov(18) };
+shot('cic', 5.2, 9.0, () => CIC_POSE, 'Inside the carrier\'s control room: the radar operator calls the contacts, the supervisor sounds the alert, the commander sends the alert fighters.', { scene: 'cic', in: { type: 'dissolve', dur: 0.5 } });
 // 2 On deck, one take from 18 mm to the launch: a slow dolly at knee height ahead of the alert jets, a crane move to the
 // shooter as the klaxon goes, then the operator swings onto Viper 1 as it charges down the catapult and past
-shot('deck', 5.5, HIT, t => {
+shot('deck', 9.0, HIT, t => {
   const u = clamp((t - 5.5) / 2.5, 0, 1), k = ease(clamp((t - 7.4) / 1.6, 0, 1)), w = clamp((t - 8) / 2, 0, 1);
   const pos0 = deck(t, lerp(2.2, 0.4, u), lerp(100, 95, u), DECK + 0.7), look0 = deck(t, 4, 60, DECK + 2.2);
   const pos1 = deck(t, 25, lerp(101.5, 100, w), DECK + 1.1), look1 = deck(t, lerp(15, 14, w), 67, DECK + 1.6);
   const j = ease(clamp((t - 10.05) / 0.9, 0, 1)), jet = smooth(tt => add(P(blue1, tt), [0, 1.2, 0]), t, 0.12, 5.5);
   const fov = lerp(lerp(lensFov(18), lensFov(70), k), lensFov(26), ease(clamp((t - 10.0) / 1.1, 0, 1)));
   return { pos: lerp3(pos0, pos1, k), look: lerp3(lerp3(look0, look1, k), jet, j), fov };
-}, 'One take on the flight deck: knee height ahead of the jets in the steam, a crane move to the shooter as the klaxon goes, his run-up and launch signals, then a swing onto Viper 1 as the catapult fires and it roars past.', { lens: 18, rig: 'dolly on deck, crane to the shooter, panning with the launch', vibe: { a: 0.004, f: 1.2 }, in: { type: 'dissolve', dur: 0.6 } });
+}, 'One take on the flight deck: knee height ahead of the jets in the steam, a crane move to the shooter as the klaxon goes, his run-up and launch signals, then a swing onto Viper 1 as the catapult fires and it roars past.', { lens: 18, rig: 'dolly on deck, crane to the shooter, panning with the launch', vibe: { a: 0.004, f: 1.2 }, in: { type: 'dissolve', dur: 0.3 } });
 // Version 6 cuts like a film: 8 shots, every take 5 to 8 seconds, each on one continuous piece of action.
 const T_CHASE = bar(3.5), T_SKIM = bar(6.5), T_LOCK = bar(21);
 // 3 Chase, 35 to 24 mm: on the band hit, close behind Viper 1 off the bow; the camera jet swings out and forward round
@@ -731,11 +737,12 @@ shot('finale', tFinale, tEnd, t => {
 const splash2 = S.events.find(e => e.type === 'splash' && e.actor === 'red2');
 const tForm0 = r2(killT2 + 0.35), tForm1 = r2(killT2 + 3.3), tGone1 = r2(splash2.t), tGone0 = r2(tGone1 - 3.5);
 S.cards = [
-  { t0: 1.4, t1: 7.6, style: 'location', text: 'SOMEWHERE IN THE PACIFIC', type: 16 },
-  { t0: 3.6, t1: 7.6, style: 'sub', text: '05:47 LOCAL  -  CVN-90 STORMHAVEN', type: 28 },
-  // the alert as the control room hears it, in the lower bar, not across the picture: the radar operator, then the commander
-  { t0: 8.3, t1: 9.7, style: 'radio', text: 'RADAR: BOGEYS INBOUND, BEARING 3-5-0' },
-  { t0: 9.9, t1: 11.4, style: 'radio', text: 'COMMANDER: SEND THE BIRDS!' },
+  { t0: 1.4, t1: 5.1, style: 'location', text: 'SOMEWHERE IN THE PACIFIC', type: 16 },
+  { t0: 3.6, t1: 5.1, style: 'sub', text: '05:47 LOCAL  -  CVN-90 STORMHAVEN', type: 28 },
+  // the alert as it is spoken in the control room, in the lower bar: the radar operator, the supervisor, the commander
+  { t0: 5.6, t1: 7.0, style: 'dialog', speaker: 'RADAR', text: 'BOGEYS! TWO CONTACTS, BEARING 3-5-0, CLOSING FAST.', type: 40 },
+  { t0: 7.05, t1: 8.05, style: 'dialog', speaker: 'SUPERVISOR', text: 'ALERT, ALERT! WE HAVE INBOUND.', type: 40 },
+  { t0: 8.1, t1: 9.2, style: 'dialog', speaker: 'COMMANDER', text: 'SEND THE BIRDS.', type: 22 },
   { t0: +(half(1) - 0.2).toFixed(2), t1: half(1) + 1.6, style: 'callsign', text: 'VIPER 1  -  NF-24 CORMORANT' },
   { t0: tMerge, t1: tMerge + 1.4, style: 'callsign', text: 'MERGED  -  KS-55 GRIFON  +  DR-7 VESPER DRONE' },
   { t0: tS7 + 0.2, t1: tS7 + 1.3, style: 'radio', text: 'VIPER 1, FOX TWO!' },
@@ -756,9 +763,8 @@ S.fx = [
   { t0: r2(tGone1 - 1.0), t1: r2(tGone1 + 0.4), type: 'letterbox', from: 1, to: 0 },
   { t0: 0, t1: 5.5, type: 'haze', y0: 0.5, y1: 1, amount: 1.4 },
   { t0: 10.0, t1: 12.05, type: 'haze', y0: 0.66, y1: 1, amount: 0.7 },
-  { t0: 8.3, t1: 10.0, type: 'alarm', period: 0.9 },
-  { t0: 8.2, t1: 9.4, type: 'radar', contacts: 2, bearing: 350 },
-  { t0: 9.55, t1: 10.0, type: 'shake', amount: 0.35 },
+  { t0: 9.0, t1: 10.0, type: 'alarm', period: 0.9 },
+  { t0: 9.6, t1: 10.0, type: 'shake', amount: 0.35 },
   { t0: 11.55, t1: 12.05, type: 'shake', amount: 1.2 },
   { t0: 12.05, t1: 12.5, type: 'shake', amount: 0.6 },
   { t0: r2(tSkim - 0.2), t1: r2(tSkim + 0.2), type: 'shake', amount: 1 },
@@ -773,6 +779,8 @@ S.events.push({ t: 8.3, type: 'sound', name: 'klaxon', repeat: 2, every: 0.9 });
 S.events.push({ t: 10.0, type: 'sound', name: 'catapult' }, { t: 10.6, type: 'sound', name: 'catapult' });
 S.events.push({ t: 11.6, type: 'sound', name: 'flyby' }, { t: r2(tSkim - 0.3), type: 'sound', name: 'flyby' }, { t: tMerge - 0.15, type: 'sound', name: 'flyby' });
 S.events.push({ t: r2(tForm0 + 0.3), type: 'sound', name: 'cloud' });
+// sonic booms as the jets go through the barrier low over the sea: the skim pass, then the merge, a little further off
+S.events.push({ t: 19.5, type: 'sound', name: 'boom', vol: 1 }, { t: 29.0, type: 'sound', name: 'boom', vol: 0.7 });
 S.events.sort((a, b) => (a.t ?? a.t0) - (b.t ?? b.t0));
 S.duration = r2(tGone1 + 0.5);
 S.menu_at = r2(tGone1 + 0.5);

@@ -73,6 +73,16 @@ flies Viper 2's own track shifted in time, starting 1.9 s behind it (it fires) a
 outside the break as it overshoots, so Viper 2 ends up behind it for the guns. The drone's run for the sunrise and the
 last kill on bar 19 are unchanged. The skim pass is cut.
 
+The opening (2026-10-29, the same in the browser game and the C port) starts with a fast flyby: in from high off
+the carrier's stern, down her port side, turning to hold the whole ship as we pass the bow (`sunrise`, 0 - 5.2 s).
+Then a 0.5 s dissolve into the carrier's control room (`cic`, 5.2 - 9.0 s, `scene: "cic"`): a take that opens tight
+on the two hostile blips on the radar scope and pulls back to the radar operator, the supervisor and the commander.
+The three speak in turn in the lower bar (`dialog` cards): "BOGEYS! TWO CONTACTS, BEARING 3-5-0, CLOSING FAST.",
+"ALERT, ALERT! WE HAVE INBOUND.", "SEND THE BIRDS.". The `deck` take comes in at 9.0 s with a 0.3 s dissolve, with
+the alarm vignette (9 - 10 s) and a shake (9.6 - 10 s). The radar inset and the alert cards are gone, and the
+location cards end at 5.1 s. Sonic booms (`boom`) sound at 19.5 s and 29.0 s (`vol` 0.7). All the film's sound
+effects play at 45% of their level, under the music.
+
 New in version 5: `hud.panel` (true) draws the game's own cockpit in that shot instead of the simple one. That is the
 match HUD (`hud_draw`: heading tape, gunsight, G meter, brackets with ranges on both enemies, a wingman tag, ENEMY JETS,
 the lock diamond and status lines) and the jet's instrument panel (`hud_panel`, the NF-24's dials, VDI and HSD). The
@@ -146,6 +156,10 @@ a full-frame sensor (24 mm tall) it was chosen as, and `rig` says what kind of c
   `target` with LOCK (missile) or a gun pipper (`guns`).
 - `vibe {a, f}`: camera jitter with amplitude `a` times the fov (in degrees) at about `f` Hz: slow drift for a
   long lens held by hand or on a boat, fast buzz for a camera bolted to an airframe.
+- `scene`: the shot is not of the 3D world but a scene the engine draws itself. `"cic"` is the carrier's control
+  room (in the browser game `drawCIC`, in the C port `src/cic.c`), drawn in code from the shot's `t0` and `t1`. Its
+  `cam` keys only hold a still pose for engines that need one. A dissolve to or from it fades the drawn room over the
+  3D picture.
 - `in {type, dur, dir?}` (version 3): how the shot starts.
   - `dissolve`: over `[t0, t0 + dur]` draw the previous shot, then this one over it, with this one's opacity
     eased (smoothstep) from 0 to 1. The previous shot keeps moving: every shot's `cam` keys run 1.2 s past its `t1`
@@ -162,7 +176,9 @@ a full-frame sensor (24 mm tall) it was chosen as, and `rig` says what kind of c
 
 `{t0, t1, style, text, type?, blink?}`. `type` = characters per second for a typewriter reveal; `blink` = on/off period.
 Styles: `location` (lower third, large, underline grows), `sub` (under it), `alert` (red, boxed, top third),
-`alert-sub`, `callsign` (left, in the lower letterbox bar), `radio` (centred, in quotes, in the lower bar), `title`
+`alert-sub`, `callsign` (left, in the lower letterbox bar), `radio` (centred, in quotes, in the lower bar), `dialog`
+(a line spoken on screen: `speaker` in amber, then the text in white, centred as one line on the whole text in the
+lower bar), `title`
 (the game title, huge, slams in from 1.9× over 0.22 s with a glint; version 3 uses the `smoketitle` effect instead),
 `subtitle` (version 3: small, centred just under the smoke title at 42% of the height plus 0.115 × min(width, 1.6 × height),
 fading in over 1.2 s), `press` ("PRESS ANY KEY"). Cards fade out over

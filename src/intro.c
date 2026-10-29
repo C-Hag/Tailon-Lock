@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "assets.h"
+#include "cic.h"
 #include "core/json.h"
 #include "core/jets.h"
 #include "core/world.h"
@@ -151,7 +152,7 @@ static float   clear_sky[4][3]; /* env.clear_clouds */
 static int     nclear;
 
 typedef struct { float t; vec3 p, v; float life; } FlareDef;
-typedef struct { float t, t1; int type; int actor; vec3 pos; float size; int sound, repeat; float every; } Event;
+typedef struct { float t, t1; int type; int actor; vec3 pos; float size; int sound, repeat; float every, vol; } Event;
 typedef struct {
   float t0, t1;
   Track cam;
@@ -162,9 +163,10 @@ typedef struct {
   float vibe_a, vibe_f;
   int   in;              /* IN_CUT, IN_DISSOLVE or IN_WHIP (version 3) */
   float in_dur, in_dir;
+  bool  scene;           /* the control room, drawn in code (cic.c), not the 3D world */
 } Shot;
 enum { IN_CUT, IN_DISSOLVE, IN_WHIP };
-typedef struct { float t0, t1, type, blink; int style; char text[64]; } Card;
+typedef struct { float t0, t1, type, blink; int style; char text[64], speaker[16]; } Card;
 typedef struct {
   float t0, t1;
   int   type;
@@ -182,8 +184,8 @@ typedef struct {
 } Fx;
 
 enum { EV_EXPLODE, EV_KILL, EV_SPLASH, EV_GUNS, EV_SOUND };
-enum { SND_KLAXON, SND_CATAPULT, SND_MISSILE, SND_FLARES, SND_EXPLODE, SND_CLOUD, SND_FLYBY, SND_OTHER };
-enum { CS_LOCATION, CS_SUB, CS_ALERT, CS_ALERT_SUB, CS_CALLSIGN, CS_RADIO, CS_TITLE, CS_PRESS, CS_SUBTITLE };
+enum { SND_KLAXON, SND_CATAPULT, SND_MISSILE, SND_FLARES, SND_EXPLODE, SND_CLOUD, SND_FLYBY, SND_BOOM, SND_BOOM_TAIL, SND_RUMBLE, SND_OTHER };
+enum { CS_LOCATION, CS_SUB, CS_ALERT, CS_ALERT_SUB, CS_CALLSIGN, CS_RADIO, CS_TITLE, CS_PRESS, CS_SUBTITLE, CS_DIALOG };
 enum { FX_FADE, FX_FLASH, FX_LETTERBOX, FX_ALARM, FX_RADAR, FX_SHAKE, FX_GRADE, FX_HAZE, FX_SMOKETITLE, FX_NONE };
 
 #define MAX_ACT 24
@@ -385,7 +387,9 @@ bool intro_init(void) {
     if (pos) v->pos = vecv(pos);
     v->size = numv(e, "size", 1);
     v->sound = !strcmp(name, "klaxon") ? SND_KLAXON : !strcmp(name, "catapult") ? SND_CATAPULT : !strcmp(name, "missile") ? SND_MISSILE
-             : !strcmp(name, "flares") ? SND_FLARES : !strcmp(name, "cloud") ? SND_CLOUD : !strcmp(name, "flyby") ? SND_FLYBY : SND_OTHER;
+             : !strcmp(name, "flares") ? SND_FLARES : !strcmp(name, "cloud") ? SND_CLOUD : !strcmp(name, "flyby") ? SND_FLYBY
+             : !strcmp(name, "boom") ? SND_BOOM : SND_OTHER;
+    v->vol = numv(e, "vol", 1);
     v->repeat = (int)numv(e, "repeat", 0);
     v->every = numv(e, "every", 0.9f);
     nevents++;
@@ -419,6 +423,7 @@ bool intro_init(void) {
     s->in = !strcmp(it, "dissolve") ? IN_DISSOLVE : !strcmp(it, "whip") ? IN_WHIP : IN_CUT;
     s->in_dur = in ? numv(in, "dur", 0.5f) : 0;
     s->in_dir = in ? numv(in, "dir", 1) : 1;
+    s->scene = !strcmp(strv(e, "scene"), "cic");
     if (parse_track(json_get(e, "cam"), 8, &s->cam)) nshots++;
   }
 
@@ -431,10 +436,11 @@ bool intro_init(void) {
     c->type = numv(e, "type", 0);
     c->blink = numv(e, "blink", 0);
     snprintf(c->text, sizeof c->text, "%s", strv(e, "text"));
+    snprintf(c->speaker, sizeof c->speaker, "%s", strv(e, "speaker"));
     const char *st = strv(e, "style");
     c->style = !strcmp(st, "location") ? CS_LOCATION : !strcmp(st, "sub") ? CS_SUB : !strcmp(st, "alert") ? CS_ALERT
              : !strcmp(st, "alert-sub") ? CS_ALERT_SUB : !strcmp(st, "callsign") ? CS_CALLSIGN : !strcmp(st, "radio") ? CS_RADIO
-             : !strcmp(st, "title") ? CS_TITLE : !strcmp(st, "subtitle") ? CS_SUBTITLE : CS_PRESS;
+             : !strcmp(st, "title") ? CS_TITLE : !strcmp(st, "subtitle") ? CS_SUBTITLE : !strcmp(st, "dialog") ? CS_DIALOG : CS_PRESS;
   }
 
   list = json_get(S, "fx");
@@ -510,7 +516,7 @@ static float  t_now, t_sim, wall, hold_t, hold_start;
 static int    ev_next;
 static bool   holding, quiet, music_on;
 static Rng    R;
-typedef struct { float at; int sound; } Pending;
+typedef struct { float at; int sound; float vol; } Pending;
 static Pending pending[16];
 static int     npending;
 
@@ -545,16 +551,32 @@ static void explode(vec3 pos, float size) {
     for (int i = 0; i < 26; i++) part(P_DEBRIS, pos, v3_scale(rdir(0.2f), 60 + 90 * rnd()), 1.5f + 1.5f * rnd(), 1.4f, 0, 0.3f);
 }
 
-static void play_sound(int s) {
+/* every sound of the film plays at this share of its level, under the music */
+#define IFX 0.45f
+static void noise(float f0, float f1, float dur, float vol) { sfx_play(SND_NOISE, f0, f1, dur, vol * IFX); }
+static void tone(SoundKind k, float f0, float f1, float dur, float vol) { sfx_play(k, f0, f1, dur, vol * IFX); }
+
+/* a sonic boom heard from the sea: two cracks a tenth of a second apart (the bow
+ * and the tail shock), each a sharp rise with a low thump, then a long rumble */
+static void boom_crack(float a) {
+  noise(5200, 140, 1.2f, 0.6f * a);
+  tone(SND_SINE, 62, 30, 0.6f, 0.5f * a);
+}
+
+static void play_sound(int s, float vol) {
   if (quiet) return;
+  float g = 0.8f * 2.2f * vol; /* the boom's own level */
   switch (s) {
-  case SND_KLAXON:   sfx_play(SND_SQUARE, 330, 880, 0.7f, 0.1f); break;
-  case SND_CATAPULT: sfx_play(SND_NOISE, 3200, 160, 1.6f, 0.32f); sfx_play(SND_SINE, 70, 38, 0.5f, 0.18f); break;
-  case SND_MISSILE:  sfx_play(SND_NOISE, 3400, 600, 1.1f, 0.22f); break;
-  case SND_FLARES:   sfx_play(SND_NOISE, 2400, 900, 0.5f, 0.12f); sfx_play(SND_SQUARE, 1300, 500, 0.3f, 0.03f); break;
-  case SND_EXPLODE:  sfx_play(SND_NOISE, 1100, 50, 1.6f, 0.42f); sfx_play(SND_SINE, 90, 30, 0.7f, 0.3f); break;
-  case SND_CLOUD:    sfx_play(SND_NOISE, 1400, 300, 1.8f, 0.15f); break;
-  case SND_FLYBY:    sfx_play(SND_NOISE, 4200, 380, 1.5f, 0.34f); sfx_play(SND_SINE, 160, 55, 1.2f, 0.2f); break;
+  case SND_KLAXON:    tone(SND_SQUARE, 330, 880, 0.7f, 0.1f); break;
+  case SND_CATAPULT:  noise(3200, 160, 1.6f, 0.32f); tone(SND_SINE, 70, 38, 0.5f, 0.18f); break;
+  case SND_MISSILE:   noise(3400, 600, 1.1f, 0.22f); break;
+  case SND_FLARES:    noise(2400, 900, 0.5f, 0.12f); tone(SND_SQUARE, 1300, 500, 0.3f, 0.03f); break;
+  case SND_EXPLODE:   noise(1100, 50, 1.6f, 0.42f); tone(SND_SINE, 90, 30, 0.7f, 0.3f); break;
+  case SND_CLOUD:     noise(1400, 300, 1.8f, 0.15f); break;
+  case SND_FLYBY:     noise(4200, 380, 1.5f, 0.34f); tone(SND_SINE, 160, 55, 1.2f, 0.2f); break;
+  case SND_BOOM:      boom_crack(g); break;
+  case SND_BOOM_TAIL: boom_crack(0.85f * g); break;
+  case SND_RUMBLE:    noise(260, 260, 2.45f, 0.18f * g); break;
   default: break;
   }
 }
@@ -612,14 +634,18 @@ static void step(float t, float dt) {
     const Event *e = &events[ev_next];
     if (e->type == EV_EXPLODE) {
       explode(e->pos, e->size);
-      play_sound(SND_EXPLODE);
+      play_sound(SND_EXPLODE, 1);
     } else if (e->type == EV_SOUND) {
-      play_sound(e->sound);
+      play_sound(e->sound, e->vol);
       for (int r = 1; e->sound == SND_KLAXON && r <= e->repeat && npending < 16; r++)
-        pending[npending++] = (Pending){ e->t + r * e->every, SND_KLAXON };
+        pending[npending++] = (Pending){ e->t + r * e->every, SND_KLAXON, 1 };
       if (e->sound == SND_FLARES && npending < 15) {
-        pending[npending++] = (Pending){ e->t + 0.16f, SND_FLARES };
-        pending[npending++] = (Pending){ e->t + 0.32f, SND_FLARES };
+        pending[npending++] = (Pending){ e->t + 0.16f, SND_FLARES, 1 };
+        pending[npending++] = (Pending){ e->t + 0.32f, SND_FLARES, 1 };
+      }
+      if (e->sound == SND_BOOM && npending < 15) {
+        pending[npending++] = (Pending){ e->t + 0.11f, SND_BOOM_TAIL, e->vol };
+        pending[npending++] = (Pending){ e->t + 0.15f, SND_RUMBLE, e->vol };
       }
     } else if (e->type == EV_SPLASH) {
       for (int i = 0; i < 30; i++) part(P_SPRAY, e->pos, v3((rnd() - 0.5f) * 30, 30 + 40 * rnd(), (rnd() - 0.5f) * 30), 2 + rnd(), 8, 10, 0.5f);
@@ -627,7 +653,7 @@ static void step(float t, float dt) {
   }
   for (int i = 0; i < npending;) {
     if (pending[i].at <= t) {
-      play_sound(pending[i].sound);
+      play_sound(pending[i].sound, pending[i].vol);
       pending[i] = pending[--npending];
     } else i++;
   }
@@ -1154,6 +1180,17 @@ static void draw_overlay(Framebuffer *fb, float t, bool panel) {
               hexc(0xffffff), ALIGN_CENTER, 1);
       break;
     }
+    case CS_DIALOG: {
+      /* a line spoken in the control room: the speaker in amber, the words in white, centred as one line in the lower bar */
+      char who[24];
+      snprintf(who, sizeof who, "%s:  ", c->speaker);
+      int sc = text_scale(fminf(u0 * 0.024f, (barH ? barH : 40) * 0.46f));
+      float y = barH ? lowY : H - u0 * 0.06f, w0 = (float)text_width(who, sc), w1 = (float)text_width(c->text, sc);
+      float x = W / 2.0f - (w0 + w1) / 2; /* centred on the whole line, so it stays put while it types */
+      fb_text(fb, who, x, y, sc, hexc(0xffd25a), ALIGN_LEFT, 1);
+      fb_text(fb, s, x + w0, y, sc, hexc(0xffffff), ALIGN_LEFT, 1);
+      break;
+    }
     case CS_TITLE: draw_title(fb, t - c->t0); break;
     case CS_PRESS: fb_text(fb, s, W / 2.0f, H * 0.5f + u0 * 0.11f, text_scale(u0 * 0.022f), hexc(dawn_title ? 0x3c2f78 : 0xfbe9cc), ALIGN_CENTER, !dawn_title); break;
     case CS_SUBTITLE: {
@@ -1578,6 +1615,20 @@ static void blend_frames(Framebuffer *fb, const uint32_t *prev, float keep) {
   }
 }
 
+/* the drawn control room over the picture with alpha a: blended in software,
+ * on the GPU as the HUD layer's own alpha over the 3D picture under it */
+static Framebuffer room_fb;
+static void lay_scene(Framebuffer *fb, const Shot *sc, float t, float a, bool gpu) {
+  if (a <= 0 || !fb_resize(&room_fb, fb->w, fb->h)) return;
+  cic_draw(&room_fb, t, sc->t0, sc->t1);
+  size_t n = (size_t)fb->w * fb->h;
+  if (gpu) {
+    uint32_t al = (uint32_t)lroundf(clampf(a, 0, 1) * 255) << 24;
+    for (size_t i = 0; i < n; i++) fb->px[i] = al | (room_fb.px[i] & 0xFFFFFFu);
+  } else if (a >= 1) memcpy(fb->px, room_fb.px, sizeof(uint32_t) * n);
+  else blend_frames(fb, room_fb.px, a);
+}
+
 static void smear_frame(Framebuffer *fb, float px) {
   int W = fb->w, H = fb->h;
   uint32_t *row = malloc(sizeof(uint32_t) * (size_t)W);
@@ -1610,8 +1661,10 @@ void intro_render(Framebuffer *fb) {
   int W = fb->w, H = fb->h;
   bool gpu = gpu_active();
   fb_clear(fb, gpu ? 0 : 0xFF000000u);
-  Camera cam;
-  float F;
+  Camera cam = { v3(0, 100, 0), v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1), true };
+  float F = (float)H;
+  const Shot *room = sh->scene ? sh : NULL; /* the drawn control room, laid over at room_a */
+  float room_a = 1;
   /* the next shot may come in with a whip that starts before its cut */
   const Shot *nx = idx + 1 < nshots ? &shots[idx + 1] : NULL;
   if (nx && nx->in == IN_WHIP && t >= nx->t0 - nx->in_dur / 2) {
@@ -1631,7 +1684,13 @@ void intro_render(Framebuffer *fb) {
     float u = clampf((t - sh->t0) / sh->in_dur, 0, 1), a = u * u * (3 - 2 * u);
     Camera pc;
     float pF;
-    if (gpu) {
+    const Shot *pv = &shots[idx - 1];
+    if (sh->scene || pv->scene) {
+      /* to or from the control room: the 3D side plays on, the room fades over it */
+      if (!sh->scene || !pv->scene) render_shot(fb, sh->scene ? pv : sh, t, 0, &cam, &F);
+      room = sh->scene ? sh : pv;
+      room_a = sh->scene ? a : 1 - a;
+    } else if (gpu) {
       gpu_view_layer(1);
       render_shot(fb, &shots[idx - 1], t, 0, &pc, &pF);
       fb_clear(fb, 0);
@@ -1646,12 +1705,13 @@ void intro_render(Framebuffer *fb) {
       if (prev) blend_frames(fb, prev, 1 - a);
       free(prev);
     }
-  } else render_shot(fb, sh, t, 0, &cam, &F);
+  } else if (!sh->scene) render_shot(fb, sh, t, 0, &cam, &F);
   const Fx *st = NULL;
   bool title = active_fx(FX_SMOKETITLE, t, &st);
   if (title && !gpu) draw_smoke_title(fb, st, &cam, F, t); /* in the picture, under the grade */
   grade_and_haze(fb, t);
   if (title && gpu) draw_smoke_title(fb, st, &cam, F, t); /* on the HUD layer, over the picture */
+  if (room) lay_scene(fb, room, t, room_a, gpu);
   bool panel = sh->hud >= 0 && sh->panel;
   if (panel) draw_game_cockpit(fb, &cam, F, sh, t, bar_height(W, H, t));
   else if (sh->hud >= 0) draw_cockpit(fb, &cam, F, sh, t);

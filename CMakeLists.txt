@@ -86,6 +86,8 @@ add_executable(tailonlock
   src/main.c
   src/assets.c
   src/intro.c
+  src/cic.c
+  src/paint.c
   src/command.c
   src/synth.c
   src/compose.c
