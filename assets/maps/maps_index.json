@@ -1,0 +1,78 @@
+[
+ {
+  "id": "twin-isles",
+  "name": "Twin Isles",
+  "request": "Sea and land",
+  "blurb": "Two green islands face each other across open ocean. Each side flies from an island airfield or its carrier, with a volcanic peak beside every base and rocky islets in the strait.",
+  "file": "twin-isles.json",
+  "carriers": 2,
+  "stats": {
+   "peak": 1506,
+   "peak_at": [
+    -2600,
+    9200
+   ],
+   "water_pct": 58,
+   "snow_pct": 0.0,
+   "props": 420,
+   "lights": 314
+  }
+ },
+ {
+  "id": "dune-sea",
+  "name": "Dune Sea",
+  "request": "Desert",
+  "blurb": "A sand sea of long dune ridges broken by flat-topped mesas, with a dry wadi winding across the line, a white salt flat, and a palm oasis by each airfield.",
+  "file": "dune-sea.json",
+  "carriers": 0,
+  "stats": {
+   "peak": 1229,
+   "peak_at": [
+    11400,
+    1600
+   ],
+   "water_pct": 0,
+   "snow_pct": 0.0,
+   "props": 420,
+   "lights": 138
+  }
+ },
+ {
+  "id": "iron-coast",
+  "name": "Iron Coast",
+  "request": "Sea with a coastline",
+  "blurb": "A long green coastline runs between the two bases, with cliffs, beaches, a fjord and a harbour town. Both sides have a coastal airfield and a carrier group out at sea.",
+  "file": "iron-coast.json",
+  "carriers": 2,
+  "stats": {
+   "peak": 2324,
+   "peak_at": [
+    -11200,
+    6000
+   ],
+   "water_pct": 51,
+   "snow_pct": 1.1,
+   "props": 448,
+   "lights": 346
+  }
+ },
+ {
+  "id": "high-valley",
+  "name": "High Valley",
+  "request": "Green landscapes and snowy mountains",
+  "blurb": "Green valleys of farms, forest and lakes, split by a snow-capped range with one low pass. Fly the pass under the peaks, or climb over them.",
+  "file": "high-valley.json",
+  "carriers": 0,
+  "stats": {
+   "peak": 2899,
+   "peak_at": [
+    9600,
+    200
+   ],
+   "water_pct": 2,
+   "snow_pct": 5.6,
+   "props": 480,
+   "lights": 203
+  }
+ }
+]

@@ -1,0 +1,4 @@
+# LeakSanitizer suppressions for tools/check, stage 6: memory the system EGL driver keeps after SDL's
+# offscreen video driver probes it (allocated inside the driver, which is unloaded before the report).
+# SDL3 is on the allow-list until brick 20; delete these lines with it.
+leak:SDL_EGL_InitializeOffscreen

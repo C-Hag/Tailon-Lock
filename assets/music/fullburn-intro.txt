@@ -1,0 +1,9 @@
+fullburn-intro.wav: the opening film's music, a cut of the main theme, Full Burn "Arp sound DMX10"
+(music/fullburn/). Half a second of silence, then bars 1-40 of the
+song (6-frame sixteenths on the PAL clock, 1.9152 s a bar), faded over 2.5 s; 32 kHz stereo. The same
+cut and timing as the DMX3 version it replaces, so the film's sync points are unchanged. The game plays
+it from the recording instead of a score (music.c, themes with a .wav), once, and the menu's own theme
+takes over when it ends.
+
+All our own audio: the SID chips, our 80s-rig synths and our own drum machine (h2h-drum). No samples,
+no attribution needed.

@@ -1,0 +1,23 @@
+#!/bin/sh
+# tools/vm_run - runs TailonLock.exe in the Windows test VM, for CI's "Windows VM" job (docs/CI_RUNNER.md).
+# Original code for this project.
+#
+# usage: tools/vm_run PATH/TO/TailonLock.exe
+#
+# Only one thing may use the VM at a time: this takes the VM lock file first (A4C_VM_LOCK, default
+# /var/tmp/tailonlock-vm.lock) and waits up to an hour for it. Anyone driving the VM by hand takes the
+# same lock: flock /var/tmp/tailonlock-vm.lock <command>.
+#
+# The VM itself lives outside the repository. A4C_VM_DIR (set in the runner's .env) names its folder,
+# which holds ci-run.sh: it gets the .exe, puts it on the VM's game disc, starts the game and checks it,
+# and exits non-zero on a failure.
+set -eu
+exe=${1:?usage: tools/vm_run PATH/TO/TailonLock.exe}
+lock=${A4C_VM_LOCK:-/var/tmp/tailonlock-vm.lock}
+dir=${A4C_VM_DIR:-}
+if [ -z "$dir" ] || [ ! -x "$dir/ci-run.sh" ]; then
+  echo "vm_run: no VM set up for CI (A4C_VM_DIR with an executable ci-run.sh); see docs/CI_RUNNER.md" >&2
+  exit 1
+fi
+[ -f "$exe" ] || { echo "vm_run: no $exe" >&2; exit 1; }
+exec flock -w 3600 "$lock" "$dir/ci-run.sh" "$(realpath "$exe")"

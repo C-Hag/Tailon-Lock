@@ -1,0 +1,31 @@
+# CMake build trees (presets put everything under build/)
+/build/
+/build-*/
+/out/
+CMakeUserPresets.json
+compile_commands.json
+
+# Editors and tools
+.vscode/
+.idea/
+.cache/
+*.swp
+*~
+.DS_Store
+
+# Profiling and debugging
+perf.data*
+callgrind.out.*
+*.tracy
+/core
+/core.*
+vgcore.*
+
+# Packaging output
+*.AppImage
+/dist/
+.flatpak-builder/
+
+# the checker's private term list (tools/check, stage 5): never committed
+/.check-private
+__pycache__/

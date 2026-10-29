@@ -1,0 +1,28 @@
+{
+ "_comment": "h2h-drum kit for Arp sound DMX7: the DMX6 kit with the crashes choked short.",
+ "kick": {
+  "level": 0.2648
+ },
+ "snare": {
+  "level": 0.2063
+ },
+ "xstick": {
+  "level": 0.0825
+ },
+ "hat": {
+  "level": 0.4692
+ },
+ "tom": {
+  "level": 0.313
+ },
+ "crash": {
+  "level": 0.2473,
+  "choke": 0.45
+ },
+ "ride": {
+  "level": 0.0601
+ },
+ "bell": {
+  "level": 0.0399
+ }
+}
