@@ -1027,7 +1027,7 @@ static void typed(const Card *c, float t, char *out, size_t n) {
 
 static void draw_radar(Framebuffer *fb, const Fx *f, float t, float u) {
   int W = fb->w, H = fb->h;
-  float rad = roundf(fminf((float)W, (float)H) * 0.16f), cx = W - rad - fmaxf(14, W * 0.04f), cy = H - rad - fmaxf(14, H * 0.14f);
+  float rad = roundf(fminf((float)W, (float)H) * 0.16f), cx = W - rad - fmaxf(14, W * 0.04f), cy = H - rad - fmaxf(14, H * 0.20f); /* clear of the lower letterbox bar, its caption too */
   float al = clampf(u * 6, 0, 1) * clampf((1 - u) * 8, 0, 1);
   fb_clip_circle(fb, cx, cy, rad);
   fb_rect_a(fb, (int)(cx - rad), (int)(cy - rad), (int)(2 * rad + 1), (int)(2 * rad + 1), rgb(4, 22, 10), 0.85f * al);

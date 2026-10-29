@@ -733,8 +733,9 @@ const tForm0 = r2(killT2 + 0.35), tForm1 = r2(killT2 + 3.3), tGone1 = r2(splash2
 S.cards = [
   { t0: 1.4, t1: 7.6, style: 'location', text: 'SOMEWHERE IN THE PACIFIC', type: 16 },
   { t0: 3.6, t1: 7.6, style: 'sub', text: '05:47 LOCAL  -  CVN-90 STORMHAVEN', type: 28 },
-  { t0: 8.3, t1: 10.0, style: 'alert', text: 'BOGEYS INBOUND', blink: 0.25 },
-  { t0: 8.5, t1: 10.0, style: 'alert-sub', text: '2 CONTACTS  -  FIGHTER AND DRONE  -  BEARING 3-5-0', type: 60 },
+  // the alert as the control room hears it, in the lower bar, not across the picture: the radar operator, then the commander
+  { t0: 8.3, t1: 9.7, style: 'radio', text: 'RADAR: BOGEYS INBOUND, BEARING 3-5-0' },
+  { t0: 9.9, t1: 11.4, style: 'radio', text: 'COMMANDER: SEND THE BIRDS!' },
   { t0: +(half(1) - 0.2).toFixed(2), t1: half(1) + 1.6, style: 'callsign', text: 'VIPER 1  -  NF-24 CORMORANT' },
   { t0: tMerge, t1: tMerge + 1.4, style: 'callsign', text: 'MERGED  -  KS-55 GRIFON  +  DR-7 VESPER DRONE' },
   { t0: tS7 + 0.2, t1: tS7 + 1.3, style: 'radio', text: 'VIPER 1, FOX TWO!' },

@@ -113,7 +113,7 @@ starts at `band_hit + n * bar`. The shots cut on those bars and half bars.
 |---|---|---|---|---|
 | 0 – 5.5 | sunrise | 300 mm | fade | The sun rises behind the carrier's island, a kilometre away through heat haze. "SOMEWHERE IN THE PACIFIC". |
 | 5.5 – 8.0 | deck | 18 mm | dissolve 1.2 s | Knee height on the deck: steam, crew, both alert jets on the bow catapults. |
-| 8.0 – 10.0 | shooter | 85 mm | cut | Klaxon, "BOGEYS INBOUND". The shooter's run-up signal, afterburner behind him, then the launch sign. |
+| 8.0 – 10.0 | shooter | 85 mm | cut | Klaxon, and the control room on the radio in the lower bar: "RADAR: BOGEYS INBOUND, BEARING 3-5-0", then "COMMANDER: SEND THE BIRDS!" (the radar inset at the lower right). The shooter's run-up signal, afterburner behind him, then the launch sign. |
 | 10.0 – 12.05 | launch | 14 mm | cut | Low on the deck edge: both catapults fire, Viper 1 roars past, Viper 2 follows. |
 | 12.05 – 13.76 | offbow | 35 mm | cut | Band hit: Viper 1 leaves the bow; chase as it settles toward the sea. |
 | 13.76 – 16.32 | topdown | 21 mm | whip 0.35 s, right | Straight down on the pair over the waves. |
