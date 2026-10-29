@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
              t[i].v[1][0], t[i].v[1][1], t[i].v[1][2], t[i].v[2][0], t[i].v[2][1], t[i].v[2][2], t[i].shade);
       if (t[i].shade == FS_SMOOTH)
         for (int q = 0; q < 3; q++) printf(" %.4f %.4f %.4f", t[i].cs[q][0], t[i].cs[q][1], t[i].cs[q][2]);
-      else if (t[i].shade == FS_OWN) printf(" %.4f %.4f %.4f", t[i].col[0], t[i].col[1], t[i].col[2]);
+      else if (t[i].shade == FS_OWN || t[i].shade == FS_LIT) printf(" %.4f %.4f %.4f", t[i].col[0], t[i].col[1], t[i].col[2]);
       printf("\n");
     }
     return n > 0 ? 0 : 1;
@@ -114,6 +114,13 @@ int main(int argc, char **argv) {
     ratio("mouth under pupils", r.mouth_corners, 1);
     ratio("ear's top at the brow", r.ear_top, 1);
     ratio("ear's foot at the nose", r.ear_bottom, 1);
+    ratio("globe 24 mm", r.globe, 1);
+    ratio("eyes 63 mm apart", r.ipd, 1);
+    ratio("opening 31.5 mm wide", r.open_w, 1);
+    ratio("opening 10.2 mm tall", r.open_h, 1);
+    ratio("iris 11.7 mm", r.iris, 1);
+    ratio("pupil 5.5 mm", r.pupil, 1);
+    ratio("cornea behind the face", r.cornea_behind, 1);
   }
   /* each line's mouth shapes run from its card's start to its end, with no gaps, every word spoken */
   for (int l = 0; l < 3; l++) {

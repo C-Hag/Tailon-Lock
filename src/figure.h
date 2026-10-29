@@ -18,7 +18,7 @@ enum {
 enum {
   FR_TROUSERS, FR_BELT, FR_SHIRT, FR_COLLAR, FR_SLEEVE, FR_SKIN, FR_SKIN_SHADE, FR_HAIR, FR_BROW, FR_LID, FR_LIP,
   FR_EYE_WHITE, FR_IRIS, FR_MOUTH, FR_CAP, FR_GOLD, FR_KIT, FR_BOOT, FR_POCKET, FR_TAPE, FR_TEE, FR_PAPER, FR_ANCHOR,
-  FR_OAK, FR_COUNT
+  FR_OAK, FR_LASH, FR_TEAR, FR_COUNT
 };
 enum { FP_NONE, FP_TRUNK, FP_HEAD, FP_FACE, FP_HAND_L, FP_HAND_R, FP_LIMB, FP_EYE };
 enum { FU_COVERALLS, FU_KHAKI, FU_DUNGAREES };
@@ -67,7 +67,7 @@ typedef struct {
 
 /* Builds the figure's triangles into out (up to max; FIG_MAX_TRIS is always enough); returns how many, or -1 if max
  * was too small. */
-#define FIG_MAX_TRIS 16384
+#define FIG_MAX_TRIS 32768
 int fig_build(const FigSpec *f, FigTri *out, int max);
 /* The colour of a role for this figure's kit and looks. */
 void fig_colour(const FigSpec *f, int role, float rgb[3]);
@@ -103,7 +103,13 @@ bool fig_measure(double H, FigRatios *r);
  * the control room's crew at their posts (raise 0-1: the commander's hand coming up for the order). */
 enum { FC_OPERATOR, FC_SUPERVISOR, FC_COMMANDER };
 /* the face's rules measured on the mesh (fractions, each 1 when the rule holds; see fig_face_rules) */
-typedef struct { double eye_height, eye_gap, nose_width, mouth_corners, ear_top, ear_bottom; } FigFaceRules;
+typedef struct {
+  double eye_height, eye_gap, nose_width, mouth_corners, ear_top, ear_bottom;
+  /* the eye against an adult's, as fractions (1 = the anatomy): the globe 24 mm, the eyes 63 mm apart, the opening
+   * 31.5 x 10.2 mm, the iris 11.7 mm, the pupil 5.5 mm; cornea_behind is 1 when the cornea is behind the line from
+   * the brow ridge to the cheekbone */
+  double globe, ipd, open_w, open_h, iris, pupil, cornea_behind;
+} FigFaceRules;
 bool fig_face_rules(int who, FigFaceRules *r);
 
 /* speech: a line's phonemes paced over [t0, t1], as mouth shapes, and where each word starts */

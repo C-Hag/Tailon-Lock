@@ -6,7 +6,7 @@ const { execFileSync } = require('child_process');
 const F = require('./figure.js');
 const bin = process.argv[2];
 const ROLES = ['trousers', 'belt', 'shirt', 'collar', 'sleeve', 'skin', 'skinShade', 'hair', 'brow', 'lid', 'lip', 'eyeWhite', 'iris', 'mouth', 'cap', 'gold', 'kit',
-  'boot', 'pocket', 'tape', 'tee', 'paper', 'anchor', 'oak'];
+  'boot', 'pocket', 'tape', 'tee', 'paper', 'anchor', 'oak', 'lash', 'tear'];
 const PARTS = { trunk: 1, head: 2, face: 3, handL: 4, handR: 5, eye: 7 };
 let bad = 0;
 for (const [who, name] of [[0, 'operator'], [1, 'supervisor'], [2, 'commander']])
@@ -20,7 +20,7 @@ for (const [who, name] of [[0, 'operator'], [1, 'supervisor'], [2, 'commander']]
     for (let i = 0; i < n; i++) {
       const f = lines[i + 1].split(' ').map(Number), t = js[i];
       const part = PARTS[t.part] || 0, cpart = f[1] === 6 ? 0 : f[1];
-      const shade = t.ns ? 2 : t.col ? 1 : 0;
+      const shade = t.lit ? 3 : t.ns ? 2 : t.col ? 1 : 0;
       if (ROLES[f[0]] !== t.role || cpart !== part || !!f[2] !== !!t.two || f[12] !== shade) mism++;
       const cols = t.ns ? t.cs.flat() : t.col ? t.col : null;
       if (cols) for (let k = 0; k < cols.length; k++) cworst = Math.max(cworst, Math.abs(f[13 + k] - cols[k]));

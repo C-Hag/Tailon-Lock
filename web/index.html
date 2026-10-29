@@ -3585,10 +3585,16 @@ const Figure = (() => {
   const GRID = [[36, 40], [60, 72]];
   const EYE_U = 0.5;
   // the landmarks in head units (head height = 1); x across, u up from the chin, z forward
+  // the eye in millimetres of a 1.75 m man's head (218.75 mm tall), as head units: the globe 24 mm across, the eyes'
+  // centres 63 mm apart, the opening 31.5 mm wide (as wide as the gap between the eyes) and about 10 mm tall, the
+  // iris 11.7 mm, the pupil 5.5 mm in a dim room, the cornea's dome 2.5 mm out of the globe; the upper lid covers the
+  // iris's top 1.5 mm, the lower lid touches the iris
+  const MM = 1 / 218.75;
+  const EYE = { R: 12 * MM, ipd: 63 * MM, W: 31.5 * MM, iris: 5.85 * MM, pupil: 2.75 * MM, bulge: 2.5 * MM, up: 4.35 * MM, lo: 5.85 * MM, lid: 2 * MM };
   function landmarks() {
-    const hwEye = headAt(EYE_U)[0], EW = 2 * hwEye / 5;   // five eyes across the head at the eyes
+    const EW = EYE.W;   // one eye's opening, also the gap between the eyes
     return {
-      EW, eyeX: EW, inner: EW / 2, outer: 1.5 * EW, eyeU: EYE_U, brow: 2 / 3 * 0.8, noseBase: 1 / 3 * 0.8, hairline: 0.8,
+      EW, eyeX: EYE.ipd / 2, inner: EYE.ipd / 2 - EW / 2, outer: EYE.ipd / 2 + EW / 2, eyeU: EYE_U, brow: 2 / 3 * 0.8, noseBase: 1 / 3 * 0.8, hairline: 0.8,
       mouthU: 0.8 / 3 * 2 / 3, mouthX: EW, noseHalf: EW / 2, earTop: 2 / 3 * 0.8, earBottom: 1 / 3 * 0.8
     };
   }
@@ -3682,13 +3688,48 @@ const Figure = (() => {
     const smooth01 = (e0, e1, v) => { const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
     const hairAt = (u, x, z) => Math.max(smooth01(L.hairline - 0.02, L.hairline + 0.03, u + 0.015 * Math.cos(x * 6)) * smooth01(-0.1, 0.0, z + 0.6 - u),
       smooth01(0.0, -0.1, z) * smooth01(0.38, 0.46, u), smooth01(0.33, 0.4, Math.abs(x)) * smooth01(0.56, 0.64, u) * smooth01(0.3, 0.18, z));
-    // the grid: u from the chin to the crown, finer round the face
-    const [FU, FA] = GRID[fig.detail ? 1 : 0];
+    // ---- the eyes' sockets: each globe sunk so its cornea is 1 mm behind the face's line, and the skin round it
+    // carved to the opening: inside, it goes behind the globe; at the edge it is the lid, 2 mm thick over the globe;
+    // the lids follow the gaze (the upper drops as the eyes look down) and close to blink
+    const gaze = fe.gaze ? norm(sub(fe.gaze, add(bottom, mul(F.along, L.eyeU * hH)))) : F.fwd;
+    const gh = norm(add([dot(gaze, F.across), dot(gaze, F.along), dot(gaze, F.fwd)], [0, 0, 0.4]));   // in the head's x, u, z
+    const eyes = [1, -1].map(sx => {
+      const cx = L.eyeX * sx, zb = surf(L.eyeU, angleAt(L.eyeU, cx))[1];
+      return { sx, cx, cu: L.eyeU, cz: zb - MM - EYE.bulge - EYE.R };
+    });
+    const lidUp = (EYE.up + 3.5 * MM * gh[1] + 0.8 * MM * ex.browUp - 0.8 * MM * ex.frown) * (1 - ex.blink) - EYE.lo * 0.92 * ex.blink;
+    // the opening's upper and lower edge at t (-1 the inner corner, 1 the outer), as heights from the eye's centre
+    const edgeUp = t => 0.04 * t * EYE.W / 2 + Math.max(-EYE.lo * 0.92, lidUp) * Math.pow(Math.max(0, 1 - t * t), 0.7);
+    const edgeLo = t => 0.04 * t * EYE.W / 2 - (EYE.lo - 0.6 * MM * ex.smile) * Math.pow(Math.max(0, 1 - t * t), 0.7);
+    const globeZ = (E, x, u) => { const d = EYE.R * EYE.R - (x - E.cx) ** 2 - (u - E.cu) ** 2; return d > 0 ? E.cz + Math.sqrt(d) : null; };
+    const carve = (u, x, z) => {
+      for (const E of eyes) {
+        const lx = (x - E.cx) * E.sx, ly = u - E.cu, t = lx / (EYE.W / 2);
+        if (Math.abs(lx) > EYE.W || Math.abs(ly) > EYE.W) continue;
+        const gz = globeZ(E, x, u), tc = Math.max(-1, Math.min(1, t)), yU = edgeUp(tc), yL = edgeLo(tc);
+        const inside = Math.abs(t) < 1 && ly < yU && ly > yL && yU > yL + 0.2 * MM;
+        if (inside && gz != null) return gz - 0.8 * MM;
+        // outside the opening: the lid on the globe, easing out to the face over 4 mm
+        const d = Math.max(ly - yU, yL - ly, (Math.abs(lx) - EYE.W / 2) * 0.6, 0) / (4 * MM), k = Math.min(1, d);
+        if (gz != null) return Math.max(z * (k * k * (3 - 2 * k)) + (gz + EYE.lid) * (1 - k * k * (3 - 2 * k)), gz + EYE.lid);
+      }
+      return z;
+    };
+    // the grid: u from the chin to the crown, finer round the face, finer still round the eyes
+    const [FU, FA0] = GRID[fig.detail ? 1 : 0], fine = fig.detail ? 1.5 * MM : 3.5 * MM;
     const us = Array.from({ length: FU + 1 }, (_, k) => { const t = k / FU; return t * t * (3 - 2 * t) * 0.5 + t * 0.5; })
-      .filter(u => Math.abs(u - L.mouthU) > 0.008).concat([L.mouthU - 0.002, L.mouthU + 0.002]).sort((a, b) => a - b);
+      .concat(Array.from({ length: Math.round(2 * 9 * MM / fine) + 1 }, (_, k) => L.eyeU - 9 * MM + k * fine))
+      .filter(u => Math.abs(u - L.mouthU) > 0.008).concat([L.mouthU - 0.002, L.mouthU + 0.002]).sort((a, b) => a - b)
+      .filter((u, i, A) => i === 0 || u - A[i - 1] > 1e-4);
+    const angs = Array.from({ length: FA0 }, (_, i) => i / FA0 * Math.PI * 2);
+    for (const E of eyes) for (let x = -EYE.W * 0.8; x <= EYE.W * 0.8 + 1e-9; x += fine) angs.push(angleAt(L.eyeU, E.cx + x));
+    angs.sort((a, b) => a - b);
+    const A = angs.filter((a, i) => i === 0 || a - angs[i - 1] > 1e-4), FA = A.length;
     const lipRow = us.indexOf(L.mouthU - 0.002);   // the row between the lips: left open across the mouth
     const G = us.map(u => Array.from({ length: FA }, (_, i) => {
-      const a = i / FA * Math.PI * 2, sh = headShape(u, a, fp, ex, L), p = P(sh.u, sh.x, sh.z);
+      const a = A[i], sh = headShape(u, a, fp, ex, L);
+      if (Math.sin(a) > 0) sh.z = carve(sh.u, sh.x, sh.z);
+      const p = P(sh.u, sh.x, sh.z);
       const h = hairAt(u, sh.x, sh.z), sk = tone(u, sh.x, sh.z), hc = hair.map(v => v * (0.9 + 0.2 * noise(sh.x * 30 + 7, u * 30)));
       return { p, col: sk.map((v, j) => v * (1 - h) + hc[j] * h), hr: h > 0.5, u, x: sh.x, z: sh.z };
     }));
@@ -3737,47 +3778,63 @@ const Figure = (() => {
       const [, zf] = surf(0.275, Math.PI / 2), a0 = P(0.272, sx * 0.02, zf + 0.06), a1 = P(0.272, sx * 0.065, zf + 0.04), a2 = P(0.278, sx * 0.045, zf + 0.075);
       out.push({ v: [a0, a1, a2], role: 'mouth', part: 'face', two: true, col: [70, 40, 38] });
     }
-    // the eyes: eyeballs in their sockets, the iris and pupil turned to the gaze, lids that close to blink
-    const gaze = fe.gaze ? norm(sub(fe.gaze, add(bottom, mul(F.along, L.eyeU * hH)))) : F.fwd;
+    // ---- the eyes: the globe, its iris and pupil turned to the gaze, the lashes, the tear line and the caruncle ----
+    const P0 = (u, x, z) => add(bottom, add(mul(F.along, u * hH), add(mul(F.across, x * hH), mul(F.fwd, z * hH))));
+    const SEGS = fig.detail ? 32 : 18, iris = fig.iris || [70, 58, 44];
+    const ti = Math.asin(EYE.iris / EYE.R), tp = Math.asin(EYE.pupil / EYE.R);
+    // the rings out from the gaze's pole: the pupil, the iris (its inner collar, its outer edge), the dark limbal
+    // ring, the white to the back
+    const RINGS = [0, tp, tp * 1.15, ti * 0.6, ti * 0.92, ti, ti * 1.12, 0.9, 1.4, 1.9, 2.4, Math.PI];
+    const e1 = norm(cross([0, 1, 0], gh)), e2 = cross(gh, e1);
+    for (const E of eyes) {
+      const sx = E.sx;
+      // a point on the globe at polar angle th from the gaze and phi round it, in head units, and its colour
+      const at = (th, ph) => {
+        const dir = add(mul(gh, Math.cos(th)), add(mul(e1, Math.sin(th) * Math.cos(ph)), mul(e2, Math.sin(th) * Math.sin(ph))));
+        const r = EYE.R * (th <= ti * 1.001 ? 0.985 : 1);   // the iris a little behind the cornea
+        return [E.cx + dir[0] * r, E.cu + dir[1] * r, E.cz + dir[2] * r];
+      };
+      const colAt = (k, ph, q) => {
+        let c;
+        if (k <= 1) c = [10, 10, 12];
+        else if (k <= 5) {   // the iris: radial streaks, a lighter collar inside, darker at its edge
+          const streak = 0.72 + 0.56 * noise(ph * 7 + sx * 3, k * 2.1), ring = k === 2 ? 0.8 : k === 3 ? 1.15 : k === 4 ? 0.95 : 0.6;
+          c = iris.map(v => v * streak * ring);
+        } else if (k === 6) c = iris.map(v => v * 0.32);   // the limbal ring
+        else c = [240, 234, 226].map((v, i) => v - [0, 12, 14][i] * Math.abs(Math.cos(ph)) * Math.min(1, (k - 6) / 3));   // the white, pinker at the sides
+        // the contact shadow of the lids and the brow on the globe
+        const ly = q[1] - E.cu, lx = (q[0] - E.cx) * sx, t = Math.max(-1, Math.min(1, lx / (EYE.W / 2)));
+        const up = edgeUp(t) - ly, lo = ly - edgeLo(t), sh = Math.min(1, Math.max(0, up / (1.5 * MM))) * (0.7 + 0.3 * Math.min(1, Math.max(0, lo / (1 * MM))));
+        return c.map(v => v * (0.62 + 0.38 * sh));
+      };
+      const rows = RINGS.map((th, k) => Array.from({ length: SEGS }, (_, i) => { const ph = i / SEGS * Math.PI * 2, q = at(th, ph); return { p: P0(q[1], q[0], q[2]), q, col: colAt(k, ph, q), n: norm(sub(P0(q[1], q[0], q[2]), P0(E.cu, E.cx, E.cz))) }; }));
+      for (let k = 0; k + 1 < rows.length; k++)
+        for (let i = 0; i < SEGS; i++) {
+          const j = (i + 1) % SEGS, a = rows[k][i], b = rows[k + 1][i], c = rows[k + 1][j], d = rows[k][j], role = k < 5 ? 'iris' : 'eyeWhite';
+          out.push({ v: [a.p, c.p, d.p], role, part: 'eye', ns: [a.n, c.n, d.n], cs: [a.col, c.col, d.col] }, { v: [a.p, b.p, c.p], role, part: 'eye', ns: [a.n, b.n, c.n], cs: [a.col, b.col, c.col] });
+        }
+      // the cornea's glint: the scope's light on the dome, up and toward the light
+      {
+        const g = norm(add(gh, add(mul([0, 1, 0], 0.22), mul([1, 0, 0], -0.18)))), r = 0.7 * MM, c = [E.cx + g[0] * (EYE.R + EYE.bulge * 0.8), E.cu + g[1] * (EYE.R + EYE.bulge * 0.8), E.cz + g[2] * (EYE.R + EYE.bulge * 0.8)];
+        const u1 = norm(cross([0, 1, 0], g)), u2 = cross(g, u1), pc = P0(c[1], c[0], c[2]);
+        const ring = Array.from({ length: 8 }, (_, i) => { const a = i / 8 * Math.PI * 2, q = add(c, add(mul(u1, Math.cos(a) * r), mul(u2, Math.sin(a) * r))); return P0(q[1], q[0], q[2]); });
+        for (let i = 0; i < 8; i++) out.push({ v: [pc, ring[i], ring[(i + 1) % 8]], role: 'iris', part: 'eye', two: true, lit: true, col: [252, 252, 248] });
+      }
+      // the lashes on the upper lid's edge, curling out; the wet tear line along the lower lid; the caruncle
+      const N = 12, lid = (t, y, dz) => { const lx = t * EYE.W / 2, x = E.cx + lx * sx, gz = globeZ(E, x, E.cu + y); return P0(E.cu + y, x, (gz != null ? gz : E.cz + EYE.R) + dz); };
+      for (let i = 0; i < N; i++) {
+        const t0 = -1 + 2 * i / N, t1 = -1 + 2 * (i + 1) / N, len = (1 - Math.abs((t0 + t1) / 2) * 0.6) * 1.6 * MM;
+        const a = lid(t0, edgeUp(t0), EYE.lid), b = lid(t1, edgeUp(t1), EYE.lid), c = lid(t1, edgeUp(t1) + len, EYE.lid + len), d = lid(t0, edgeUp(t0) + len, EYE.lid + len);
+        out.push({ v: [a, b, c], role: 'lash', part: 'eye', two: true, col: hair.map(v => v * 0.35) }, { v: [a, c, d], role: 'lash', part: 'eye', two: true, col: hair.map(v => v * 0.35) });
+        const e = lid(t0, edgeLo(t0), 0.3 * MM), f = lid(t1, edgeLo(t1), 0.3 * MM), g2 = lid(t1, edgeLo(t1) + 0.6 * MM, 0.2 * MM), h = lid(t0, edgeLo(t0) + 0.6 * MM, 0.2 * MM);
+        out.push({ v: [e, f, g2], role: 'tear', part: 'eye', two: true, col: [196, 150, 148] }, { v: [e, g2, h], role: 'tear', part: 'eye', two: true, col: [196, 150, 148] });
+      }
+      {
+        const a = lid(-0.97, -1.3 * MM, 0.3 * MM), b = lid(-0.83, -1.3 * MM, 0.3 * MM), c = lid(-0.83, 1.3 * MM, 0.3 * MM), d = lid(-0.97, 1.3 * MM, 0.3 * MM);
+        out.push({ v: [a, b, c], role: 'tear', part: 'eye', two: true, col: [200, 118, 116] }, { v: [a, c, d], role: 'tear', part: 'eye', two: true, col: [200, 118, 116] });
+      }
+    }
     for (const sx of [1, -1]) {
-      const rE = L.EW * 0.5, [, zf] = surf(L.eyeU, angleAt(L.eyeU, L.eyeX * sx)), ec = P(L.eyeU, L.eyeX * sx, zf - rE * 0.9 - 0.03 * fp.socket);
-      const RE = rE * hH, ax = F.across, up = F.along, fw = F.fwd;
-      // the eyeball, smooth: each point's normal straight out from its centre
-      const sphere = (c, r, role, col) => {
-        const rows = 8, segs = 14, pts = [];
-        for (let k = 0; k <= rows; k++) { const b = -Math.PI / 2 + Math.PI * k / rows; pts.push(Array.from({ length: segs }, (_, i) => { const a = i / segs * Math.PI * 2; return add(c, add(mul(ax, Math.cos(b) * Math.cos(a) * r), add(mul(up, Math.sin(b) * r), mul(fw, Math.cos(b) * Math.sin(a) * r)))); })); }
-        const nn = p => norm(sub(p, c)), cs = [col, col, col];
-        for (let k = 0; k < rows; k++) for (let i = 0; i < segs; i++) {
-          const j = (i + 1) % segs, A = pts[k][i], B = pts[k + 1][j], Cc = pts[k][j], Dd = pts[k + 1][i];
-          out.push({ v: [A, B, Cc], role, part: 'eye', ns: [nn(A), nn(B), nn(Cc)], cs }, { v: [A, Dd, B], role, part: 'eye', ns: [nn(A), nn(Dd), nn(B)], cs });
-        }
-      };
-      sphere(ec, RE, 'eyeWhite', [222, 216, 208]);
-      // the iris and pupil: discs on the eyeball's front, toward the gaze
-      const g = norm(add(mul(gaze, 1), mul(fw, 0.4))), gx = norm(cross(up, g)), gy = cross(g, gx);
-      const disc = (r, lift, col, role, ox = 0, oy = 0) => {
-        const c = add(add(ec, mul(g, RE * lift)), add(mul(gx, ox * RE), mul(gy, oy * RE))), ring = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * Math.PI * 2; return add(c, add(mul(gx, Math.cos(a) * r), mul(gy, Math.sin(a) * r))); });
-        for (let i = 0; i < 10; i++) out.push({ v: [c, ring[i], ring[(i + 1) % 10]], role, part: 'eye', two: true, col });
-      };
-      disc(RE * 0.46, 1.0, fig.iris || [70, 58, 44], 'iris');
-      disc(RE * 0.19, 1.012, [10, 10, 12], 'iris');
-      // the wet eye: the screen's light caught in it, and a smaller second light
-      disc(RE * 0.07, 1.022, [240, 240, 236], 'iris', -0.17, 0.2);
-      disc(RE * 0.035, 1.024, [220, 224, 226], 'iris', 0.16, -0.12);
-      // the lids: the upper comes down over the eyeball to blink, the lower stays
-      const lid = (from, to, col, rk = 1.07) => {
-        const segs = 10, rows = 3, r = RE * rk, pts = [];
-        for (let k = 0; k <= rows; k++) { const b = from + (to - from) * k / rows; pts.push(Array.from({ length: segs + 1 }, (_, i) => { const a = Math.PI * 0.08 + Math.PI * 0.84 * i / segs; return add(ec, add(mul(ax, Math.cos(b) * Math.cos(a) * r), add(mul(up, Math.sin(b) * r), mul(fw, Math.cos(b) * Math.sin(a) * r)))); })); }
-        const nn = p => norm(sub(p, ec)), cs = [col, col, col];   // smooth, round the eyeball
-        for (let k = 0; k < rows; k++) for (let i = 0; i < segs; i++) {
-          const A = pts[k][i], B = pts[k + 1][i + 1], Cc = pts[k][i + 1], Dd = pts[k + 1][i];
-          out.push({ v: [A, B, Cc], role: 'lid', part: 'eye', two: true, ns: [nn(A), nn(B), nn(Cc)], cs }, { v: [A, Dd, B], role: 'lid', part: 'eye', two: true, ns: [nn(A), nn(Dd), nn(B)], cs });
-        }
-      };
-      const open = -0.36 + (0.62 + 0.1 * ex.browUp - 0.08 * ex.frown) * (1 - ex.blink);   // the upper lid's edge, from the eye's middle
-      lid(Math.PI / 2, open, tone(L.eyeU + 0.04, L.eyeX, zf).map(v => v * 0.92));
-      lid(open + 0.06, open - 0.03, hair.map(v => v * 0.45), 1.085);   // the lashes along the upper lid's edge
-      lid(-0.38, -Math.PI / 2, tone(L.eyeU - 0.04, L.eyeX, zf).map(v => v * 0.95));
       // the brow: a band of hair over the ridge, the inner end lifting or drawing down
       const bu = (k) => 0.57 + 0.035 * ex.browUp * (1 - k * 0.3) - 0.025 * ex.frown * (1 - k);
       const bpts = [0, 0.25, 0.5, 0.75, 1].map(k => { const x = sx * (L.inner * 0.9 + (L.outer + 0.06 - L.inner * 0.9) * k), [, zb] = surf(bu(k), angleAt(bu(k), x)); return [P(bu(k) + 0.018 * Math.sin(k * Math.PI), x, zb + 0.022), P(bu(k) - 0.012, x, zb + 0.022)]; });

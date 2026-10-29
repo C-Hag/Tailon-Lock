@@ -302,12 +302,26 @@ static const int GRID[2][2] = { { 36, 40 }, { 60, 72 } };
 #define FA_MAX 72
 #define EYE_U 0.5
 typedef struct { double EW, eyeX, inner, outer, eyeU, brow, noseBase, hairline, mouthU, mouthX, noseHalf, earTop, earBottom; } Land;
+/* the eye in millimetres of a 1.75 m man's head (218.75 mm tall), as head units (see figure.js): the globe 24 mm
+ * across, the eyes 63 mm apart, the opening 31.5 mm wide and about 10 mm tall, the iris 11.7 mm, the pupil 5.5 mm,
+ * the cornea 2.5 mm out of the globe; the upper lid over the iris's top 1.5 mm, the lower lid touching it */
+#define MM (1.0 / 218.75)
+#define EYE_R (12 * MM)
+#define EYE_IPD (63 * MM)
+#define EYE_W (31.5 * MM)
+#define EYE_IRIS (5.85 * MM)
+#define EYE_PUPIL (2.75 * MM)
+#define EYE_BULGE (2.5 * MM)
+#define EYE_UP (4.35 * MM)
+#define EYE_LO (5.85 * MM)
+#define EYE_LID (2 * MM)
 static Land landmarks(void) {
   double hw, zf, zb;
   head_at(EYE_U, &hw, &zf, &zb);
   Land L;
-  L.EW = 2 * hw / 5; /* five eyes across the head at the eyes */
-  L.eyeX = L.EW, L.inner = L.EW / 2, L.outer = 1.5 * L.EW, L.eyeU = EYE_U;
+  (void)hw;
+  L.EW = EYE_W; /* one eye's opening, also the gap between the eyes */
+  L.eyeX = EYE_IPD / 2, L.inner = EYE_IPD / 2 - L.EW / 2, L.outer = EYE_IPD / 2 + L.EW / 2, L.eyeU = EYE_U;
   L.brow = 2.0 / 3 * 0.8, L.noseBase = 1.0 / 3 * 0.8, L.hairline = 0.8, L.mouthU = 0.8 / 3 * 2 / 3, L.mouthX = L.EW, L.noseHalf = L.EW / 2;
   L.earTop = 2.0 / 3 * 0.8, L.earBottom = 1.0 / 3 * 0.8;
   return L;
@@ -431,6 +445,47 @@ static void tone(const HeadCtx *h, double u, double x, double z, double c[3]) {
   for (int i = 0; i < 3; i++) c[i] *= 1 - ao;
 }
 
+/* ---- the eyes' sockets (see figure.js): each globe sunk so its cornea is 1 mm behind the face's line, the skin
+ * round it carved to the opening; the lids follow the gaze and close to blink ---- */
+typedef struct { double sx, cx, cu, cz; } EyeG;
+typedef struct { EyeG e[2]; double lid_up, smile; } Eyes;
+static double edge_up(const Eyes *E, double t) {
+  return 0.04 * t * EYE_W / 2 + maxd(-EYE_LO * 0.92, E->lid_up) * pow(maxd(0, 1 - t * t), 0.7);
+}
+static double edge_lo(const Eyes *E, double t) {
+  return 0.04 * t * EYE_W / 2 - (EYE_LO - 0.6 * MM * E->smile) * pow(maxd(0, 1 - t * t), 0.7);
+}
+static bool globe_z(const EyeG *g, double x, double u, double *z) {
+  double d = EYE_R * EYE_R - sq(x - g->cx) - sq(u - g->cu);
+  if (d <= 0) return false;
+  *z = g->cz + sqrt(d);
+  return true;
+}
+static double carve(const Eyes *E, double u, double x, double z) {
+  for (int k = 0; k < 2; k++) {
+    const EyeG *g = &E->e[k];
+    double lx = (x - g->cx) * g->sx, ly = u - g->cu, t = lx / (EYE_W / 2);
+    if (fabs(lx) > EYE_W || fabs(ly) > EYE_W) continue;
+    double gz, tc = maxd(-1, mind(1, t)), yU = edge_up(E, tc), yL = edge_lo(E, tc);
+    bool has = globe_z(g, x, u, &gz);
+    bool inside = fabs(t) < 1 && ly < yU && ly > yL && yU > yL + 0.2 * MM;
+    if (inside && has) return gz - 0.8 * MM;
+    double d = maxd(maxd(ly - yU, yL - ly), maxd((fabs(lx) - EYE_W / 2) * 0.6, 0)) / (4 * MM), kk = mind(1, d), sm = kk * kk * (3 - 2 * kk);
+    if (has) return maxd(z * sm + (gz + EYE_LID) * (1 - sm), gz + EYE_LID);
+  }
+  return z;
+}
+static int cmp_d(const void *a, const void *b) {
+  double x = *(const double *)a, y = *(const double *)b;
+  return x < y ? -1 : x > y;
+}
+
+/* a point on the lid's edge: across the opening at t, at height y from the eye's centre, dz in front of the globe */
+static V3 eye_lid(const HeadCtx *h, const EyeG *g, double t, double y, double dz) {
+  double x = g->cx + t * EYE_W / 2 * g->sx, gz;
+  if (!globe_z(g, x, g->cu + y, &gz)) gz = g->cz + EYE_R;
+  return HP0(h, g->cu + y, x, gz + dz);
+}
 static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
   HeadCtx h;
   h.K = K;
@@ -445,30 +500,55 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
   Ex ex = { fig->face.open, fig->face.wide, fig->face.round, fig->face.smile, fig->face.brow_up, fig->face.frown, fig->face.blink };
   h.jawA = ex.open * 0.26;
   h.MW = L->mouthX * (1 + 0.25 * ex.wide + 0.15 * ex.smile - 0.35 * ex.round);
-  /* the grid's rows: finer round the face, and two rows at the mouth's line, the lips' parting */
-  const int FU = GRID[fig->detail ? 1 : 0][0], FA = GRID[fig->detail ? 1 : 0][1];
-  double us[FU_MAX + 3];
-  int nu = 0, lip_row = -1;
-  for (int k = 0; k <= FU; k++) {
-    double t = (double)k / FU, u = t * t * (3 - 2 * t) * 0.5 + t * 0.5;
-    if (fabs(u - L->mouthU) > 0.008) us[nu++] = u;
+  /* the eyes: where each globe sits, the gaze in the head's own axes, the upper lid's edge */
+  V3 gaze = h.F.fwd;
+  if (fig->face.has_gaze) gaze = norm(sub(v3(fig->face.gaze[0], fig->face.gaze[1], fig->face.gaze[2]), add(h.bottom, mul(h.F.along, L->eyeU * h.hH))));
+  V3 gh = norm(add(v3(dot(gaze, h.F.across), dot(gaze, h.F.along), dot(gaze, h.F.fwd)), v3(0, 0, 0.4)));
+  Eyes E;
+  for (int k = 0; k < 2; k++) {
+    double sx = k ? -1 : 1, cx = L->eyeX * sx, xx, zb;
+    surf(L->eyeU, angle_at(L->eyeU, cx), &xx, &zb);
+    E.e[k] = (EyeG){ sx, cx, L->eyeU, zb - MM - EYE_BULGE - EYE_R };
   }
-  us[nu++] = L->mouthU - 0.002;
-  us[nu++] = L->mouthU + 0.002;
-  for (int a = 1; a < nu; a++) /* sort */
-    for (int b = a; b > 0 && us[b] < us[b - 1]; b--) {
-      double t = us[b];
-      us[b] = us[b - 1], us[b - 1] = t;
-    }
+  E.lid_up = (EYE_UP + 3.5 * MM * gh.v[1] + 0.8 * MM * ex.browUp - 0.8 * MM * ex.frown) * (1 - ex.blink) - EYE_LO * 0.92 * ex.blink;
+  E.smile = ex.smile;
+  /* the grid's rows: finer round the face, finer still round the eyes, and two rows at the mouth's line, the lips'
+   * parting; its segments round the head, finer across the eyes */
+  const int FU = GRID[fig->detail ? 1 : 0][0], FA0 = GRID[fig->detail ? 1 : 0][1];
+  double fine = fig->detail ? 1.5 * MM : 3.5 * MM;
+  static double us0[FU_MAX + 64], us[FU_MAX + 64], angs0[FA_MAX + 128], ANG[FA_MAX + 128];
+  int n0 = 0, nu = 0, lip_row = -1;
+  for (int k = 0; k <= FU; k++) {
+    double t = (double)k / FU;
+    us0[n0++] = t * t * (3 - 2 * t) * 0.5 + t * 0.5;
+  }
+  int nf = (int)lround(2 * 9 * MM / fine) + 1;
+  for (int k = 0; k < nf; k++) us0[n0++] = L->eyeU - 9 * MM + k * fine;
+  int m0 = 0;
+  for (int k = 0; k < n0; k++)
+    if (fabs(us0[k] - L->mouthU) > 0.008) us0[m0++] = us0[k];
+  us0[m0++] = L->mouthU - 0.002;
+  us0[m0++] = L->mouthU + 0.002;
+  qsort(us0, (size_t)m0, sizeof us0[0], cmp_d);
+  for (int k = 0; k < m0; k++)
+    if (k == 0 || us0[k] - us0[k - 1] > 1e-4) us[nu++] = us0[k];
   for (int k = 0; k < nu; k++)
     if (us[k] == L->mouthU - 0.002) lip_row = k;
-  static V3 GP[FU_MAX + 3][FA_MAX], GN[FU_MAX + 3][FA_MAX];
-  static double GC[FU_MAX + 3][FA_MAX][3], GX[FU_MAX + 3][FA_MAX], GZ[FU_MAX + 3][FA_MAX];
-  static bool GH[FU_MAX + 3][FA_MAX];
+  int na0 = 0, FA = 0;
+  for (int i = 0; i < FA0; i++) angs0[na0++] = (double)i / FA0 * PI * 2;
+  for (int k = 0; k < 2; k++)
+    for (double x = -EYE_W * 0.8; x <= EYE_W * 0.8 + 1e-9; x += fine) angs0[na0++] = angle_at(L->eyeU, E.e[k].cx + x);
+  qsort(angs0, (size_t)na0, sizeof angs0[0], cmp_d);
+  for (int i = 0; i < na0; i++)
+    if (i == 0 || angs0[i] - angs0[i - 1] > 1e-4) ANG[FA++] = angs0[i];
+  static V3 GP[FU_MAX + 64][FA_MAX + 128], GN[FU_MAX + 64][FA_MAX + 128];
+  static double GC[FU_MAX + 64][FA_MAX + 128][3], GX[FU_MAX + 64][FA_MAX + 128], GZ[FU_MAX + 64][FA_MAX + 128];
+  static bool GH[FU_MAX + 64][FA_MAX + 128];
   for (int k = 0; k < nu; k++)
     for (int i = 0; i < FA; i++) {
-      double a = (double)i / FA * PI * 2, x, z, uu;
+      double a = ANG[i], x, z, uu;
       head_shape(us[k], a, fp, &ex, L, &x, &z, &uu);
+      if (sin(a) > 0) z = carve(&E, uu, x, z);
       GP[k][i] = HP(&h, uu, x, z);
       double hm = hair_amount(L, us[k], x, z), sk[3], nh = 0.9 + 0.2 * noise2(x * 30 + 7, us[k] * 30);
       tone(&h, us[k], x, z, sk);
@@ -548,75 +628,91 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
       put_own(o, HP(&h, 0.272, sx * 0.02, zf + 0.06), HP(&h, 0.272, sx * 0.065, zf + 0.04), HP(&h, 0.278, sx * 0.045, zf + 0.075), FR_MOUTH, FP_FACE, true, NOSTRIL);
     }
   }
-  /* the eyes: eyeballs in their sockets, the iris and pupil turned to the gaze, lids that close to blink */
-  V3 gaze = h.F.fwd;
-  if (fig->face.has_gaze) gaze = norm(sub(v3(fig->face.gaze[0], fig->face.gaze[1], fig->face.gaze[2]), add(h.bottom, mul(h.F.along, L->eyeU * h.hH))));
+  /* ---- the eyes: the globe, its iris and pupil turned to the gaze, the lashes, the tear line and the caruncle ---- */
+  {
+    const int SEGS = fig->detail ? 32 : 18;
+    double ti = asin(EYE_IRIS / EYE_R), tp = asin(EYE_PUPIL / EYE_R);
+    const double RINGS[12] = { 0, tp, tp * 1.15, ti * 0.6, ti * 0.92, ti, ti * 1.12, 0.9, 1.4, 1.9, 2.4, PI };
+    V3 e1 = norm(cross(v3(0, 1, 0), gh)), e2 = cross(gh, e1);
+    static V3 RP[12][32], RN[12][32];
+    static double RC[12][32][3];
+    for (int k = 0; k < 2; k++) {
+      const EyeG *g = &E.e[k];
+      double sx = g->sx;
+      V3 cen = HP0(&h, g->cu, g->cx, g->cz);
+      for (int r = 0; r < 12; r++)
+        for (int i = 0; i < SEGS; i++) {
+          double th = RINGS[r], ph = (double)i / SEGS * PI * 2;
+          V3 dir = add(mul(gh, cos(th)), add(mul(e1, sin(th) * cos(ph)), mul(e2, sin(th) * sin(ph))));
+          double rr = EYE_R * (th <= ti * 1.001 ? 0.985 : 1); /* the iris a little behind the cornea */
+          double qx = g->cx + dir.v[0] * rr, qu = g->cu + dir.v[1] * rr, qz = g->cz + dir.v[2] * rr, c[3];
+          if (r <= 1) c[0] = 10, c[1] = 10, c[2] = 12;
+          else if (r <= 5) { /* the iris: radial streaks, a lighter collar inside, darker at its edge */
+            double streak = 0.72 + 0.56 * noise2(ph * 7 + sx * 3, r * 2.1), ring = r == 2 ? 0.8 : r == 3 ? 1.15 : r == 4 ? 0.95 : 0.6;
+            for (int q = 0; q < 3; q++) c[q] = fig->iris[q] * streak * ring;
+          } else if (r == 6)
+            for (int q = 0; q < 3; q++) c[q] = fig->iris[q] * 0.32; /* the limbal ring */
+          else { /* the white, pinker at the sides */
+            static const double W[3] = { 240, 234, 226 }, P[3] = { 0, 12, 14 };
+            for (int q = 0; q < 3; q++) c[q] = W[q] - P[q] * fabs(cos(ph)) * mind(1, (r - 6) / 3.0);
+          }
+          /* the contact shadow of the lids and the brow on the globe */
+          double ly = qu - g->cu, lx = (qx - g->cx) * sx, t = maxd(-1, mind(1, lx / (EYE_W / 2)));
+          double up = edge_up(&E, t) - ly, lo = ly - edge_lo(&E, t);
+          double shd = mind(1, maxd(0, up / (1.5 * MM))) * (0.7 + 0.3 * mind(1, maxd(0, lo / (1 * MM))));
+          for (int q = 0; q < 3; q++) RC[r][i][q] = c[q] * (0.62 + 0.38 * shd);
+          RP[r][i] = HP0(&h, qu, qx, qz);
+          RN[r][i] = norm(sub(RP[r][i], cen));
+        }
+      for (int r = 0; r + 1 < 12; r++)
+        for (int i = 0; i < SEGS; i++) {
+          int j = (i + 1) % SEGS, role = r < 5 ? FR_IRIS : FR_EYE_WHITE;
+          V3 n1[3] = { RN[r][i], RN[r + 1][j], RN[r][j] }, n2[3] = { RN[r][i], RN[r + 1][i], RN[r + 1][j] };
+          double c1[3][3], c2[3][3];
+          for (int q = 0; q < 3; q++) c1[0][q] = RC[r][i][q], c1[1][q] = RC[r + 1][j][q], c1[2][q] = RC[r][j][q];
+          for (int q = 0; q < 3; q++) c2[0][q] = RC[r][i][q], c2[1][q] = RC[r + 1][i][q], c2[2][q] = RC[r + 1][j][q];
+          put_smooth(o, RP[r][i], RP[r + 1][j], RP[r][j], role, FP_EYE, false, n1, (const double(*)[3])c1);
+          put_smooth(o, RP[r][i], RP[r + 1][i], RP[r + 1][j], role, FP_EYE, false, n2, (const double(*)[3])c2);
+        }
+      { /* the cornea's glint: the scope's light on the dome, up and toward the light */
+        V3 gg = norm(add(gh, add(mul(v3(0, 1, 0), 0.22), mul(v3(1, 0, 0), -0.18))));
+        double rr = 0.7 * MM, d = EYE_R + EYE_BULGE * 0.8;
+        V3 c = v3(g->cx + gg.v[0] * d, g->cu + gg.v[1] * d, g->cz + gg.v[2] * d), u1 = norm(cross(v3(0, 1, 0), gg)), u2 = cross(gg, u1);
+        V3 pc = HP0(&h, c.v[1], c.v[0], c.v[2]), ring[8];
+        for (int i = 0; i < 8; i++) {
+          double a = (double)i / 8 * PI * 2;
+          V3 q = add(c, add(mul(u1, cos(a) * rr), mul(u2, sin(a) * rr)));
+          ring[i] = HP0(&h, q.v[1], q.v[0], q.v[2]);
+        }
+        static const double GLINT[3] = { 252, 252, 248 };
+        for (int i = 0; i < 8; i++) {
+          put_own(o, pc, ring[i], ring[(i + 1) % 8], FR_IRIS, FP_EYE, true, GLINT);
+          if (!o->full) o->t[o->n - 1].shade = FS_LIT;
+        }
+      }
+      /* the lashes on the upper lid's edge, curling out; the wet tear line along the lower lid; the caruncle */
+#define LIDP(t, y, dz) eye_lid(&h, g, (t), (y), (dz))
+      double lash[3] = { fig->hair[0] * 0.35, fig->hair[1] * 0.35, fig->hair[2] * 0.35 };
+      static const double TEAR[3] = { 196, 150, 148 }, CARUNCLE[3] = { 200, 118, 116 };
+      for (int i = 0; i < 12; i++) {
+        double t0 = -1 + 2.0 * i / 12, t1 = -1 + 2.0 * (i + 1) / 12, len = (1 - fabs((t0 + t1) / 2) * 0.6) * 1.6 * MM;
+        V3 a = LIDP(t0, edge_up(&E, t0), EYE_LID), b = LIDP(t1, edge_up(&E, t1), EYE_LID), c = LIDP(t1, edge_up(&E, t1) + len, EYE_LID + len), d = LIDP(t0, edge_up(&E, t0) + len, EYE_LID + len);
+        put_own(o, a, b, c, FR_LASH, FP_EYE, true, lash);
+        put_own(o, a, c, d, FR_LASH, FP_EYE, true, lash);
+        V3 e = LIDP(t0, edge_lo(&E, t0), 0.3 * MM), f = LIDP(t1, edge_lo(&E, t1), 0.3 * MM), g2 = LIDP(t1, edge_lo(&E, t1) + 0.6 * MM, 0.2 * MM), hh = LIDP(t0, edge_lo(&E, t0) + 0.6 * MM, 0.2 * MM);
+        put_own(o, e, f, g2, FR_TEAR, FP_EYE, true, TEAR);
+        put_own(o, e, g2, hh, FR_TEAR, FP_EYE, true, TEAR);
+      }
+      {
+        V3 a = LIDP(-0.97, -1.3 * MM, 0.3 * MM), b = LIDP(-0.83, -1.3 * MM, 0.3 * MM), c = LIDP(-0.83, 1.3 * MM, 0.3 * MM), d = LIDP(-0.97, 1.3 * MM, 0.3 * MM);
+        put_own(o, a, b, c, FR_TEAR, FP_EYE, true, CARUNCLE);
+        put_own(o, a, c, d, FR_TEAR, FP_EYE, true, CARUNCLE);
+      }
+#undef LIDP
+    }
+  }
   for (int e = 0; e < 2; e++) {
-    double sx = e ? -1 : 1, rE = L->EW * 0.5, xx, zf;
-    surf(L->eyeU, angle_at(L->eyeU, L->eyeX * sx), &xx, &zf);
-    V3 ec = HP(&h, L->eyeU, L->eyeX * sx, zf - rE * 0.9 - 0.03 * fp->socket);
-    double RE = rE * h.hH;
-    V3 ax = h.F.across, up = h.F.along, fw = h.F.fwd;
-    { /* the eyeball, smooth: each point's normal straight out from its centre */
-      static const double WHITE[3][3] = { { 222, 216, 208 }, { 222, 216, 208 }, { 222, 216, 208 } };
-      V3 pts[9][14];
-      for (int k = 0; k <= 8; k++) {
-        double b = -PI / 2 + PI * k / 8;
-        for (int i = 0; i < 14; i++) {
-          double a = (double)i / 14 * PI * 2;
-          pts[k][i] = add(ec, add(mul(ax, cos(b) * cos(a) * RE), add(mul(up, sin(b) * RE), mul(fw, cos(b) * sin(a) * RE))));
-        }
-      }
-      for (int k = 0; k < 8; k++)
-        for (int i = 0; i < 14; i++) {
-          int j = (i + 1) % 14;
-          V3 A = pts[k][i], B = pts[k + 1][j], C = pts[k][j], Dd = pts[k + 1][i];
-          V3 n1[3] = { norm(sub(A, ec)), norm(sub(B, ec)), norm(sub(C, ec)) }, n2[3] = { norm(sub(A, ec)), norm(sub(Dd, ec)), norm(sub(B, ec)) };
-          put_smooth(o, A, B, C, FR_EYE_WHITE, FP_EYE, false, n1, WHITE);
-          put_smooth(o, A, Dd, B, FR_EYE_WHITE, FP_EYE, false, n2, WHITE);
-        }
-    }
-    V3 g = norm(add(mul(gaze, 1), mul(fw, 0.4))), gx = norm(cross(up, g)), gy = cross(g, gx);
-    double iris[3] = { fig->iris[0], fig->iris[1], fig->iris[2] };
-    /* the iris, the pupil, and the wet eye: the screen's light caught in it and a smaller second light */
-    static const double PUPIL[3] = { 10, 10, 12 }, SHINE[3] = { 240, 240, 236 }, SHINE2[3] = { 220, 224, 226 };
-    const double *dcol[4] = { iris, PUPIL, SHINE, SHINE2 };
-    static const double DR[4] = { 0.46, 0.19, 0.07, 0.035 }, DL[4] = { 1.0, 1.012, 1.022, 1.024 }, DX[4] = { 0, 0, -0.17, 0.16 }, DY[4] = { 0, 0, 0.2, -0.12 };
-    for (int d = 0; d < 4; d++) {
-      V3 c = add(add(ec, mul(g, RE * DL[d])), add(mul(gx, DX[d] * RE), mul(gy, DY[d] * RE))), ring[10];
-      for (int i = 0; i < 10; i++) {
-        double a = (double)i / 10 * PI * 2;
-        ring[i] = add(c, add(mul(gx, cos(a) * RE * DR[d]), mul(gy, sin(a) * RE * DR[d])));
-      }
-      for (int i = 0; i < 10; i++) put_own(o, c, ring[i], ring[(i + 1) % 10], FR_IRIS, FP_EYE, true, dcol[d]);
-    }
-    double open = -0.36 + (0.62 + 0.1 * ex.browUp - 0.08 * ex.frown) * (1 - ex.blink);
-    for (int l = 0; l < 3; l++) { /* the lids: the upper comes down to blink, its lashes, the lower stays */
-      double from = l == 2 ? -0.38 : l ? open + 0.06 : PI / 2, to = l == 2 ? -PI / 2 : l ? open - 0.03 : open, lc[3];
-      if (l == 1)
-        for (int c = 0; c < 3; c++) lc[c] = fig->hair[c] * 0.45;
-      else {
-        tone(&h, L->eyeU + (l ? -0.04 : 0.04), L->eyeX, zf, lc);
-        for (int c = 0; c < 3; c++) lc[c] *= l ? 0.95 : 0.92;
-      }
-      V3 pts[4][11];
-      double r = RE * (l == 1 ? 1.085 : 1.07);
-      for (int k = 0; k <= 3; k++) {
-        double b = from + (to - from) * k / 3;
-        for (int i = 0; i <= 10; i++) {
-          double a = PI * 0.08 + PI * 0.84 * i / 10;
-          pts[k][i] = add(ec, add(mul(ax, cos(b) * cos(a) * r), add(mul(up, sin(b) * r), mul(fw, cos(b) * sin(a) * r))));
-        }
-      }
-      const double lcs[3][3] = { { lc[0], lc[1], lc[2] }, { lc[0], lc[1], lc[2] }, { lc[0], lc[1], lc[2] } };
-      for (int k = 0; k < 3; k++) /* smooth, round the eyeball */
-        for (int i = 0; i < 10; i++) {
-          V3 A = pts[k][i], B = pts[k + 1][i + 1], C = pts[k][i + 1], Dd = pts[k + 1][i];
-          V3 n1[3] = { norm(sub(A, ec)), norm(sub(B, ec)), norm(sub(C, ec)) }, n2[3] = { norm(sub(A, ec)), norm(sub(Dd, ec)), norm(sub(B, ec)) };
-          put_smooth(o, A, B, C, FR_LID, FP_EYE, true, n1, lcs);
-          put_smooth(o, A, Dd, B, FR_LID, FP_EYE, true, n2, lcs);
-        }
-    }
+    double sx = e ? -1 : 1;
     { /* the brow: a band of hair over the ridge, the inner end lifting or drawing down */
       V3 bp[5][2];
       for (int q = 0; q < 5; q++) {
@@ -1276,35 +1372,59 @@ bool fig_face_rules(int who, FigFaceRules *r) {
   FigSpec f;
   fig_crew(who, 1.75f, 0, &f);
   memset(&f.pose, 0, sizeof f.pose); /* standing straight: the head's axes are the world's */
+  f.detail = 1;
   int n = fig_build(&f, t, FIG_MAX_TRIS);
   if (n < 0) return false;
   Skel K = skeleton(1.75);
   Land L = landmarks();
-  double hH = K.H / 8, bottom = K.chin + 0.01 * K.H - 0.01 * K.H;
-  /* the eyeballs (the white spheres: one eye wide each), the iris centres (the pupils), the nose's widest point, the
-   * mouth's inside (its corners), the ears' extents; in head units */
-  double ex0 = 1e9, ex1 = -1e9, ey = 0, ny = 0, nx = 0, mx = 0, px = 0, et = -1e9, eb = 1e9;
-  int ne = 0, np = 0;
+  double hH = K.H / 8, bottom = K.chin + 0.01 * K.H - 0.01 * K.H, mm = 218.75;
+  /* on the right eye (x > 0): the globe, the iris and the pupil (the iris's innermost ring), the opening (the lashes'
+   * span and, at the eye's middle, the lashes' foot and the tear line's), the cornea's glint; the nose's widest
+   * point, the mouth's inside (its corners), the ears' extents; in head units */
+  double gx0 = 1e9, gx1 = -1e9, gu = 0, ix0 = 1e9, ix1 = -1e9, px0 = 1e9, px1 = -1e9, lx0 = 1e9, lx1 = -1e9;
+  double up = 1e9, lo = 1e9, glint = -1e9, nx = 0, mx = 0, et = -1e9, eb = 1e9, brow_z = -1e9, cheek_z = -1e9;
+  int ng = 0;
   for (int i = 0; i < n; i++) {
     const FigTri *q = &t[i];
     for (int k = 0; k < 3; k++) {
-      double x = q->v[k][0] / hH, u = (q->v[k][1] - bottom) / hH;
-      if (q->role == FR_EYE_WHITE && x > 0) ex0 = mind(ex0, x), ex1 = maxd(ex1, x), ey += u, ne++;
-      if (q->role == FR_IRIS && x > 0 && k == 0) px += x, np++;
-      if (q->part == FP_FACE && q->role == FR_SKIN && x > 0 && u < 0.29) nx = maxd(nx, x);
+      double x = q->v[k][0] / hH, u = (q->v[k][1] - bottom) / hH, z = q->v[k][2] / hH;
+      if (x <= 0) continue;
+      bool globe = q->part == FP_EYE && q->shade == FS_SMOOTH && (q->role == FR_EYE_WHITE || q->role == FR_IRIS);
+      if (globe) gx0 = mind(gx0, x), gx1 = maxd(gx1, x), gu += u, ng++;
+      if (globe && q->role == FR_IRIS) ix0 = mind(ix0, x), ix1 = maxd(ix1, x);
+      if (q->role == FR_IRIS && q->shade == FS_LIT) glint = maxd(glint, z);
+      if (q->role == FR_LASH) {
+        lx0 = mind(lx0, x), lx1 = maxd(lx1, x);
+        if (fabs(x - L.eyeX) < 1.5 * MM) up = mind(up, u);
+      }
+      if (q->role == FR_TEAR && fabs(x - L.eyeX) < 1.5 * MM) lo = mind(lo, u);
+      if (q->part == FP_HEAD && q->role == FR_SKIN && fabs(x - L.eyeX) < 0.03) {
+        if (fabs(u - 0.56) < 0.02) brow_z = maxd(brow_z, z);
+        if (fabs(u - 0.40) < 0.02) cheek_z = maxd(cheek_z, z);
+      }
+      if (q->part == FP_FACE && q->role == FR_SKIN && u < 0.29) nx = maxd(nx, x);
       if (q->role == FR_MOUTH && q->part == FP_FACE && q->shade == FS_OWN && q->col[0] < 60) mx = maxd(mx, fabs(x));
       if (q->role == FR_SKIN && q->part == FP_NONE && x > 0.3) et = maxd(et, u), eb = mind(eb, u);
     }
+    if (q->part == FP_EYE && q->shade == FS_SMOOTH && q->role == FR_IRIS) /* the pupil: the iris's black middle */
+      for (int k = 0; k < 3; k++)
+        if (q->v[k][0] > 0 && q->cs[k][0] < 15) px0 = mind(px0, q->v[k][0] / hH), px1 = maxd(px1, q->v[k][0] / hH);
   }
-  (void)ny;
-  if (!ne || !np) return false;
-  double eye_w = ex1 - ex0, gap = 2 * ex0, pupil = px / np;
-  r->eye_height = ey / ne / EYE_U;
-  r->eye_gap = gap / eye_w;
-  r->nose_width = 2 * nx / gap;
-  r->mouth_corners = mx / 0.95 / pupil;
+  if (!ng || ix1 < ix0 || lx1 < lx0) return false;
+  double cx = (gx0 + gx1) / 2, line = cheek_z + (brow_z - cheek_z) * (L.eyeU - 0.40) / (0.56 - 0.40);
+  r->eye_height = gu / ng / EYE_U;
+  r->eye_gap = 2 * lx0 / (lx1 - lx0);
+  r->nose_width = 2 * nx / (2 * lx0);
+  r->mouth_corners = mx / 0.95 / cx;
   r->ear_top = et / L.earTop;
   r->ear_bottom = eb / L.earBottom;
+  r->globe = (gx1 - gx0) * mm / 24;
+  r->ipd = 2 * cx * mm / 63;
+  r->open_w = (lx1 - lx0) * mm / 31.5;
+  r->open_h = (up - lo) * mm / 10.2;
+  r->iris = (ix1 - ix0) * mm / 11.7;
+  r->pupil = (px1 - px0) * mm / 5.5;
+  r->cornea_behind = glint <= line ? 1 : 1 + (glint - line) * mm;
   return true;
 }
 
