@@ -21,7 +21,7 @@ const ENGINES = {
   strike: { file: 'music_strike.js', name: 'StrikeMusic' },
   cine: { file: 'music_cine.js', name: 'CineMusic' },
   overtone: { file: 'music_overtone.js', name: 'OvertoneMusic' },
-  chip: { html: 'reference/ace4combat.html', start: '// ---- music start ----', end: '// ---- music end ----', name: 'Music' },
+  chip: { html: 'web/index.html', start: '// ---- music start ----', end: '// ---- music end ----', name: 'Music' },
 };
 // helpers that are not instruments
 const SKIP = new Set(['place', 'alberti', 'broken', 'thirdBelow', 'impulse', 'build', 'schedule', 'tick', 'chordOf', 'send', 'env', 'out']);

@@ -1,5 +1,5 @@
 /* mathx.h - vec3 helpers and the game's seeded RNG.
- * From the JS math helpers and mulberry32 (ace4combat.html lines 212-228).
+ * From the JS math helpers and mulberry32 (the browser game, web/index.html).
  * Vectors are plain values on the stack; nothing here allocates. */
 #ifndef A4C_MATHX_H
 #define A4C_MATHX_H

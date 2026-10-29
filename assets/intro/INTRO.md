@@ -3,7 +3,7 @@
 The intro that plays before the main menu is data. `intro_script.json` holds every camera move, every jet and missile
 path, the flares, the events, the text cards and the screen effects, all baked to world space. An engine only has to
 interpolate keys and draw; nothing is choreographed in engine code. The browser game plays it today
-(`ace4combat.html`, the `IntroCore` and `Intro` modules between `---- intro core start ----` and `---- intro end ----`);
+(the browser game (`web/index.html`), the `IntroCore` and `Intro` modules between `---- intro core start ----` and `---- intro end ----`);
 the C port can load the same file.
 
 Version 2 (2026-10-24) reshoots it like an aviation film. It has 24 shots cut on the beat, with long lenses on the deck at sunrise
@@ -93,11 +93,11 @@ with hard cuts and no title, so add the `smoketitle` before shipping.
 | `src/build_script.js` | The authoring tool. Waypoints, missile guidance, camera moves and cue times live here; it writes `intro_script.json`. Edit this, not the JSON. |
 | `src/intro_core.js` | Engine-neutral helpers shared by the builder and the game: key sampling, angles to axes, flare paths, ship motion. Port these first. |
 | `src/intro.js` | The browser player (rendering, particles, sounds, skip handling). |
-| `src/build_intro.py` | Patches the intro into `ace4combat.html`, and puts in the current Steel Horizon and Pop modules (`src/music_horizon.js`, `src/music_pop.js`, copied from `music/engines/` in the repo). Re-appliable on a file that already has the intro; anchors on exact strings. |
+| `src/build_intro.py` | Patches the intro into the browser game (`web/index.html`), and puts in the current Steel Horizon and Pop modules (`src/music_horizon.js`, `src/music_pop.js`, copied from `music/engines/` in the repo). Re-appliable on a file that already has the intro; anchors on exact strings. |
 | `tools/render_frames.js`, `tools/flow_test.js` | Playwright checks: still frames of chosen times, and the boot, skip, menu and game flow. |
 
 Rebuild: `node src/build_script.js intro_script.json`, `python3 src/build_assets.py <ace4combat dir> intro_assets.json`,
-then `python3 src/build_intro.py <ace4combat.html> . [out.html]`.
+then `python3 src/build_intro.py <game.html> . [out.html]`.
 
 ## Clock, music and the timeline
 

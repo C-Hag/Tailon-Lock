@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Add the Tailon Lock opening cinematic to ace4combat.html. Re-appliable: run it on whatever the game file holds now.
+"""Add the Tailon Lock opening cinematic to the browser game (web/index.html). Re-appliable: run it on whatever the game file holds now.
 
-usage: build_intro.py <ace4combat.html> <intro dir> [out.html]
+usage: build_intro.py <game.html> <intro dir> [out.html]
 <intro dir> holds intro_script.json, intro_assets.json and src/ (intro_core.js, intro.js, music_horizon.js, music_pop.js).
 Every edit is anchored on an exact string. The intro block and the Steel Horizon module are replaced if already there; the
 script stops if an anchor is missing.

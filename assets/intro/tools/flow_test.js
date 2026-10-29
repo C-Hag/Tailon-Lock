@@ -1,5 +1,5 @@
 // Plays the real input flow of a built game file: boot screen, key, intro, skip, menu with music, replay, game.
-// usage: node flow_test.js <ace4combat.html> [out dir]   (needs Playwright with Chromium)
+// usage: node flow_test.js <game.html> [out dir]   (needs Playwright with Chromium)
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 const [html, out = '.'] = process.argv.slice(2);

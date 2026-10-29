@@ -38,7 +38,7 @@ compare.
 | `strike` | Carrier Dawn (Strike) | `music_strike.js` | `tracks/carrier-dawn-strike.mp3` |
 | `cine` | Carrier Dawn (Cinematic) | `music_cine.js` | `tracks/carrier-dawn-cinematic.mp3` |
 | `overtone` | Carrier Dawn (Overtone) | `music_overtone.js` | `tracks/carrier-dawn-overtone.mp3` |
-| `chip` | Carrier Dawn (SID original) | `Music` inside `../reference/ace4combat.html` | `tracks/carrier-dawn-theme.mp3` |
+| `chip` | Carrier Dawn (SID original) | `Music` inside `../web/index.html` | `tracks/carrier-dawn-theme.mp3` |
 | `neon` | Neon Strike (80s synthwave pop, guitar solo) | `../tools/write_synthwave.py` (synth score only) | `tracks/neon-strike.mp3` |
 | `midnight` | Midnight Ace (80s synthwave pop/rock, guitar and synth duet) | `../tools/write_synthwave.py` (synth score only) | `tracks/midnight-ace.mp3` |
 | `rocknroll` | Six O'Clock High (1980s rock 'n' roll, smooth transitions) | `../tools/write_synthwave.py` (synth score only) | `tracks/six-oclock-high.mp3` |

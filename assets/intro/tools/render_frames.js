@@ -1,5 +1,5 @@
 // Renders still frames of the intro from a built game file, for checking shots without playing the music.
-// usage: node render_frames.js <ace4combat.html> <out dir> [t1,t2,...]   (needs Playwright with Chromium)
+// usage: node render_frames.js <game.html> <out dir> [t1,t2,...]   (needs Playwright with Chromium)
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 const [html, out, list] = process.argv.slice(2);

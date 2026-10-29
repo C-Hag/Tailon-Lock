@@ -1,6 +1,6 @@
 /* main.c - SDL3 window, fixed 60 Hz update with an accumulator, render,
  * present, and the menu / play / pause / game-over flow. Replaces the JS
- * frame() loop and flow code (ace4combat.html lines 3682-3752, 3937-3958).
+ * frame() loop and flow code (the browser game, web/index.html).
  *
  * Everything is drawn into a framebuffer at 1/SCALE of the window size and
  * upscaled with nearest-neighbour filtering.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Add selectable jets to ace4combat.html. Re-appliable: run it on whatever the source file holds.
+"""Add selectable jets to the browser game (web/index.html). Re-appliable: run it on whatever the source file holds.
 
-usage: game_patch.py <ace4combat.html> <jets_game.js> [out.html]
+usage: game_patch.py <game.html> <jets_game.js> [out.html]
 Edits are anchored on exact strings; the script stops if an anchor is missing or already patched.
 """
 import json, sys

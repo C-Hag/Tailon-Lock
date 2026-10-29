@@ -36,7 +36,7 @@ in `build/check/<date>-<commit>.txt`).
 | 10-20 | our own desktop platform layer; SDL3 deleted | planned | |
 | 23-24 | the last downloaded library gone; final audit | planned | |
 | 30-32 | iOS | later | |
-| W1-W2 | mobile mode in the browser game (web v28) | done in the web build; repo copy to refresh | |
+| W1-W2 | mobile mode in the browser game (web v28) | done; in the repo as web/ | (this commit) |
 | W3 | the browser game published as a web page | planned, after the push and Pages | |
 
 Outside code still in the build: SDL3 (until brick 20), downloaded at build
@@ -266,7 +266,7 @@ Instead:
 
 ## Web version: mobile mode in the browser game (bricks W1-W3)
 
-The browser version of the game (`reference/ace4combat.html`), published as a
+The browser version of the game (`web/index.html`), published as a
 web page from the repository, so anyone can open the link on a phone or
 tablet and play. It is a separate track from the C bricks and can run beside
 them.
@@ -279,11 +279,9 @@ them.
   - a slim see-through panel at the lower left;
   - the recorded sound and DMX10 score, the version 7 intro, and the CIC
     control-room scene.
-  It is built by re-appliable patch scripts on top of the browser source.
-  `reference/ace4combat.html` in the repository is the older copy from
-  before the mobile mode. It is to be refreshed with the built
-  `tailonlock.html` and its `sfx/` and `music/` folders. There must be no
-  second touch implementation in the old copy.
+  It is built by re-appliable patch scripts on top of the browser source,
+  and is in the repository as `web/` (`index.html`, `sfx/`, `music/`); the
+  old pre-mobile copy is gone.
 - **W3. The published page:** the page served from the repository as a site,
   with a short link in the README. Gate: it opens and plays on the owner's
   tablet and phone from the link.

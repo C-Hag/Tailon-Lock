@@ -1,6 +1,6 @@
 /* music.c - the soundtrack, played live by the SID-style synth (synth.c)
  * from the scores in assets/music. Replaces the JS TRACKS table and
- * musicUpdate (ace4combat.html lines 3705-3714). The rendered mp3s in
+ * musicUpdate (the browser game, web/index.html). The rendered mp3s in
  * music/tracks stay in the repo as the reference for how each theme should
  * sound, but the game no longer ships them. */
 #include "music.h"
