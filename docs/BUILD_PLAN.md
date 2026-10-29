@@ -28,8 +28,9 @@ in `build/check/<date>-<commit>.txt`).
 | 2 | JSON tree in one arena, typed getters, stress and leak tests | done | in the root commit |
 | 3 | our JSON reader and cJSON side by side on every asset: 43 of 43 identical | done | 5f67a14 |
 | 4 | the game reads JSON with our reader, our JSON writer; cJSON deleted | done | 3ab1a5b |
-| 5-8 | our own GLB loader (glTF 2.0) | next | |
-| 21-22 | our own crypto (X25519, ChaCha20-Poly1305, BLAKE2b) | planned | |
+| 5-8 | our own GLB loader (glTF 2.0); the game loads its meshes from .glb | done | 479daf4 ... 2f44c99 |
+| 21 | our own crypto: X25519, ChaCha20-Poly1305, BLAKE2b, Elligator 2 | done | (this commit) |
+| 22 | online play on our own crypto; Monocypher deleted | next | |
 | 9 | the `plat.h` interface (touch, callback-driven loop) | planned | |
 | 25-29 | touch controls, scaling, Android | planned | |
 | 10-20 | our own desktop platform layer; SDL3 deleted | planned | |
@@ -155,6 +156,29 @@ These come before the platform layer.
     `net.c` uses from Monocypher. Gate: every official RFC test vector, 1
     million random round trips against fixed outputs, and a constant-time
     review of all secret-dependent code.
+    **Brick 21 audit (done):**
+    - Every official vector passes: RFC 7748 (both scalar vectors, 1 and
+      1,000 iterations, Diffie-Hellman), RFC 7693 (BLAKE2b-512 of "abc" and
+      the appendix E self-test digest), and RFC 8439 (the block function,
+      encryption, Poly1305 and the AEAD).
+    - 140,000 random cases agree with independent implementations: Python's
+      hashlib and the `cryptography` package as test oracles, plus a
+      big-integer model of RFC 9380 for the Elligator map.
+    - A million AEAD round trips (plus 1,000 X25519, 100,000 Elligator and
+      100,000 BLAKE2b) hash to the digest that the independent
+      implementations give for the same inputs.
+    - The constant-time review covers every secret-dependent path:
+      - the field arithmetic has no data-dependent branch or index;
+        division only by the constant 65536;
+      - the ladder swaps with masks;
+      - exponentiation branches only on public exponents (p-2, (p-1)/2);
+      - Elligator picks its root with a masked swap;
+      - Poly1305's final reduction is masked;
+      - tag and point comparisons OR all bytes together before a single
+        test;
+      - BLAKE2b and ChaCha20 branch only on lengths.
+      X25519 takes the same time for one-bit, all-bits and random scalars,
+      within 1 %.
 22. **Switch online play over.** Two instances on one machine connect with a
     6-digit code and play, and a wrong code is rejected. Then delete
     Monocypher.

@@ -83,7 +83,8 @@ add_library(a4c_core STATIC
   src/core/map.c
   src/core/defend.c
   src/core/json.c
-  src/core/glb.c)
+  src/core/glb.c
+  src/core/crypto.c)
 target_include_directories(a4c_core PUBLIC src)
 target_link_libraries(a4c_core PUBLIC a4c_flags)
 if(NOT MSVC)
@@ -164,6 +165,17 @@ if(A4C_BUILD_TESTS)
   add_executable(fuzz_glb tests/fuzz_glb.c)
   target_link_libraries(fuzz_glb PRIVATE a4c_core)
   add_test(NAME glb_fuzz COMMAND fuzz_glb 10)
+  # our cryptography: the RFC vectors, edge cases and a million round trips (about 3 s; --quick under ASan)
+  add_executable(test_crypto tests/test_crypto.c)
+  target_link_libraries(test_crypto PRIVATE a4c_core)
+  if(A4C_SANITIZE)
+    add_test(NAME crypto COMMAND test_crypto --quick)
+  else()
+    add_test(NAME crypto COMMAND test_crypto)
+  endif()
+  # our cryptography on request, for the cross-checks (tools/crypto_crosscheck.py)
+  add_executable(crypto_tool tests/crypto_tool.c)
+  target_link_libraries(crypto_tool PRIVATE a4c_core)
   # the checker's mesh round trip (tools/check, stage 3)
   add_executable(glb_dump tests/glb_dump.c)
   target_link_libraries(glb_dump PRIVATE a4c_core)
