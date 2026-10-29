@@ -82,7 +82,8 @@ add_library(a4c_core STATIC
   src/core/jets.c
   src/core/map.c
   src/core/defend.c
-  src/core/json.c)
+  src/core/json.c
+  src/core/glb.c)
 target_include_directories(a4c_core PUBLIC src)
 target_link_libraries(a4c_core PUBLIC a4c_flags)
 if(NOT MSVC)
@@ -153,6 +154,12 @@ if(A4C_BUILD_TESTS)
   add_test(NAME json_fuzz COMMAND fuzz_json 10 ${CMAKE_SOURCE_DIR}/assets/maps/maps_index.json
     ${CMAKE_SOURCE_DIR}/assets/jets/jets_data.json ${CMAKE_SOURCE_DIR}/assets/intro/intro_script.json
     ${CMAKE_SOURCE_DIR}/assets/music/ghost.json)
+  add_executable(test_glb tests/test_glb.c)
+  target_link_libraries(test_glb PRIVATE a4c_core)
+  add_test(NAME glb COMMAND test_glb)
+  add_executable(fuzz_glb tests/fuzz_glb.c)
+  target_link_libraries(fuzz_glb PRIVATE a4c_core)
+  add_test(NAME glb_fuzz COMMAND fuzz_glb 10)
   # the checker's golden-data dumper (tools/check, stage 3)
   add_executable(json_dump tests/json_dump.c)
   target_link_libraries(json_dump PRIVATE a4c_core)

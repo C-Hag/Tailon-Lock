@@ -1,0 +1,140 @@
+/* fuzz_glb.c - a mutation fuzzer for our own GLB reader (src/core/glb.c).
+ * Original code for this project. Run it under ASan/UBSan.
+ *
+ * usage: fuzz_glb SECONDS [SEED.glb...]
+ *
+ * Starts from a few built-in GLB files (and any given), and mutates them:
+ * header and chunk fields set to edge values, bytes flipped, cut short,
+ * grown. Every input lives in a buffer of exactly its own size, so a read past
+ * the end is a sanitizer error. For each accepted input it checks that the
+ * chunks lie inside the header's length and inside the buffer, that the JSON
+ * chunk is first and non-empty, and that a refusal says why. Exits 1 on a
+ * broken rule (the input is saved to fuzz-fail.glb). */
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "core/glb.h"
+
+static uint64_t rng = 0x243F6A8885A308D3ull;
+static uint64_t next(void) {
+  rng ^= rng >> 12;
+  rng ^= rng << 25;
+  rng ^= rng >> 27;
+  return rng * 0x2545F4914F6CDD1Dull;
+}
+static size_t below(size_t n) { return n ? (size_t)(next() % n) : 0; }
+
+static void put32(uint8_t *p, uint32_t v) {
+  for (int i = 0; i < 4; i++) p[i] = (uint8_t)(v >> (8 * i));
+}
+
+/* a GLB: header, JSON chunk, optional BIN chunk */
+static size_t build(uint8_t *b, const char *json, size_t bin_len) {
+  size_t jl = (strlen(json) + 3) & ~(size_t)3, n = 12;
+  put32(b, GLB_MAGIC);
+  put32(b + 4, 2);
+  put32(b + n, (uint32_t)jl);
+  put32(b + n + 4, GLB_CHUNK_JSON);
+  memset(b + n + 8, ' ', jl);
+  memcpy(b + n + 8, json, strlen(json));
+  n += 8 + jl;
+  if (bin_len) {
+    put32(b + n, (uint32_t)bin_len);
+    put32(b + n + 4, GLB_CHUNK_BIN);
+    for (size_t i = 0; i < bin_len; i++) b[n + 8 + i] = (uint8_t)i;
+    n += 8 + bin_len;
+  }
+  put32(b + 8, (uint32_t)n);
+  return n;
+}
+
+static long accepted;
+
+static int check(const uint8_t *src, size_t n) {
+  uint8_t *data = malloc(n ? n : 1);
+  memcpy(data, src, n);
+  GlbFile g;
+  const char *err;
+  int ok = 1;
+  if (glb_open(data, n, &g, &err)) {
+    accepted++;
+    uint32_t total = n >= 12 ? (uint32_t)(data[8] | data[9] << 8 | data[10] << 16 | (uint32_t)data[11] << 24) : 0;
+    const uint8_t *j = (const uint8_t *)g.json;
+    if (err || !g.json || g.json_len == 0 || j != data + 20 || g.json_len > total - 20 || total > n) ok = 0;
+    if (g.bin && (g.bin < data + 20 || g.bin + g.bin_len > data + total)) ok = 0;
+  } else if (!err) ok = 0;
+  free(data);
+  return ok;
+}
+
+int main(int argc, char **argv) {
+  if (argc < 2) {
+    fprintf(stderr, "usage: fuzz_glb SECONDS [SEED.glb...]\n");
+    return 2;
+  }
+  double secs = atof(argv[1]);
+  enum { CAP = 1 << 16, MAX_SEEDS = 16 };
+  static uint8_t seeds[MAX_SEEDS][CAP], buf[CAP];
+  size_t seed_n[MAX_SEEDS];
+  int ns = 0;
+  seed_n[ns] = build(seeds[ns], "{\"asset\":{\"version\":\"2.0\"}}", 0), ns++;
+  seed_n[ns] = build(seeds[ns], "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":24}]}", 24), ns++;
+  seed_n[ns] = build(seeds[ns], "{}", 4), ns++;
+  for (int i = 2; i < argc && ns < MAX_SEEDS; i++) {
+    FILE *f = fopen(argv[i], "rb");
+    if (!f) continue;
+    seed_n[ns] = fread(seeds[ns], 1, CAP, f);
+    fclose(f);
+    if (seed_n[ns]) ns++;
+  }
+  rng ^= (uint64_t)time(NULL) ^ (uint64_t)(uintptr_t)&secs;
+  static const uint32_t EDGE[] = { 0, 1, 2, 3, 4, 8, 11, 12, 16, 20, 0x7FFFFFFFu, 0x80000000u, 0xFFFFFFFFu, 0xFFFFFFFCu,
+                                   GLB_MAGIC, GLB_CHUNK_JSON, GLB_CHUNK_BIN };
+  long tried = 0;
+  clock_t end = clock() + (clock_t)(secs * CLOCKS_PER_SEC);
+  while (clock() < end) {
+    for (int batch = 0; batch < 1024; batch++) {
+      int s = (int)below((size_t)ns);
+      size_t n = seed_n[s];
+      memcpy(buf, seeds[s], n);
+      for (int r = 1 + (int)below(3); r > 0; r--) {
+        switch (below(5)) {
+        case 0: /* an edge value in a header or chunk field (or anywhere, 4-aligned) */
+          if (n >= 4) put32(buf + 4 * below(n / 4 < 12 ? n / 4 : 12), EDGE[below(sizeof EDGE / sizeof *EDGE)]);
+          break;
+        case 1:
+          if (n) buf[below(n)] ^= (uint8_t)(1u << below(8));
+          break;
+        case 2:
+          n = below(n + 1);
+          break;
+        case 3: { /* grow by a few bytes */
+          size_t k = 1 + below(16);
+          if (n + k <= CAP) {
+            for (size_t i = 0; i < k; i++) buf[n + i] = (uint8_t)next();
+            n += k;
+          }
+          break;
+        }
+        default:
+          if (n) buf[below(n)] = (uint8_t)next();
+        }
+      }
+      tried++;
+      if (!check(buf, n)) {
+        FILE *f = fopen("fuzz-fail.glb", "wb");
+        if (f) {
+          fwrite(buf, 1, n, f);
+          fclose(f);
+        }
+        fprintf(stderr, "fuzz_glb: a rule broke after %ld inputs; saved fuzz-fail.glb\n", tried);
+        return 1;
+      }
+    }
+  }
+  printf("fuzz_glb: %ld inputs (%ld accepted), %d seeds, no rule broken\n", tried, accepted, ns);
+  return 0;
+}
