@@ -20,5 +20,8 @@ void sfx_drain(Game *g);
 void sfx_play(SoundKind kind, float f0, float f1, float dur, float vol);
 /* Engine drones follow the local jets; paused or NULL silences them. */
 void sfx_engines(const Game *g, bool paused);
+/* Test hook (A4C_MIX_DUMP): with no sound device, mix frames now and write them to the dump file. */
+void sfx_dump_tick(int frames);
+bool sfx_dumping(void);
 
 #endif

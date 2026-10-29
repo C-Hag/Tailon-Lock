@@ -8,6 +8,8 @@
 
 #include "music.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "platform/plat.h"
@@ -88,14 +90,37 @@ static void mix(float *buf, int n, void *ud) {
   }
 }
 
+/* test hook: A4C_MIX_DUMP=file.raw with --frames writes the whole mix (effects and music, float stereo, 48 kHz)
+ * instead of playing it, one tick's worth per tick, so a film of the intro gets its sound in step */
+static FILE *mix_dump;
+
+void sfx_dump_tick(int frames) {
+  float buf[512 * 2];
+  for (; mix_dump && frames > 0; frames -= 512) {
+    int n = frames > 512 ? 512 : frames;
+    mix(buf, n, NULL);
+    fwrite(buf, sizeof(float) * 2, (size_t)n, mix_dump);
+  }
+}
+
+bool sfx_dumping(void) { return mix_dump != NULL; }
+
 bool sfx_init(void) {
+  const char *dump = getenv("A4C_MIX_DUMP");
+  if (dump) {
+    mix_dump = fopen(dump, "wb");
+    stream = mix_dump != NULL;
+    return stream;
+  }
   stream = plat_audio_open(RATE, mix, NULL);
   if (!stream) plat_log("audio: %s", plat_error());
   return stream;
 }
 
 void sfx_quit(void) {
-  if (stream) plat_audio_close();
+  if (mix_dump) fclose(mix_dump);
+  else if (stream) plat_audio_close();
+  mix_dump = NULL;
   stream = false;
 }
 

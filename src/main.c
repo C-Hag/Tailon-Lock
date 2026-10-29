@@ -239,7 +239,7 @@ static void play_intro(App *app) {
   app->state = ST_INTRO;
   app->intro_bg = true;
   app->intro_keep = true;
-  intro_start(app->settings.sound && app->settings.music && !app->fixed);
+  intro_start(app->settings.sound && app->settings.music && (!app->fixed || sfx_dumping()));
 }
 
 /* The intro reached the menu, or was skipped: the menu opens over its last
@@ -1025,6 +1025,7 @@ static bool loop_frame(void) {
   if (max_frames >= 0) {
     app_update(&app, dt);
     if (checking) physics_check(&app.game);
+    sfx_dump_tick(48000 / TICK_HZ);
   } else {
     uint64_t now = plat_counter();
     acc += now - prev;
