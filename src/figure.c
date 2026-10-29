@@ -256,12 +256,12 @@ static void tube(const Skel *K, V3 a, V3 b, V3 across, double w0, double d0, dou
 }
 
 /* ---- the head, by the face's thirds (see figure.js for the table's meaning) ---- */
-static const double HEAD[18][4] = { /* u, half-width, forward (the face's profile), back: about 3/4 as broad as tall */
-  { 0.0, 0.112, 0.30, -0.05 }, { 0.04, 0.16, 0.40, -0.1 }, { 0.1, 0.224, 0.41, -0.2 }, { 0.16, 0.264, 0.43, -0.3 },
-  { 0.2, 0.28, 0.44, -0.34 }, { 0.24, 0.296, 0.45, -0.38 }, { 0.267, 0.312, 0.44, -0.4 }, { 0.33, 0.336, 0.43, -0.43 },
-  { 0.4, 0.352, 0.44, -0.46 }, { 0.47, 0.368, 0.43, -0.48 }, { 0.533, 0.368, 0.465, -0.49 }, { 0.6, 0.368, 0.46, -0.5 },
-  { 0.7, 0.368, 0.445, -0.5 }, { 0.8, 0.36, 0.41, -0.49 }, { 0.88, 0.328, 0.34, -0.44 }, { 0.94, 0.256, 0.24, -0.34 },
-  { 0.98, 0.144, 0.12, -0.18 }, { 1.0, 0.032, 0.02, -0.03 } };
+static const double HEAD[18][4] = { /* u, half-width, forward (the face's profile), back: about 4/5 as broad as tall */
+  { 0.0, 0.121, 0.30, -0.05 }, { 0.04, 0.1728, 0.40, -0.1 }, { 0.1, 0.2419, 0.41, -0.2 }, { 0.16, 0.2851, 0.43, -0.3 },
+  { 0.2, 0.3024, 0.44, -0.34 }, { 0.24, 0.3197, 0.45, -0.38 }, { 0.267, 0.337, 0.44, -0.4 }, { 0.33, 0.3629, 0.43, -0.43 },
+  { 0.4, 0.3802, 0.44, -0.46 }, { 0.47, 0.3974, 0.43, -0.48 }, { 0.533, 0.3974, 0.465, -0.49 }, { 0.6, 0.3974, 0.46, -0.5 },
+  { 0.7, 0.3974, 0.445, -0.5 }, { 0.8, 0.3888, 0.41, -0.49 }, { 0.88, 0.3542, 0.34, -0.44 }, { 0.94, 0.2765, 0.24, -0.34 },
+  { 0.98, 0.1555, 0.12, -0.18 }, { 1.0, 0.0346, 0.02, -0.03 } };
 #define NHEAD 18
 
 static void head_at(double u, double *hw, double *zf, double *zb) {
@@ -632,7 +632,7 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
       }
     }
     { /* the ear, between the brow line and the nose's base, flat against the head */
-      V3 ec2 = HP(&h, (L->earTop + L->earBottom) / 2, 0.375 * sx, -0.06);
+      V3 ec2 = HP(&h, (L->earTop + L->earBottom) / 2, 0.405 * sx, -0.06);
       double half = (L->earTop - L->earBottom) / 2 * h.hH;
       V3 e0 = add(ec2, mul(h.F.along, -half)), e1 = add(ec2, mul(h.F.along, half * 0.15)), e2 = add(ec2, mul(h.F.along, half));
       tube(K, e0, e1, h.F.fwd, 0.006, 0.003, 0.012, 0.0035, FR_SKIN, FP_NONE, o);
@@ -667,15 +667,15 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
     V3 band[9];
     for (int i = 0; i <= 8; i++) {
       double a = PI * i / 8;
-      band[i] = HP(&h, 0.4 + sin(a) * 0.62, cos(a) * 0.42, -0.03);
+      band[i] = HP(&h, 0.4 + sin(a) * 0.62, cos(a) * 0.45, -0.03);
     }
     for (int i = 0; i + 1 < 9; i++) tube(K, band[i], band[i + 1], h.F.fwd, 0.004, 0.003, 0.004, 0.003, FR_KIT, FP_NONE, o);
     for (int e = 0; e < 2; e++) {
       double sx = e ? -1 : 1;
-      V3 c = HP(&h, 0.4, 0.42 * sx, -0.04);
+      V3 c = HP(&h, 0.4, 0.45 * sx, -0.04);
       tube(K, sub(c, mul(h.F.across, 0.04 * sx * h.hH)), add(c, mul(h.F.across, 0.04 * sx * h.hH)), h.F.fwd, 0.011, 0.012, 0.011, 0.012, FR_KIT, FP_NONE, o);
     }
-    tube(K, HP(&h, 0.38, 0.42, 0.0), HP(&h, 0.22, 0.2, 0.45), h.F.across, 0.0015, 0.0015, 0.0015, 0.0015, FR_KIT, FP_NONE, o);
+    tube(K, HP(&h, 0.38, 0.45, 0.0), HP(&h, 0.22, 0.2, 0.45), h.F.across, 0.0015, 0.0015, 0.0015, 0.0015, FR_KIT, FP_NONE, o);
     tube(K, HP(&h, 0.22, 0.2, 0.45), HP(&h, 0.2, 0.08, 0.5), h.F.across, 0.004, 0.004, 0.004, 0.004, FR_KIT, FP_NONE, o);
   }
 }
@@ -729,10 +729,10 @@ int fig_build(const FigSpec *fig, FigTri *outp, int max) {
   /* the trunk: rings from the crotch to the base of the neck, wider at the chest, the waist taken in at the navel;
    * below the chest's joint they follow the hips, above it the chest */
   static const double TRD[9][4] = { { 0.07, 0.055, 0 }, { 0.088, 0.062, -0.004 }, { 0.084, 0.058, 0 }, { 0.078, 0.057, 0.004 }, { 0.083, 0.06, 0.004 },
-                                    { 0.092, 0.066, 0.01 }, { 0.097, 0.066, 0.01 }, { 0.096, 0.056, 0 }, { 0.05, 0.042, 0 } };
+                                    { 0.092, 0.066, 0.01 }, { 0.097, 0.066, 0.01 }, { 0.096, 0.056, 0 }, { 0.072, 0.05, 0 } };
   static const int TRR[9] = { FR_TROUSERS, FR_TROUSERS, FR_BELT, FR_SHIRT, FR_SHIRT, FR_SHIRT, FR_SHIRT, FR_SHIRT, FR_COLLAR };
   double TY[9] = { K.crotch - 0.02 * H, K.crotch + 0.03 * H, K.crotch + 0.07 * H, K.navel - 0.015 * H, K.navel + 0.05 * H,
-                   K.chest_under, K.chest_under + 0.04 * H, K.sh_y - 0.004 * H, K.chest_top + 0.004 * H };
+                   K.chest_under, K.chest_under + 0.04 * H, K.sh_y - 0.004 * H, K.chest_top + 0.022 * H };
   V3 tb[9][SEG];
   for (int r = 0; r < 9; r++) {
     const Joint *b = TY[r] <= K.chest_under ? &W[FB_HIPS] : &W[FB_CHEST];
@@ -750,7 +750,7 @@ int fig_build(const FigSpec *fig, FigTri *outp, int max) {
       put(o, tb[k][i], tb[k + 1][j], tb[k][j], TRR[k], FP_TRUNK, false);
       put(o, tb[k][i], tb[k + 1][i], tb[k + 1][j], TRR[k], FP_TRUNK, false);
     }
-  Ring neck[3] = { { 0, 0.034, 0.036, 0, FR_SKIN }, { 0.6, 0.031, 0.033, 0.003, FR_SKIN }, { 1.1, 0.03, 0.032, 0.006, FR_SKIN } };
+  Ring neck[3] = { { 0, 0.038, 0.039, 0, FR_SKIN }, { 0.6, 0.035, 0.036, 0.003, FR_SKIN }, { 1.1, 0.034, 0.035, 0.006, FR_SKIN } };
   sides(&K, &W[FB_NECK], neck, 3, FP_LIMB, o);
   head(&K, &W[FB_HEAD], fig, o);
   for (int s = 0; s < 2; s++) {

@@ -165,7 +165,7 @@ const Figure = (() => {
     const TR = [[K.crotch - 0.02 * H, 0.07, 0.055, 0, 'trousers'], [K.crotch + 0.03 * H, 0.088, 0.062, -0.004, 'trousers'],
       [K.crotch + 0.07 * H, 0.084, 0.058, 0, 'belt'], [K.navel - 0.015 * H, 0.078, 0.057, 0.004, 'shirt'], [K.navel + 0.05 * H, 0.083, 0.06, 0.004, 'shirt'],
       [K.chestUnder, 0.092, 0.066, 0.01, 'shirt'], [K.chestUnder + 0.04 * H, 0.097, 0.066, 0.01, 'shirt'], [K.shY - 0.004 * H, 0.096, 0.056, 0, 'shirt'],
-      [K.chestTop + 0.004 * H, 0.05, 0.042, 0, 'collar']].map(r => trunkRing(...r));
+      [K.chestTop + 0.022 * H, 0.072, 0.05, 0, 'collar']].map(r => trunkRing(...r));
     // the trunk's rings sit on two bones; place each by its own bone
     const tb = [];
     for (const r of TR) {
@@ -183,7 +183,7 @@ const Figure = (() => {
         tris.push({ v: [a[i], b[j], a[j]], role: tb[k].role, part: 'trunk' }, { v: [a[i], b[i], b[j]], role: tb[k].role, part: 'trunk' });
       }
     // the neck
-    sides(K, W.neck, [[0, 0.034, 0.036, 0], [0.6, 0.031, 0.033, 0.003], [1.1, 0.03, 0.032, 0.006]], 'skin', tris);
+    sides(K, W.neck, [[0, 0.038, 0.039, 0], [0.6, 0.035, 0.036, 0.003], [1.1, 0.034, 0.035, 0.006]], 'skin', tris);
     // the head: rings from the chin to the crown, by the face's thirds (see head())
     head(K, W.head, fig, tris);
     // arms and legs
@@ -242,11 +242,11 @@ const Figure = (() => {
   // to the nose's base, the nose's base to the brows and the brows to the hairline are each a third of the face
   // (chin to hairline = 4/5 of the head); the ear is as long as one third, between the brows and the nose's base.
   const HEAD = [
-    // u, half-width, forward (the face's profile), back: a head about three quarters as broad as it is tall
-    [0.0, 0.112, 0.30, -0.05], [0.04, 0.16, 0.40, -0.1], [0.1, 0.224, 0.41, -0.2], [0.16, 0.264, 0.43, -0.3], [0.2, 0.28, 0.44, -0.34],
-    [0.24, 0.296, 0.45, -0.38], [0.267, 0.312, 0.44, -0.4], [0.33, 0.336, 0.43, -0.43], [0.4, 0.352, 0.44, -0.46], [0.47, 0.368, 0.43, -0.48],
-    [0.533, 0.368, 0.465, -0.49], [0.6, 0.368, 0.46, -0.5], [0.7, 0.368, 0.445, -0.5], [0.8, 0.36, 0.41, -0.49], [0.88, 0.328, 0.34, -0.44],
-    [0.94, 0.256, 0.24, -0.34], [0.98, 0.144, 0.12, -0.18], [1.0, 0.032, 0.02, -0.03]];
+    // u, half-width, forward (the face's profile), back: a head about four fifths as broad as it is tall
+    [0.0, 0.121, 0.30, -0.05], [0.04, 0.1728, 0.40, -0.1], [0.1, 0.2419, 0.41, -0.2], [0.16, 0.2851, 0.43, -0.3], [0.2, 0.3024, 0.44, -0.34],
+    [0.24, 0.3197, 0.45, -0.38], [0.267, 0.337, 0.44, -0.4], [0.33, 0.3629, 0.43, -0.43], [0.4, 0.3802, 0.44, -0.46], [0.47, 0.3974, 0.43, -0.48],
+    [0.533, 0.3974, 0.465, -0.49], [0.6, 0.3974, 0.46, -0.5], [0.7, 0.3974, 0.445, -0.5], [0.8, 0.3888, 0.41, -0.49], [0.88, 0.3542, 0.34, -0.44],
+    [0.94, 0.2765, 0.24, -0.34], [0.98, 0.1555, 0.12, -0.18], [1.0, 0.0346, 0.02, -0.03]];
   const HN = 24;   // segments round the head
   // a point on the head's surface: u up the head, a round it (0 = the left side, pi/2 = the face)
   const headAt = (u) => {
@@ -471,7 +471,7 @@ const Figure = (() => {
       const bpts = [0, 0.25, 0.5, 0.75, 1].map(k => { const x = sx * (L.inner * 0.9 + (L.outer + 0.06 - L.inner * 0.9) * k), [, zb] = surf(bu(k), angleAt(bu(k), x)); return [P(bu(k) + 0.018 * Math.sin(k * Math.PI), x, zb + 0.022), P(bu(k) - 0.012, x, zb + 0.022)]; });
       for (let k = 0; k + 1 < bpts.length; k++) out.push({ v: [bpts[k][0], bpts[k + 1][0], bpts[k + 1][1]], role: 'brow', part: 'face', two: true }, { v: [bpts[k][0], bpts[k + 1][1], bpts[k][1]], role: 'brow', part: 'face', two: true });
       // the ear, between the brow line and the nose's base, flat against the head
-      const ec2 = P((L.earTop + L.earBottom) / 2, 0.375 * sx, -0.06), half = (L.earTop - L.earBottom) / 2 * hH;
+      const ec2 = P((L.earTop + L.earBottom) / 2, 0.405 * sx, -0.06), half = (L.earTop - L.earBottom) / 2 * hH;
       const e0 = add(ec2, mul(F.along, -half)), e1 = add(ec2, mul(F.along, half * 0.15)), e2 = add(ec2, mul(F.along, half));
       tube(K, e0, e1, F.fwd, 0.006, 0.003, 0.012, 0.0035, 'skin', out);
       tube(K, e1, e2, F.fwd, 0.012, 0.0035, 0.007, 0.003, 'skin', out);
@@ -498,10 +498,10 @@ const Figure = (() => {
     // the headset: a band over the crown, cups over the ears, a boom to the corner of the mouth
     if (C.headset) {
       const band = [];
-      for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8; band.push(P(0.4 + Math.sin(a) * 0.62, Math.cos(a) * 0.42, -0.03)); }
+      for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8; band.push(P(0.4 + Math.sin(a) * 0.62, Math.cos(a) * 0.45, -0.03)); }
       for (let i = 0; i + 1 < band.length; i++) tube(K, band[i], band[i + 1], F.fwd, 0.004, 0.003, 0.004, 0.003, 'kit', out);
-      for (const sx of [1, -1]) { const c = P(0.4, 0.42 * sx, -0.04); tube(K, sub(c, mul(F.across, 0.04 * sx * hH)), add(c, mul(F.across, 0.04 * sx * hH)), F.fwd, 0.011, 0.012, 0.011, 0.012, 'kit', out); }
-      tube(K, P(0.38, 0.42, 0.0), P(0.22, 0.2, 0.45), F.across, 0.0015, 0.0015, 0.0015, 0.0015, 'kit', out);
+      for (const sx of [1, -1]) { const c = P(0.4, 0.45 * sx, -0.04); tube(K, sub(c, mul(F.across, 0.04 * sx * hH)), add(c, mul(F.across, 0.04 * sx * hH)), F.fwd, 0.011, 0.012, 0.011, 0.012, 'kit', out); }
+      tube(K, P(0.38, 0.45, 0.0), P(0.22, 0.2, 0.45), F.across, 0.0015, 0.0015, 0.0015, 0.0015, 'kit', out);
       tube(K, P(0.22, 0.2, 0.45), P(0.2, 0.08, 0.5), F.across, 0.004, 0.004, 0.004, 0.004, 'kit', out);
     }
   }
