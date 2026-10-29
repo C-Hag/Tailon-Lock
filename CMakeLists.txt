@@ -75,7 +75,8 @@ add_library(a4c_core STATIC
   src/core/json.c
   src/core/glb.c
   src/core/crypto.c
-  src/figure.c)
+  src/figure.c
+  src/room.c)
 target_include_directories(a4c_core PUBLIC src)
 target_link_libraries(a4c_core PUBLIC a4c_flags)
 if(NOT MSVC)

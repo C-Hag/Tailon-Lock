@@ -159,6 +159,7 @@ static void put(Out *o, V3 a, V3 b, V3 c, int role, int part, bool two) {
   t->part = (uint8_t)part;
   t->two = two;
   t->shade = FS_ROLE;
+  t->tag = t->emit = 0;
 }
 /* a triangle with its own colour */
 static void put_own(Out *o, V3 a, V3 b, V3 c, int role, int part, bool two, const double col[3]) {
@@ -783,7 +784,7 @@ void fig_colour(const FigSpec *f, int role, float c[3]) {
 }
 
 /* ---- drawing ---- */
-typedef struct { float z; int idx; float pts[3][2], col[3]; bool grad; FigGrad g; } Shaded;
+typedef struct { float z; int idx, tag; float pts[3][2], col[3]; bool grad; FigGrad g; } Shaded;
 static int by_depth(const void *a, const void *b) {
   const Shaded *x = a, *y = b;
   if (x->z != y->z) return x->z < y->z ? 1 : -1; /* far first */
@@ -827,16 +828,30 @@ static void shade(V3 nn, const double base[3], V3 ld, V3 view, const FigLight *l
 
 #define FIG_MAX_TRIS 8192
 void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *light, FigFill fill, void *ud) {
-  static FigTri tris[FIG_MAX_TRIS];
-  Shaded *all = malloc(sizeof *all * (size_t)FIG_MAX_TRIS * (size_t)(n > 0 ? n : 1));
+  FigTri *tris = malloc(sizeof *tris * (size_t)FIG_MAX_TRIS * (size_t)(n > 0 ? n : 1));
+  FigMesh *m = malloc(sizeof *m * (size_t)(n > 0 ? n : 1));
+  if (tris && m) {
+    for (int k = 0; k < n; k++) {
+      int nt = fig_build(&figs[k], tris + (size_t)k * FIG_MAX_TRIS, FIG_MAX_TRIS);
+      m[k] = (FigMesh){ tris + (size_t)k * FIG_MAX_TRIS, nt > 0 ? nt : 0, &figs[k] };
+    }
+    fig_draw_meshes(m, n, cam, light, fill, ud);
+  }
+  free(tris);
+  free(m);
+}
+
+void fig_draw_meshes(const FigMesh *m, int n, const FigCam *cam, const FigLight *light, FigFill fill, void *ud) {
+  int total = 0;
+  for (int k = 0; k < n; k++) total += m[k].n;
+  Shaded *all = malloc(sizeof *all * (size_t)(total > 0 ? total : 1));
   if (!all) return;
   int na = 0;
   V3 cp = v3(cam->pos[0], cam->pos[1], cam->pos[2]), cf = v3(cam->f[0], cam->f[1], cam->f[2]);
   V3 cu = v3(cam->u[0], cam->u[1], cam->u[2]), cr = v3(cam->r[0], cam->r[1], cam->r[2]), ld = v3(light->dir[0], light->dir[1], light->dir[2]);
   for (int k = 0; k < n; k++) {
-    int nt = fig_build(&figs[k], tris, FIG_MAX_TRIS);
-    for (int i = 0; i < nt; i++) {
-      const FigTri *t = &tris[i];
+    for (int i = 0; i < m[k].n; i++) {
+      const FigTri *t = &m[k].tris[i];
       V3 a = v3(t->v[0][0], t->v[0][1], t->v[0][2]), b = v3(t->v[1][0], t->v[1][1], t->v[1][2]), c = v3(t->v[2][0], t->v[2][1], t->v[2][2]);
       V3 nn = norm(cross(sub(b, a), sub(c, a)));
       V3 ce = mul(add(add(a, b), c), 1.0 / 3), d = sub(ce, cp);
@@ -849,6 +864,7 @@ void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *lig
       Shaded *s = &all[na];
       s->z = (float)z;
       s->idx = na;
+      s->tag = t->tag;
       s->grad = false;
       for (int q = 0; q < 3; q++) {
         V3 p = q == 0 ? a : q == 1 ? b : c, qd = sub(p, cp);
@@ -858,7 +874,9 @@ void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *lig
         s->pts[q][1] = (float)(cam->cy - dot(qd, cu) / zz * cam->F);
       }
       V3 view = norm(mul(d, -1));
-      if (t->shade == FS_SMOOTH) {
+      if (t->shade == FS_LIT) {
+        for (int q = 0; q < 3; q++) s->col[q] = t->col[q];
+      } else if (t->shade == FS_SMOOTH) {
         double cs[3][3];
         for (int q = 0; q < 3; q++) {
           V3 vn = v3(t->ns[q][0], t->ns[q][1], t->ns[q][2]);
@@ -869,9 +887,9 @@ void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *lig
         for (int q = 0; q < 3; q++) s->col[q] = (float)((cs[0][q] + cs[1][q] + cs[2][q]) / 3);
         s->grad = gradient((const float(*)[2])s->pts, (const double(*)[3])cs, &s->g);
       } else {
-        float bf[3];
+        float bf[3] = { 255, 0, 255 };
         if (t->shade == FS_OWN) bf[0] = t->col[0], bf[1] = t->col[1], bf[2] = t->col[2];
-        else fig_colour(&figs[k], t->role, bf);
+        else if (m[k].spec) fig_colour(m[k].spec, t->role, bf);
         double base[3] = { bf[0], bf[1], bf[2] }, out[3];
         shade(nn, base, ld, view, light, out);
         for (int q = 0; q < 3; q++) s->col[q] = (float)out[q];
@@ -880,8 +898,15 @@ void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *lig
     }
   }
   qsort(all, (size_t)na, sizeof *all, by_depth);
-  for (int i = 0; i < na; i++) fill((const float(*)[2])all[i].pts, all[i].col, all[i].grad ? &all[i].g : NULL, ud);
+  for (int i = 0; i < na; i++) fill((const float(*)[2])all[i].pts, all[i].col, all[i].grad ? &all[i].g : NULL, all[i].tag, ud);
   free(all);
+}
+
+void fig_joint(const FigSpec *f, int bone, float at[3]) {
+  Skel K = skeleton(f->height > 0 ? f->height : 1.75);
+  Joint W[FB_COUNT];
+  solve(&K, &f->pose, W);
+  for (int k = 0; k < 3; k++) at[k] = (float)W[bone].at.v[k];
 }
 
 /* ---- poses ---- */

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "figure.h"
+#include "room.h"
 
 static int fails;
 /* the film's spoken lines, as their dialogue cards show them (assets/intro/intro_script.json) */
@@ -40,6 +41,27 @@ int main(int argc, char **argv) {
       printf("\n");
     }
     return n > 0 ? 0 : 1;
+  }
+  if (argc > 1 && !strcmp(argv[1], "--room")) { /* the room, its screens, the two chairs, and the room lit at general quarters */
+    static FigTri t[ROOM_MAX_TRIS + 2 * ROOM_CHAIR_TRIS], lit[ROOM_MAX_TRIS + 2 * ROOM_CHAIR_TRIS];
+    static RoomScreen scr[ROOM_MAX_SCREENS];
+    int ns = 0, n = room_build(t, ROOM_MAX_TRIS, scr, ROOM_MAX_SCREENS, &ns);
+    if (n < 0) return 1;
+    static const float S1[3] = { -0.1f, 0.5f, 1.6f }, S2[3] = { 1.3f, 0.62f, 1.4f };
+    int c1 = room_chair(false, S1, -108, t + n, ROOM_CHAIR_TRIS);
+    int c2 = room_chair(true, S2, -100, t + n + c1, ROOM_CHAIR_TRIS);
+    RoomLights L;
+    room_lamps(scr, ns, true, 0.5f, &L);
+    room_light(t, lit, n + c1 + c2, &L);
+    printf("%d %d %d %d\n", n, c1, c2, ns);
+    for (int i = 0; i < ns; i++)
+      printf("%d %d %.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f %g %g\n", scr[i].kind, scr[i].bay, scr[i].o[0], scr[i].o[1], scr[i].o[2], scr[i].ex[0],
+             scr[i].ex[1], scr[i].ex[2], scr[i].ey[0], scr[i].ey[1], scr[i].ey[2], scr[i].w, scr[i].h);
+    for (int i = 0; i < n + c1 + c2; i++)
+      printf("%d %d %d %d %.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f %.3f %.3f %.3f %.3f %.3f %.3f\n", t[i].part, t[i].two, t[i].emit, t[i].tag, t[i].v[0][0],
+             t[i].v[0][1], t[i].v[0][2], t[i].v[1][0], t[i].v[1][1], t[i].v[1][2], t[i].v[2][0], t[i].v[2][1], t[i].v[2][2], t[i].col[0], t[i].col[1], t[i].col[2],
+             lit[i].col[0], lit[i].col[1], lit[i].col[2]);
+    return 0;
   }
   if (argc > 1 && !strcmp(argv[1], "--speech")) { /* the three lines' timelines */
     for (int l = 0; l < 3; l++) {

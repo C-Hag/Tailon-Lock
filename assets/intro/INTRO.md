@@ -173,7 +173,9 @@ a full-frame sensor (24 mm tall) it was chosen as, and `rig` says what kind of c
 - `vibe {a, f}`: camera jitter with amplitude `a` times the fov (in degrees) at about `f` Hz: slow drift for a
   long lens held by hand or on a boat, fast buzz for a camera bolted to an airframe.
 - `scene`: the shot is not of the 3D world but a scene the engine draws itself. `"cic"` is the carrier's control
-  room (in the browser game `drawCIC`, in the C port `src/cic.c`), drawn in code from the shot's `t0` and `t1`. Its
+  room (in the browser game `drawCIC`, in the C port `src/cic.c`), drawn in code from the shot's `t0` and `t1`. The
+  room is a 3D mesh made in code (`assets/figure/figure.js` `room`, `src/room.c`): a refit-era gun ship's combat
+  centre on our fictional carrier, lit by its own lamps, each screen's content mapped onto its face. Its
   `cam` keys only hold a still pose for engines that need one. A dissolve to or from it fades the drawn room over the
   3D picture.
 - `in {type, dur, dir?}` (version 3): how the shot starts.

@@ -53,13 +53,15 @@ typedef struct {
   FigExpr face;
 } FigSpec;
 
-enum { FS_ROLE, FS_OWN, FS_SMOOTH }; /* coloured by its role, by its own colour, or smooth from its corners */
+/* coloured by its role, by its own colour, smooth from its corners, or already lit (the room: room.h) */
+enum { FS_ROLE, FS_OWN, FS_SMOOTH, FS_LIT };
 typedef struct {
   float   v[3][3];
   float   ns[3][3], cs[3][3]; /* smooth: each corner's normal and colour */
   float   col[3];             /* own: its colour */
   uint8_t role, part, shade;
-  bool    two; /* a flat part shown from either side */
+  uint8_t tag, emit; /* the room's: 1 + the screen drawn on it (0 none); how it shines (room.h) */
+  bool    two;       /* a flat part shown from either side */
 } FigTri;
 
 /* Builds the figure's triangles into out (up to max); returns how many, or -1 if max was too small. */
@@ -73,9 +75,15 @@ typedef struct { float pos[3], f[3], u[3], r[3], F, cx, cy; } FigCam;
 typedef struct { float dir[3], key[3], rim[3]; } FigLight;
 /* a fill across a triangle: from c0 at (x0, y0) to c1 at (x1, y1), or NULL for a flat colour */
 typedef struct { float x0, y0, x1, y1, c0[3], c1[3]; } FigGrad;
-typedef void (*FigFill)(const float pts[3][2], const float rgb[3], const FigGrad *grad, void *ud);
+typedef void (*FigFill)(const float pts[3][2], const float rgb[3], const FigGrad *grad, int tag, void *ud);
 /* Draws figures far to near, each facet flat-shaded (key light, fill and rim), through fill. */
 void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *light, FigFill fill, void *ud);
+/* a mesh built already: its triangles, and the figure they colour by role (NULL when they carry their colours) */
+typedef struct { const FigTri *tris; int n; const FigSpec *spec; } FigMesh;
+/* Draws meshes together, far to near, the same way; a triangle's tag goes to fill with it. */
+void fig_draw_meshes(const FigMesh *m, int n, const FigCam *cam, const FigLight *light, FigFill fill, void *ud);
+/* where a bone starts in the room, for the figure as posed (FB_*) */
+void fig_joint(const FigSpec *f, int bone, float at[3]);
 
 /* The canon (fractions of the height) and the same ratios measured on the built mesh (see fig_measure). */
 typedef struct {

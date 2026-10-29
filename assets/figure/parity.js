@@ -43,4 +43,28 @@ for (const [text, t0, t1] of [['BOGEYS! TWO CONTACTS, BEARING 3-5-0, CLOSING FAS
   if (!ok) bad++;
   console.log(`speech "${text}": ${ns} segments, ${nw} words, ${diff} differ, largest time gap ${worst.toExponential(1)} s ${ok ? 'ok' : 'DIFFERENT'}`);
 }
+// the control room: the same triangles, screens, chairs and light
+{
+  const rm = F.room(), chairs = F.chair('swivel', [-0.1, 0.5, 1.6], -108).concat(F.chair('high', [1.3, 0.62, 1.4], -100));
+  const all = rm.tris.concat(chairs), lit = F.lightRoom(all, F.roomLamps(rm.screens, true, 0.5));
+  const L = execFileSync(bin, ['--room'], { maxBuffer: 1 << 28 }).toString().trim().split('\n'), [n, c1, c2, ns] = L[0].split(' ').map(Number);
+  let diff = 0, worst = 0, cworst = 0;
+  if (n !== rm.tris.length || c1 + c2 !== chairs.length || ns !== rm.screens.length) diff++;
+  else {
+    for (let i = 0; i < ns; i++) {
+      const f = L[1 + i].split(' ').map(Number), s = rm.screens[i], want = [s.kind, s.bay, ...s.o, ...s.ex, ...s.ey, s.w, s.h];
+      if (f[0] !== want[0] || f[1] !== want[1]) diff++;
+      for (let k = 2; k < 11; k++) worst = Math.max(worst, Math.abs(f[k] - want[k]));
+    }
+    for (let i = 0; i < all.length; i++) {
+      const f = L[1 + ns + i].split(' ').map(Number), t = all[i];
+      if (f[0] !== (t.part === 'near' ? 11 : 10) || !!f[1] !== !!t.two || f[2] !== t.emit || f[3] !== t.tag) diff++;
+      for (let k = 0; k < 9; k++) worst = Math.max(worst, Math.abs(f[4 + k] - t.v[Math.floor(k / 3)][k % 3]));
+      for (let k = 0; k < 3; k++) cworst = Math.max(cworst, Math.abs(f[13 + k] - t.col[k]), Math.abs(f[16 + k] - lit[i].col[k]));
+    }
+  }
+  const ok = !diff && worst < 5e-5 && cworst < 0.02;
+  if (!ok) bad++;
+  console.log(`room: ${n} triangles, ${c1 + c2} in the chairs, ${ns} screens, ${diff} differ, largest vertex gap ${(worst * 1000).toFixed(4)} mm, colour ${cworst.toFixed(4)} ${ok ? 'ok' : 'DIFFERENT'}`);
+}
 process.exitCode = bad ? 1 : 0;
