@@ -30,6 +30,9 @@ The stages:
    9 perf        frame time of a fixed flight scene, software and GPU, at most 5 % above the baseline; a GPU
                  table of every map at every time of day (logged)
   10 windows     MinGW cross-build of TailonLock.exe and its import table: system DLLs only
+  11 floppy      the floppy build's size: the stripped game plus the files it loads at run time (not the
+                 recorded music, which is an extra), and the browser game without its recorded music, each
+                 packed and xz-compressed, against 1.44 MB (a report until the F track is done, then a fail)
 """
 import datetime
 import gzip
@@ -176,7 +179,8 @@ def sha(path):
 
 
 def tracked(*patterns):
-    rc, out = run(['git', 'ls-files', '--'] + list(patterns))
+    # new files not yet added count too (not the ignored ones), so a gate run before `git add` sees them
+    rc, out = run(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--'] + list(patterns))
     return [l for l in out.splitlines() if l]
 
 
@@ -457,7 +461,7 @@ def stage_deps():
 def grep(pattern, exclude=()):
     """[(path, line number, line)] for tracked text files, outside the excluded paths"""
     spec = ['--', '.'] + [':!' + e for e in exclude]
-    rc, out = run(['git', 'grep', '-n', '-I', '-P', pattern] + spec)
+    rc, out = run(['git', 'grep', '--untracked', '-n', '-I', '-P', pattern] + spec)
     hits = []
     for l in out.splitlines():
         m = re.match(r'([^:]+):(\d+):(.*)', l)
@@ -468,7 +472,8 @@ def grep(pattern, exclude=()):
 
 def in_blob(line, pattern):
     """every match sits inside a long base64 run (embedded binary data, not words)"""
-    ms = list(re.finditer(pattern, line))
+    # git grep -P takes an inline (?i) anywhere, Python only at the start: drop them and match without case
+    ms = list(re.finditer(pattern.replace('(?i)', ''), line, re.I))
     blobs = [(m.start(), m.end()) for m in re.finditer(r'[A-Za-z0-9+/=]{60,}', line)]
     return ms and all(any(a <= m.start() and m.end() <= b for a, b in blobs) for m in ms)
 
@@ -758,6 +763,63 @@ def stage_windows():
     return rc == 0 and dlls and not bad
 
 
+FLOPPY = 1474560  # bytes on a 1.44 MB floppy
+FLOPPY_HARD = False  # True once the F track is done: then a build over the budget fails
+# what the game reads at run time; the recorded music (*.wav) is an extra, not on the floppy
+FLOPPY_GAME = ['assets/intro/*.json', 'assets/jets/*.glb', 'assets/jets/*_game.js', 'assets/jets/*.json',
+               'assets/maps/*.json', 'assets/maps/*.h16', 'assets/maps/*.mat', 'assets/music/*.json',
+               'assets/music/*.loop']
+FLOPPY_WEB = ['web/index.html', 'web/sfx/*.wav']
+
+
+def packed_size(files):
+    """the files in one tar, xz-compressed at its strongest setting: (bytes, the 6 biggest files raw)"""
+    import io
+    import lzma
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w') as tar:
+        for name, path in files:
+            tar.add(path, arcname=name)
+    xz = lzma.compress(buf.getvalue(), preset=9 | lzma.PRESET_EXTREME)
+    big = sorted(((os.path.getsize(p), n) for n, p in files), reverse=True)[:6]
+    return len(xz), big
+
+
+def stage_floppy():
+    import glob
+    exe = os.path.join(bdir('gcc-release'), 'tailonlock')
+    if not os.path.exists(exe):
+        say('    no release build to measure')
+        return False
+    tmp = tempfile.mkdtemp(prefix='a4c-floppy-')
+    try:
+        game = os.path.join(tmp, 'tailonlock')
+        shutil.copy(exe, game)
+        rc, out = run(['strip', game])
+        if rc:
+            say('    strip failed: ' + out.strip()[:200])
+            return False
+        ok = True
+        for title, pats, extra in (('game', FLOPPY_GAME, [('tailonlock', game)]), ('web', FLOPPY_WEB, [])):
+            files = list(extra)
+            for pat in pats:
+                for p in sorted(glob.glob(os.path.join(ROOT, pat))):
+                    files.append((os.path.relpath(p, ROOT), p))
+            n, big = packed_size(files)
+            over = n > FLOPPY
+            ok = ok and not over
+            say('    %-4s %4d files, %7.0f KB packed of %4.0f KB: %s' % (
+                title, len(files), n / 1024, FLOPPY / 1024,
+                '%.0f KB over' % ((n - FLOPPY) / 1024) if over else '%.0f KB free' % ((FLOPPY - n) / 1024)))
+            say('         biggest: ' + ', '.join('%s %.0f KB' % (nm, b / 1024) for b, nm in big))
+        if not ok and not FLOPPY_HARD:
+            say('    (a report for now: the F track brings it under; see docs/BUILD_PLAN.md)')
+        return ok or not FLOPPY_HARD
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------------------------------------
 def main():
     args = sys.argv[1:]
@@ -768,7 +830,8 @@ def main():
     stages = [(1, 'build', stage_build), (2, 'tests', stage_tests), (3, 'golden', lambda: stage_golden(baseline)),
               (4, 'deps', stage_deps), (5, 'cleanroom', stage_cleanroom), (6, 'headless', stage_headless),
               (7, 'picture', lambda: stage_picture(baseline)), (8, 'sound', lambda: stage_sound(baseline)),
-              (9, 'perf', lambda: stage_perf(baseline)), (10, 'windows', stage_windows)]
+              (9, 'perf', lambda: stage_perf(baseline)), (10, 'windows', stage_windows),
+              (11, 'floppy', stage_floppy)]
     if quick:
         stages = stages[:4]
     if only:

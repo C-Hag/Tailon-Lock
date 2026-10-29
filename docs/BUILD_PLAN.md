@@ -23,7 +23,7 @@ in `build/check/<date>-<commit>.txt`).
 
 | Brick | What | State | Commit |
 |---|---|---|---|
-| 0 | `tools/check`, the local code checker (10 stages, about 75 s) | done | in the root commit |
+| 0 | `tools/check`, the local code checker (10 stages, about 75 s; stage 11, floppy, added with the F track) | done | in the root commit |
 | 1 | JSON tokenizer (RFC 8259, RFC 3629): 200 malformed inputs, 8 x 10 min of fuzzing | done | in the root commit |
 | 2 | JSON tree in one arena, typed getters, stress and leak tests | done | in the root commit |
 | 3 | our JSON reader and cJSON side by side on every asset: 43 of 43 identical | done | 5f67a14 |
@@ -38,6 +38,11 @@ in `build/check/<date>-<commit>.txt`).
 | 30-32 | iOS | later | |
 | W1-W2 | mobile mode in the browser game (web v28) | done; in the repo as web/ | (this commit) |
 | W3 | the browser game published as a web page | planned, after the push and Pages | |
+| F0 | the floppy budget in the checker (stage 11, a report for now) | done | (this commit) |
+| F1 | sound effects made live by our synth, in both versions | planned, after brick 9 | |
+| F2 | the DMX10 main theme played live from its song data | planned | |
+| F3 | the size pass: no SDL3 (bricks 10-20), stripped, data packed | planned | |
+| F4 | the floppy build made and the budget a hard fail | planned | |
 
 Outside code still in the build: SDL3 (until brick 20), downloaded at build
 time with a checksum (docs/THIRD_PARTY.md).
@@ -263,6 +268,53 @@ Instead:
   manifest (a `NativeActivity` with `hasCode=false`), and APK Signature
   Scheme v2 signing with our own crypto.
 - **Testing:** by sideloading the APK onto the owner's tablet.
+
+## The floppy track (bricks F0-F4)
+
+The whole game fits on one 1.44 MB floppy (1,474,560 bytes), compressed: the C
+game and, separately, the browser game. The floppy build is a build variant.
+The recordings stay in the repo and in the full build as an optional extra
+(the recorded DMX10 theme and the film cut), but they are not on the floppy.
+
+Where we start (stage 11, 2026-10-29, xz at its strongest):
+
+| | Packed | Over by | The big parts |
+|---|---|---|---|
+| Game: the stripped binary plus the files it loads | 2,332 KB | 892 KB | the binary is 4.8 MB, of which SDL3 is about 3.7 MB and our own code 1.1 MB; maps 0.7 MB and jets 0.5 MB raw |
+| Browser game: `web/index.html` and its effects | 3,638 KB | 2,198 KB | the 15 effect WAVs are 4.7 MB raw; the page itself packs to about 175 KB |
+
+F0. **The budget in the checker.** Stage 11 packs the floppy file set and
+    measures it against 1,474,560 bytes. Until F4 it is a report; from F4 a
+    build over the budget fails.
+
+F1. **Sound effects made live.** Each effect becomes a small set of
+    parameters (oscillators, noise, filters, envelopes) that our synth plays
+    when the game asks for it, in the C game and in the browser game. The
+    effect WAVs leave the floppy set. The audit: every effect rendered next to
+    its WAV (an A/B page for listening, plus level and spectrum checks), and
+    the owner approves the sound before the WAVs leave the floppy build.
+
+F2. **The main theme played live.** DMX10 (Full Burn, Arp sound DMX10) is
+    played from its song data by our synth: the SID voices, the 80s layers,
+    the h2h-drum kit and the solo. The film cut keeps its timing, so every
+    intro cue still lands on the beat. The audit: a render against the
+    recording (timing exact, level and spectrum close), then the owner's
+    ear. The recording stays as the optional extra.
+
+F3. **The size pass.** Our own platform layer replaces SDL3 (bricks 10-20,
+    already planned). Then: a size-optimised release, unused code stripped,
+    and the data packed (maps, meshes, scores). The audit: the game's
+    pictures, sound and perf unchanged, stage 11 under the budget with room
+    to spare.
+
+F4. **The floppy build.** A `floppy` build variant that makes the disk image
+    (the game, its data, and a small loader that unpacks it, all our own
+    code), and the browser game's floppy version. Stage 11 becomes a hard
+    fail. The audit: the image boots and runs from a clean folder on Linux and
+    on Windows, and the browser game runs from its packed copy.
+
+Order: brick 9 first, then F1, F2, and the rest of the platform bricks; F3 and
+F4 close the track once SDL3 is gone.
 
 ## Web version: mobile mode in the browser game (bricks W1-W3)
 
