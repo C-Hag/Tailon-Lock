@@ -93,12 +93,6 @@ static void glow(float x, float y, float r, V3 col, float a) {
 static void mono(const char *s, float x, float y, float sz, PColor c, int align) { p_text(P, s, x, y, sz, c, align); }
 static void curve(const float (*pts)[2], int n, bool closed) { p_curve(P, pts, n, closed); }
 
-/* a line being spoken: the jaw opens per syllable and closes in the pauses */
-static float speak(const float L[2], float len) {
-  if (T < L[0] || T > L[1] - 0.15f) return 0;
-  float k = (T - L[0]) / (L[1] - 0.15f - L[0]), syl = sinf(k * len * 0.55f * PI_F);
-  return fmaxf(0, syl) * (0.55f + 0.45f * fabsf(sinf(T * 9.3f)));
-}
 static float blink_at(float seed) {
   float p = 2.8f + seed * 1.7f, ph = fmodf(T + seed * 5, p) / p;
   return ph > 0.965f ? 1 - fabsf(ph - 0.9825f) / 0.0175f : 0;
@@ -348,7 +342,7 @@ static void console(float u) {
 static const FigCam CAM = { { 0, 1.25f, 0 }, { 0, 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, 1100, 800, 450 };
 static float seam; /* how far each facet is grown, in scene units, so no seams show between them */
 
-static void fill_tri(const float pts[3][2], const float rgb[3], void *ud) {
+static void fill_tri(const float pts[3][2], const float rgb[3], const FigGrad *gr, void *ud) {
   (void)ud;
   float cx = (pts[0][0] + pts[1][0] + pts[2][0]) / 3, cy = (pts[0][1] + pts[1][1] + pts[2][1]) / 3;
   p_begin(P);
@@ -359,7 +353,27 @@ static void fill_tri(const float pts[3][2], const float rgb[3], void *ud) {
     else p_move(P, cx + dx * k, cy + dy * k);
   }
   p_close(P);
-  fill_c(RGBA(rgb[0], rgb[1], rgb[2], 1));
+  if (gr) { /* a smooth facet: the colour runs across it */
+    Paint g = p_linear(P, gr->x0, gr->y0, gr->x1, gr->y1);
+    p_stop(&g, 0, RGBA(gr->c0[0], gr->c0[1], gr->c0[2], 1));
+    p_stop(&g, 1, RGBA(gr->c1[0], gr->c1[1], gr->c1[2], 1));
+    p_fill(P, &g);
+  } else fill_c(RGBA(rgb[0], rgb[1], rgb[2], 1));
+}
+
+/* where a point of the scene lies in the room, at a depth (for where the crew look) */
+static void room_at(float x, float y, float dz, float out[3]) {
+  out[0] = (x - CAM.cx) * dz / CAM.F, out[1] = CAM.pos[1] - (y - CAM.cy) * dz / CAM.F, out[2] = dz;
+}
+/* a man speaking his line: the mouth from the words, a blink as he finishes, his eyes on gaze */
+static void voice(FigSpec *f, const char *text, const float L[2], float blink_seed, const float gaze[3]) {
+  FigSpeech sp;
+  fig_speech(text, L[0], L[1], &sp);
+  fig_mouth(&sp, T, &f->face.open, &f->face.wide, &f->face.round);
+  float after = T - L[1], b = after > 0.02f && after < 0.2f ? 1 - fabsf(after - 0.11f) / 0.09f : 0;
+  f->face.blink = fmaxf(blink_at(blink_seed), b);
+  memcpy(f->face.gaze, gaze, sizeof f->face.gaze);
+  f->face.has_gaze = true;
 }
 
 static void crew3d(FigSpec *f, float crown_x, float crown_y, float s, float yaw, V3 key) {
@@ -368,8 +382,8 @@ static void crew3d(FigSpec *f, float crown_x, float crown_y, float s, float yaw,
   float dz = H / 8 * CAM.F / s;
   float target[3] = { (crown_x - CAM.cx) * dz / CAM.F, CAM.pos[1] - (crown_y - CAM.cy) * dz / CAM.F, dz };
   /* where the crown lands with the pose as it is: the top of a figure built there */
-  static FigTri tris[4096];
-  int n = fig_build(f, tris, 4096);
+  static FigTri tris[8192];
+  int n = fig_build(f, tris, 8192);
   float top = -1e9f, tx = 0, tz = 0;
   for (int i = 0; i < n; i++)
     if (tris[i].part == FP_HEAD)
@@ -420,7 +434,10 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
     float step = ease(clampf_((t - L2[0]) / 0.4f, 0, 1));
     FigSpec f;
     fig_crew(FC_SUPERVISOR, 1.75f, 0, &f);
-    f.open = speak(L2, 22), f.blink = blink_at(0.3f);
+    float g[3];
+    room_at(1395, 330, 1.75f / 8 * CAM.F / 178, g);
+    voice(&f, "ALERT, ALERT! WE HAVE INBOUND.", L2, 0.3f, g);
+    f.face.brow_up = alert ? 0.7f : 0;
     f.pose.ang[FB_HEAD][0] = alert ? -4.0f : 0.0f, f.pose.ang[FB_HEAD][1] = -6, f.pose.ang[FB_HEAD][2] = 0;
     crew3d(&f, 1010 + 8 * step, 262 + 4 * sinf(t * 1.5f) - 3 * step, 118, 100, mul(mix(v3c(140, 190, 255), key_red, red_k), 0.9f));
   }
@@ -430,7 +447,10 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
     float lean = ease(clampf_((t - 5.3f) / 0.6f, 0, 1)) * 10 - ease(clampf_((t - L2[0]) / 0.5f, 0, 1)) * 6;
     FigSpec f;
     fig_crew(FC_OPERATOR, 1.75f, 0, &f);
-    f.open = speak(L1, 46), f.blink = blink_at(0.7f);
+    float g[3];
+    room_at(310, 450, 1.25f, g);
+    voice(&f, "BOGEYS! TWO CONTACTS, BEARING 3-5-0, CLOSING FAST.", L1, 0.7f, g);
+    f.face.brow_up = t > 5.5f && t < 7 ? 0.5f : 0;
     f.pose.ang[FB_HIPS][0] = 14 + lean * 0.8f, f.pose.ang[FB_HIPS][1] = 0, f.pose.ang[FB_HIPS][2] = 0;
     crew3d(&f, 760 - lean, 318 + lean * 0.3f + 2 * sinf(t * 1.7f), 150, -108, mix(v3c(110, 255, 180), key_red, red_k));
   }
@@ -459,7 +479,10 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
     stroke_c(C(blue_rim, 0.3f), 3);
     FigSpec f;
     fig_crew(FC_COMMANDER, 1.75f, ease(clampf_((t - L3[0]) / 0.4f, 0, 1)), &f);
-    f.open = speak(L3, 14), f.blink = blink_at(0.1f);
+    float look[3];
+    room_at(turn > 0.5f ? 1050 : 760, 300, 1.75f / 8 * CAM.F / 130, look);
+    voice(&f, "SEND THE BIRDS.", L3, 0.1f, look);
+    f.face.frown = t < L3[0] ? 0.35f : 0;
     f.pose.ang[FB_HEAD][0] = nod * 2, f.pose.ang[FB_HEAD][1] = 0, f.pose.ang[FB_HEAD][2] = 0;
     crew3d(&f, 1395 - turn * 10, 246 + 3 * sinf(t * 1.3f) - turn * 4 + nod, 178, -100 - 14 * turn, mul(mix(v3c(130, 180, 240), key_red, red_k), 0.95f - 0.1f * turn));
   }

@@ -16,6 +16,7 @@
 
 #include "assets.h"
 #include "cic.h"
+#include "figure.h"
 #include "core/json.h"
 #include "core/jets.h"
 #include "core/world.h"
@@ -1184,6 +1185,10 @@ static void draw_overlay(Framebuffer *fb, float t, bool panel) {
       /* a line spoken in the control room: the speaker in amber, the words in white, centred as one line in the lower bar */
       char who[24];
       snprintf(who, sizeof who, "%s:  ", c->speaker);
+      /* the words appear as they are spoken (the figure engine's speech timeline for this card) */
+      FigSpeech sp;
+      fig_speech(c->text, c->t0, c->t1, &sp);
+      fig_spoken_upto(c->text, fig_words_shown(&sp, t), s, sizeof s);
       int sc = text_scale(fminf(u0 * 0.024f, (barH ? barH : 40) * 0.46f));
       float y = barH ? lowY : H - u0 * 0.06f, w0 = (float)text_width(who, sc), w1 = (float)text_width(c->text, sc);
       float x = W / 2.0f - (w0 + w1) / 2; /* centred on the whole line, so it stays put while it types */

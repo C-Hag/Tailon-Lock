@@ -5,6 +5,7 @@
 #include "figure.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -157,6 +158,24 @@ static void put(Out *o, V3 a, V3 b, V3 c, int role, int part, bool two) {
   t->role = (uint8_t)role;
   t->part = (uint8_t)part;
   t->two = two;
+  t->shade = FS_ROLE;
+}
+/* a triangle with its own colour */
+static void put_own(Out *o, V3 a, V3 b, V3 c, int role, int part, bool two, const double col[3]) {
+  put(o, a, b, c, role, part, two);
+  if (o->full) return;
+  FigTri *t = &o->t[o->n - 1];
+  t->shade = FS_OWN;
+  for (int k = 0; k < 3; k++) t->col[k] = (float)col[k];
+}
+/* a smooth triangle: each corner with its normal and colour */
+static void put_smooth(Out *o, V3 a, V3 b, V3 c, int role, int part, bool two, const V3 n[3], const double (*cs)[3]) {
+  put(o, a, b, c, role, part, two);
+  if (o->full) return;
+  FigTri *t = &o->t[o->n - 1];
+  t->shade = FS_SMOOTH;
+  for (int q = 0; q < 3; q++)
+    for (int k = 0; k < 3; k++) t->ns[q][k] = (float)n[q].v[k], t->cs[q][k] = (float)cs[q][k];
 }
 
 typedef struct { V3 along, across, fwd; } Frame;
@@ -219,12 +238,12 @@ static void tube(const Skel *K, V3 a, V3 b, V3 across, double w0, double d0, dou
 }
 
 /* ---- the head, by the face's thirds (see figure.js for the table's meaning) ---- */
-static const double HEAD[18][4] = {
-  { 0.0, 0.14, 0.30, -0.05 }, { 0.04, 0.2, 0.40, -0.1 }, { 0.1, 0.28, 0.41, -0.2 }, { 0.16, 0.33, 0.43, -0.3 },
-  { 0.2, 0.35, 0.44, -0.34 }, { 0.24, 0.37, 0.45, -0.38 }, { 0.267, 0.39, 0.44, -0.4 }, { 0.33, 0.42, 0.43, -0.43 },
-  { 0.4, 0.44, 0.44, -0.46 }, { 0.47, 0.46, 0.43, -0.48 }, { 0.533, 0.46, 0.465, -0.49 }, { 0.6, 0.46, 0.46, -0.5 },
-  { 0.7, 0.46, 0.445, -0.5 }, { 0.8, 0.45, 0.41, -0.49 }, { 0.88, 0.41, 0.34, -0.44 }, { 0.94, 0.32, 0.24, -0.34 },
-  { 0.98, 0.18, 0.12, -0.18 }, { 1.0, 0.04, 0.02, -0.03 } };
+static const double HEAD[18][4] = { /* u, half-width, forward (the face's profile), back: about 3/4 as broad as tall */
+  { 0.0, 0.112, 0.30, -0.05 }, { 0.04, 0.16, 0.40, -0.1 }, { 0.1, 0.224, 0.41, -0.2 }, { 0.16, 0.264, 0.43, -0.3 },
+  { 0.2, 0.28, 0.44, -0.34 }, { 0.24, 0.296, 0.45, -0.38 }, { 0.267, 0.312, 0.44, -0.4 }, { 0.33, 0.336, 0.43, -0.43 },
+  { 0.4, 0.352, 0.44, -0.46 }, { 0.47, 0.368, 0.43, -0.48 }, { 0.533, 0.368, 0.465, -0.49 }, { 0.6, 0.368, 0.46, -0.5 },
+  { 0.7, 0.368, 0.445, -0.5 }, { 0.8, 0.36, 0.41, -0.49 }, { 0.88, 0.328, 0.34, -0.44 }, { 0.94, 0.256, 0.24, -0.34 },
+  { 0.98, 0.144, 0.12, -0.18 }, { 1.0, 0.032, 0.02, -0.03 } };
 #define NHEAD 18
 
 static void head_at(double u, double *hw, double *zf, double *zb) {
@@ -253,27 +272,132 @@ static double angle_at(double u, double x) {
   return acos(spow(c, 1 / 0.85));
 }
 
-typedef struct { const Skel *K; Frame F; V3 bottom; double hH, open; } HeadCtx;
-static double jaw(const HeadCtx *h, double u) {
-  if (u >= 0.205) return 0;
-  double k = (0.205 - u) / 0.06;
-  return h->open * 0.07 * (k < 1 ? k : 1);
-}
-static V3 HP(const HeadCtx *h, double u, double x, double z) {
-  return add(h->bottom, add(mul(h->F.along, (u - jaw(h, u)) * h->hH), add(mul(h->F.across, x * h->hH), mul(h->F.fwd, z * h->hH))));
-}
-static V3 HS(const HeadCtx *h, double u, double a, double lift) {
-  double x, z;
-  surf(u, a, &x, &z);
-  double n = sqrt(x * x + z * z);
-  if (n == 0) n = 1;
-  return HP(h, u, x + x / n * lift, z + z / n * lift);
-}
 static void quad(Out *o, V3 a, V3 b, V3 c, V3 d, int role, int part) {
   put(o, a, b, c, role, part, true);
   put(o, a, c, d, role, part, true);
 }
-static bool hair_at(double u, double x, double z) { return u >= 0.8 || (z < -0.05 && u > 0.4) || (u > 0.6 && fabs(x) > 0.3 && z < 0.25); }
+
+/* ---- the face engine (see figure.js: the same landmarks, shapes, expressions and colours) ---- */
+#define FU 36
+#define FA 40
+#define EYE_U 0.5
+typedef struct { double EW, eyeX, inner, outer, eyeU, brow, noseBase, hairline, mouthU, mouthX, noseHalf, earTop, earBottom; } Land;
+static Land landmarks(void) {
+  double hw, zf, zb;
+  head_at(EYE_U, &hw, &zf, &zb);
+  Land L;
+  L.EW = 2 * hw / 5; /* five eyes across the head at the eyes */
+  L.eyeX = L.EW, L.inner = L.EW / 2, L.outer = 1.5 * L.EW, L.eyeU = EYE_U;
+  L.brow = 2.0 / 3 * 0.8, L.noseBase = 1.0 / 3 * 0.8, L.hairline = 0.8, L.mouthU = 0.8 / 3 * 2 / 3, L.mouthX = L.EW, L.noseHalf = L.EW / 2;
+  L.earTop = 2.0 / 3 * 0.8, L.earBottom = 1.0 / 3 * 0.8;
+  return L;
+}
+static double gauss(double d2, double r) { return exp(-d2 / (r * r)); }
+static double sq(double x) { return x * x; }
+static double maxd(double a, double b) { return a > b ? a : b; }
+static double mind(double a, double b) { return a < b ? a : b; }
+/* the face's own value noise: a hash of a lattice, smoothly blended */
+static double hash2(double fi, double fj) {
+  int64_t i = (int64_t)fi, j = (int64_t)fj;
+  uint32_t h = (uint32_t)(i * 374761393 + j * 668265263);
+  h ^= h >> 13;
+  h *= 1274126177u;
+  h ^= h >> 16;
+  return h / 4294967296.0;
+}
+static double noise2(double x, double y) {
+  double i = floor(x), j = floor(y), fx = x - i, fy = y - j, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  double a = hash2(i, j), b = hash2(i + 1, j), c = hash2(i, j + 1), d = hash2(i + 1, j + 1);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+typedef struct { double open, wide, round, smile, browUp, frown, blink; } Ex;
+
+static void head_shape(double u, double a, const FigFace *fp, const Ex *ex, const Land *L, double *ox, double *oz, double *ou) {
+  double x, z;
+  surf(u, a, &x, &z);
+  int front = sin(a) > 0;
+  double ax = fabs(x), dz = 0, du = 0;
+  if (front) {
+    dz += (0.015 + 0.04 * fp->brow) * gauss(sq(u - 0.56) * 6 + sq(maxd(0, ax - 0.32)), 0.06);
+    dz -= (0.02 + 0.05 * fp->socket) * gauss(sq(u - L->eyeU) + sq(ax - L->eyeX), 0.075);
+    dz += (0.01 + 0.035 * fp->cheek) * gauss(sq(u - 0.4) + sq(ax - 0.3), 0.09);
+    dz += (0.01 + 0.04 * fp->chin) * gauss(sq(u - 0.05) * 3 + x * x, 0.1);
+    double mw = L->mouthX * (1 + 0.25 * ex->wide + 0.15 * ex->smile - 0.35 * ex->round);
+    double inMouth = gauss(sq(maxd(0, ax - mw * 0.8)), 0.05);
+    dz += (0.008 + 0.022 * fp->lips) * gauss(sq(u - L->mouthU - 0.028), 0.022) * inMouth * (1 + 0.6 * ex->round);
+    dz += (0.008 + 0.026 * fp->lips) * gauss(sq(u - L->mouthU + 0.03), 0.024) * inMouth * (1 + 0.6 * ex->round);
+    dz -= 0.012 * gauss(sq(u - L->mouthU), 0.01) * inMouth;
+    double fold = L->noseHalf + (L->mouthX - L->noseHalf) * (L->noseBase - u) / (L->noseBase - L->mouthU);
+    dz -= 0.012 * fp->age * gauss(sq(ax - fold) + 0, 0.03) * (u < L->noseBase && u > L->mouthU - 0.02 ? 1 : 0);
+    du += ex->smile * 0.02 * gauss(sq(u - L->mouthU) + sq(ax - L->mouthX), 0.06);
+    dz += ex->smile * 0.012 * gauss(sq(u - 0.36) + sq(ax - 0.26), 0.07);
+  }
+  if (u < 0.3) x *= 1 + 0.22 * (fp->jaw - 0.5) * (1 - u / 0.3);
+  double n = sqrt(x * x + z * z);
+  if (n == 0) n = 1;
+  *ox = x + x / n * dz, *oz = z + z / n * dz, *ou = u + du;
+}
+
+typedef struct {
+  const Skel *K;
+  Frame F;
+  V3 bottom;
+  double hH, jawA, MW;
+  Land L;
+  const FigFace *fp;
+  const FigSpec *fig;
+} HeadCtx;
+static double jaw_weight(const HeadCtx *h, double u, double x) {
+  const Land *L = &h->L;
+  double soft = u >= L->mouthU + 0.02 ? 0 : u <= L->mouthU - 0.06 ? 1 : (L->mouthU + 0.02 - u) / 0.08;
+  double sharp = u < L->mouthU ? 1 : 0, inside = maxd(0, mind(1, (h->MW * 1.05 - fabs(x)) / (h->MW * 0.25)));
+  return sharp * inside + soft * (1 - inside);
+}
+static V3 HP0(const HeadCtx *h, double u, double x, double z) {
+  return add(h->bottom, add(mul(h->F.along, u * h->hH), add(mul(h->F.across, x * h->hH), mul(h->F.fwd, z * h->hH))));
+}
+static V3 HP(const HeadCtx *h, double u, double x, double z) {
+  double k = jaw_weight(h, u, x) * h->jawA;
+  if (k != 0) {
+    double du = u - 0.34, dz = z - -0.12, c = cos(k), s = sin(k);
+    u = 0.34 + du * c - dz * s;
+    z = -0.12 + du * s + dz * c;
+  }
+  return HP0(h, u, x, z);
+}
+static double smooth01(double e0, double e1, double v) {
+  double t = maxd(0, mind(1, (v - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+static double hair_amount(const Land *L, double u, double x, double z) {
+  double a = smooth01(L->hairline - 0.02, L->hairline + 0.03, u + 0.015 * cos(x * 6)) * smooth01(-0.1, 0.0, z + 0.6 - u);
+  double b = smooth01(0.0, -0.1, z) * smooth01(0.38, 0.46, u);
+  double c = smooth01(0.33, 0.4, fabs(x)) * smooth01(0.56, 0.64, u) * smooth01(0.3, 0.18, z);
+  return maxd(a, maxd(b, c));
+}
+static void tone(const HeadCtx *h, double u, double x, double z, double c[3]) {
+  const FigFace *fp = h->fp;
+  const Land *L = &h->L;
+  double nv = 0.96 + 0.08 * noise2(x * 9 + 3, u * 9);
+  for (int i = 0; i < 3; i++) c[i] = h->fig->skin[i] * nv;
+  double warm = 0.08 * gauss(sq(u - 0.38) + sq(fabs(x) - 0.26), 0.08) + 0.06 * gauss(sq(u - 0.32) + x * x, 0.05);
+  c[0] *= 1 + warm, c[1] *= 1 - warm * 0.3, c[2] *= 1 - warm * 0.4;
+  double lip = gauss(sq(u - L->mouthU) * 1.2, 0.045) * gauss(sq(maxd(0, fabs(x) - L->mouthX * 0.85)), 0.03) * (z > 0.2 ? 1 : 0);
+  static const double LIPC[3] = { 170, 82, 80 };
+  if (lip > 0.05)
+    for (int i = 0; i < 3; i++) c[i] = c[i] * (1 - lip * 0.35) + LIPC[i] * lip * 0.35;
+  double st = fp->stubble * (u < L->mouthU + 0.04 ? 1 : u < L->noseBase ? maxd(0, fabs(x) - L->noseHalf) * 3 : 0) * (z > -0.2 ? 1 : 0);
+  if (st > 0) {
+    double k = mind(1, st) * (0.25 + 0.2 * noise2(x * 40, u * 40));
+    for (int i = 0; i < 3; i++) c[i] = c[i] * (1 - k) + h->fig->hair[i] * 0.6 * k;
+  }
+  if (fp->age > 0.2 && z > 0.2) {
+    double fl = u > 0.62 && u < 0.76 ? pow(maxd(0, sin((u - 0.62) * 90)), 8) : 0;
+    double cf = gauss(sq(u - L->eyeU) + sq(fabs(x) - L->outer - 0.05), 0.05) * pow(maxd(0, sin(u * 160)), 6);
+    double k = (fl + cf) * 0.12 * fp->age;
+    for (int i = 0; i < 3; i++) c[i] *= 1 - k;
+  }
+}
 
 static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
   HeadCtx h;
@@ -281,63 +405,195 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
   h.F = frame(w);
   h.hH = K->H / 8;
   h.bottom = add(w->at, mul(h.F.along, -0.01 * K->H));
-  h.open = fig->open;
-  double blink = fig->blink;
-  static V3 rp[NHEAD][HN];
-  static double rx_[NHEAD][HN], rz_[NHEAD][HN];
-  for (int k = 0; k < NHEAD; k++)
-    for (int i = 0; i < HN; i++) {
-      double a = (double)i / HN * PI * 2, x, z;
-      surf(HEAD[k][0], a, &x, &z);
-      rp[k][i] = HP(&h, HEAD[k][0], x, z);
-      rx_[k][i] = x, rz_[k][i] = z;
+  h.L = landmarks();
+  h.fp = &fig->shape;
+  h.fig = fig;
+  const Land *L = &h.L;
+  const FigFace *fp = &fig->shape;
+  Ex ex = { fig->face.open, fig->face.wide, fig->face.round, fig->face.smile, fig->face.brow_up, fig->face.frown, fig->face.blink };
+  h.jawA = ex.open * 0.26;
+  h.MW = L->mouthX * (1 + 0.25 * ex.wide + 0.15 * ex.smile - 0.35 * ex.round);
+  /* the grid's rows: finer round the face, and two rows at the mouth's line, the lips' parting */
+  double us[FU + 3];
+  int nu = 0, lip_row = -1;
+  for (int k = 0; k <= FU; k++) {
+    double t = (double)k / FU, u = t * t * (3 - 2 * t) * 0.5 + t * 0.5;
+    if (fabs(u - L->mouthU) > 0.008) us[nu++] = u;
+  }
+  us[nu++] = L->mouthU - 0.002;
+  us[nu++] = L->mouthU + 0.002;
+  for (int a = 1; a < nu; a++) /* sort */
+    for (int b = a; b > 0 && us[b] < us[b - 1]; b--) {
+      double t = us[b];
+      us[b] = us[b - 1], us[b - 1] = t;
     }
-  for (int k = 0; k + 1 < NHEAD; k++)
-    for (int i = 0; i < HN; i++) {
-      int j = (i + 1) % HN;
-      bool hr = hair_at(HEAD[k][0], rx_[k][i], rz_[k][i]) && hair_at(HEAD[k + 1][0], rx_[k + 1][j], rz_[k + 1][j]) &&
-                hair_at(HEAD[k][0], rx_[k][j], rz_[k][j]);
-      int role = hr ? FR_HAIR : FR_SKIN;
-      put(o, rp[k][i], rp[k + 1][j], rp[k][j], role, FP_HEAD, false);
-      put(o, rp[k][i], rp[k + 1][i], rp[k + 1][j], role, FP_HEAD, false);
+  for (int k = 0; k < nu; k++)
+    if (us[k] == L->mouthU - 0.002) lip_row = k;
+  static V3 GP[FU + 3][FA], GN[FU + 3][FA];
+  static double GC[FU + 3][FA][3], GX[FU + 3][FA], GZ[FU + 3][FA];
+  static bool GH[FU + 3][FA];
+  for (int k = 0; k < nu; k++)
+    for (int i = 0; i < FA; i++) {
+      double a = (double)i / FA * PI * 2, x, z, uu;
+      head_shape(us[k], a, fp, &ex, L, &x, &z, &uu);
+      GP[k][i] = HP(&h, uu, x, z);
+      double hm = hair_amount(L, us[k], x, z), sk[3], nh = 0.9 + 0.2 * noise2(x * 30 + 7, us[k] * 30);
+      tone(&h, us[k], x, z, sk);
+      for (int c = 0; c < 3; c++) GC[k][i][c] = sk[c] * (1 - hm) + fig->hair[c] * nh * hm;
+      GH[k][i] = hm > 0.5, GX[k][i] = x, GZ[k][i] = z;
+    }
+  for (int k = 0; k < nu; k++)
+    for (int i = 0; i < FA; i++) {
+      V3 a = GP[k + 1 < nu ? k + 1 : nu - 1][i], b = GP[k > 0 ? k - 1 : 0][i], c = GP[k][(i + 1) % FA], d = GP[k][(i + FA - 1) % FA];
+      GN[k][i] = norm(cross(sub(c, d), sub(a, b)));
+    }
+  for (int k = 0; k + 1 < nu; k++)
+    for (int i = 0; i < FA; i++) {
+      int j = (i + 1) % FA;
+      if (k == lip_row && GZ[k][i] > 0.2 && fabs(GX[k][i]) < h.MW * 0.98 && fabs(GX[k][j]) < h.MW * 0.98) continue;
+      int r1 = GH[k][i] && GH[k + 1][j] && GH[k][j] ? FR_HAIR : FR_SKIN, r2 = GH[k][i] && GH[k + 1][i] && GH[k + 1][j] ? FR_HAIR : FR_SKIN;
+      V3 n1[3] = { GN[k][i], GN[k + 1][j], GN[k][j] }, n2[3] = { GN[k][i], GN[k + 1][i], GN[k + 1][j] };
+      const double *c1[3] = { GC[k][i], GC[k + 1][j], GC[k][j] }, *c2[3] = { GC[k][i], GC[k + 1][i], GC[k + 1][j] };
+      double cc1[3][3], cc2[3][3];
+      for (int q = 0; q < 3; q++)
+        for (int c = 0; c < 3; c++) cc1[q][c] = c1[q][c], cc2[q][c] = c2[q][c];
+      put_smooth(o, GP[k][i], GP[k + 1][j], GP[k][j], r1, FP_HEAD, false, n1, (const double(*)[3])cc1);
+      put_smooth(o, GP[k][i], GP[k + 1][i], GP[k + 1][j], r2, FP_HEAD, false, n2, (const double(*)[3])cc2);
     }
   V3 c0 = HP(&h, 0, 0, 0.12);
-  for (int i = 0; i < HN; i++) put(o, rp[0][i], rp[0][(i + 1) % HN], c0, FR_SKIN, FP_HEAD, false);
-  /* the nose: the bridge between the eyes, the tip forward of the face, the wings and the base */
-  V3 bridge = HP(&h, 0.52, 0, 0.47), bl = HP(&h, 0.43, 0.05, 0.452), br = HP(&h, 0.43, -0.05, 0.452), tip = HP(&h, 0.31, 0, 0.555);
-  V3 wl = HP(&h, 0.28, 0.075, 0.445), wr = HP(&h, 0.28, -0.075, 0.445), base = HP(&h, 0.265, 0, 0.47);
-  put(o, bridge, bl, tip, FR_SKIN, FP_FACE, true);
-  put(o, bridge, tip, br, FR_SKIN, FP_FACE, true);
-  put(o, bl, wl, tip, FR_SKIN, FP_FACE, true);
-  put(o, br, tip, wr, FR_SKIN, FP_FACE, true);
-  put(o, wl, base, tip, FR_SKIN_SHADE, FP_FACE, true);
-  put(o, tip, base, wr, FR_SKIN_SHADE, FP_FACE, true);
-  for (int e = 0; e < 2; e++) {
-    double sx = e ? -1 : 1, ac = angle_at(0.5, 0.2 * sx), eu0 = 0.475, eu1 = 0.525, top = eu1 - (eu1 - eu0) * blink;
-#define E(u, da, lift) HS(&h, (u), ac + (da) * sx, (lift))
-    /* the eye: the white, the iris; the upper lid comes down to blink */
-    put(o, E(0.5, -0.13, 0.008), E(eu0, 0, 0.008), E(0.5, 0.13, 0.008), FR_EYE_WHITE, FP_NONE, true);
-    if (blink < 0.6) put(o, E(0.5, -0.13, 0.008), E(0.5, 0.13, 0.008), E(top, 0, 0.008), FR_EYE_WHITE, FP_NONE, true);
-    double ti = top < 0.518 ? top : 0.518;
-    if (blink < 0.6) quad(o, E(0.482, -0.04, 0.011), E(0.482, 0.04, 0.011), E(ti, 0.04, 0.011), E(ti, -0.04, 0.011), FR_IRIS, FP_FACE);
-    quad(o, E(top - 0.004, -0.14, 0.012), E(top - 0.004, 0.14, 0.012), E(top + 0.01, 0.12, 0.012), E(top + 0.01, -0.12, 0.012), FR_LID, FP_FACE);
-    /* the brow along the brow ridge */
-    quad(o, E(0.56, -0.2, 0.012), E(0.565, 0.18, 0.012), E(0.595, 0.16, 0.012), E(0.59, -0.2, 0.012), FR_BROW, FP_FACE);
-#undef E
-    /* the ear, as long as one third of the face, between the brows and the nose's base, flat against the head */
-    V3 ec = HP(&h, 0.4, 0.455 * sx, -0.06);
-    V3 e0 = add(ec, mul(h.F.along, -h.hH * 0.133)), e1 = add(ec, mul(h.F.along, h.hH * 0.02)), e2 = add(ec, mul(h.F.along, h.hH * 0.133));
-    tube(K, e0, e1, h.F.fwd, 0.006, 0.003, 0.012, 0.0035, FR_SKIN, FP_NONE, o);
-    tube(K, e1, e2, h.F.fwd, 0.012, 0.0035, 0.007, 0.003, FR_SKIN, FP_NONE, o);
+  double t0c[3];
+  tone(&h, 0, 0, 0.1, t0c);
+  for (int i = 0; i < FA; i++) put_own(o, GP[0][i], GP[0][(i + 1) % FA], c0, FR_SKIN, FP_HEAD, false, t0c);
+  { /* the mouth's inside, dark, and the upper teeth when the jaw opens */
+    double mz = 0.38, mw = h.MW * 0.95;
+    static const double DARK[3] = { 52, 20, 22 }, TEETH[3] = { 214, 208, 196 };
+    double u0 = L->mouthU - 0.02 - ex.open * 0.09, u1 = L->mouthU + 0.01;
+    V3 A = HP0(&h, u0, -mw, mz), B = HP0(&h, u0, mw, mz), C2 = HP0(&h, u1, mw, mz), D2 = HP0(&h, u1, -mw, mz);
+    put_own(o, A, B, C2, FR_MOUTH, FP_FACE, true, DARK);
+    put_own(o, A, C2, D2, FR_MOUTH, FP_FACE, true, DARK);
+    if (ex.open > 0.05) {
+      u0 = L->mouthU - 0.006 - 0.012 * ex.open, u1 = L->mouthU + 0.004;
+      A = HP0(&h, u0, -mw * 0.7, mz + 0.03), B = HP0(&h, u0, mw * 0.7, mz + 0.03), C2 = HP0(&h, u1, mw * 0.7, mz + 0.03), D2 = HP0(&h, u1, -mw * 0.7, mz + 0.03);
+      put_own(o, A, B, C2, FR_MOUTH, FP_FACE, true, TEETH);
+      put_own(o, A, C2, D2, FR_MOUTH, FP_FACE, true, TEETH);
+    }
   }
-  /* the lips round the front of the face, the mouth's line between them */
-  static const double LIPS[3][3] = { { 0.212, 0.238, 0.006 }, { 0.17, 0.196, 0.008 }, { 0, 0.212, 0.009 } };
-  for (int l = 0; l < 3; l++) {
-    double u0 = l == 2 ? 0.198 - h.open * 0.05 : LIPS[l][0], u1 = LIPS[l][1], lift = LIPS[l][2];
-    int role = l == 2 ? FR_MOUTH : FR_LIP;
-    for (int k = -3; k < 3; k++) {
-      double a0 = PI / 2 + k * 0.09, a1 = a0 + 0.09;
-      quad(o, HS(&h, u0, a0, lift), HS(&h, u0, a1, lift), HS(&h, u1, a1, lift), HS(&h, u1, a0, lift), role, FP_FACE);
+  { /* the nose: rings from between the eyes to the tip, then in to the base between the wings */
+    double bridge = 0.6 + 0.8 * fp->bridge, tipk = 0.7 + 0.6 * fp->tip;
+    double NRd[7][3] = { { 0.53, 0.04, 0.01 * bridge }, { 0.47, 0.05, 0.03 * bridge }, { 0.41, 0.06, 0.05 * bridge }, { 0.35, 0.075, 0.075 * tipk },
+                         { 0.31, 0.09, 0.09 * tipk }, { 0.285, L->noseHalf, 0.07 * tipk }, { 0.268, L->noseHalf * 0.85, 0.035 } };
+    V3 NP[7][9], NN[7][9];
+    double NC[7][9][3];
+    for (int k = 0; k < 7; k++) {
+      double sx, zf;
+      surf(NRd[k][0], PI / 2, &sx, &zf);
+      for (int i = 0; i <= 8; i++) {
+        double a = PI * i / 8, x = cos(a) * NRd[k][1], zz = zf + sin(a) * NRd[k][2] - 0.004;
+        NP[k][i] = HP(&h, NRd[k][0], x, zz);
+        tone(&h, NRd[k][0], x, zz, NC[k][i]);
+      }
+    }
+    for (int k = 0; k < 7; k++)
+      for (int i = 0; i <= 8; i++) {
+        V3 up = NP[k > 0 ? k - 1 : 0][i], dn = NP[k < 6 ? k + 1 : 6][i], l = NP[k][i > 0 ? i - 1 : 0], r = NP[k][i < 8 ? i + 1 : 8];
+        NN[k][i] = norm(cross(sub(r, l), sub(dn, up)));
+      }
+    for (int k = 0; k + 1 < 7; k++)
+      for (int i = 0; i < 8; i++) {
+        V3 n1[3] = { NN[k][i], NN[k + 1][i], NN[k + 1][i + 1] }, n2[3] = { NN[k][i], NN[k + 1][i + 1], NN[k][i + 1] };
+        double c1[3][3], c2[3][3];
+        for (int c = 0; c < 3; c++)
+          c1[0][c] = NC[k][i][c], c1[1][c] = NC[k + 1][i][c], c1[2][c] = NC[k + 1][i + 1][c], c2[0][c] = NC[k][i][c], c2[1][c] = NC[k + 1][i + 1][c],
+          c2[2][c] = NC[k][i + 1][c];
+        put_smooth(o, NP[k][i], NP[k + 1][i], NP[k + 1][i + 1], FR_SKIN, FP_FACE, true, n1, (const double(*)[3])c1);
+        put_smooth(o, NP[k][i], NP[k + 1][i + 1], NP[k][i + 1], FR_SKIN, FP_FACE, true, n2, (const double(*)[3])c2);
+      }
+    static const double NOSTRIL[3] = { 70, 40, 38 };
+    for (int e = 0; e < 2; e++) {
+      double sx = e ? -1 : 1, xx, zf;
+      surf(0.275, PI / 2, &xx, &zf);
+      put_own(o, HP(&h, 0.272, sx * 0.02, zf + 0.06), HP(&h, 0.272, sx * 0.065, zf + 0.04), HP(&h, 0.278, sx * 0.045, zf + 0.075), FR_MOUTH, FP_FACE, true, NOSTRIL);
+    }
+  }
+  /* the eyes: eyeballs in their sockets, the iris and pupil turned to the gaze, lids that close to blink */
+  V3 gaze = h.F.fwd;
+  if (fig->face.has_gaze) gaze = norm(sub(v3(fig->face.gaze[0], fig->face.gaze[1], fig->face.gaze[2]), add(h.bottom, mul(h.F.along, L->eyeU * h.hH))));
+  for (int e = 0; e < 2; e++) {
+    double sx = e ? -1 : 1, rE = L->EW * 0.5, xx, zf;
+    surf(L->eyeU, angle_at(L->eyeU, L->eyeX * sx), &xx, &zf);
+    V3 ec = HP(&h, L->eyeU, L->eyeX * sx, zf - rE * 0.9 - 0.03 * fp->socket);
+    double RE = rE * h.hH;
+    V3 ax = h.F.across, up = h.F.along, fw = h.F.fwd;
+    { /* the eyeball */
+      static const double WHITE[3] = { 222, 216, 208 };
+      V3 pts[7][10];
+      for (int k = 0; k <= 6; k++) {
+        double b = -PI / 2 + PI * k / 6;
+        for (int i = 0; i < 10; i++) {
+          double a = (double)i / 10 * PI * 2;
+          pts[k][i] = add(ec, add(mul(ax, cos(b) * cos(a) * RE), add(mul(up, sin(b) * RE), mul(fw, cos(b) * sin(a) * RE))));
+        }
+      }
+      for (int k = 0; k < 6; k++)
+        for (int i = 0; i < 10; i++) {
+          int j = (i + 1) % 10;
+          put_own(o, pts[k][i], pts[k + 1][j], pts[k][j], FR_EYE_WHITE, FP_EYE, false, WHITE);
+          put_own(o, pts[k][i], pts[k + 1][i], pts[k + 1][j], FR_EYE_WHITE, FP_EYE, false, WHITE);
+        }
+    }
+    V3 g = norm(add(mul(gaze, 1), mul(fw, 0.4))), gx = norm(cross(up, g)), gy = cross(g, gx);
+    double iris[3] = { fig->iris[0], fig->iris[1], fig->iris[2] };
+    static const double PUPIL[3] = { 10, 10, 12 }, SHINE[3] = { 235, 235, 230 };
+    const double *dcol[3] = { iris, PUPIL, SHINE };
+    static const double DR[3] = { 0.46, 0.19, 0.065 }, DL[3] = { 1.0, 1.012, 1.022 };
+    for (int d = 0; d < 3; d++) {
+      V3 c = add(ec, mul(g, RE * DL[d])), ring[10];
+      for (int i = 0; i < 10; i++) {
+        double a = (double)i / 10 * PI * 2;
+        ring[i] = add(c, add(mul(gx, cos(a) * RE * DR[d]), mul(gy, sin(a) * RE * DR[d])));
+      }
+      for (int i = 0; i < 10; i++) put_own(o, c, ring[i], ring[(i + 1) % 10], FR_IRIS, FP_EYE, true, dcol[d]);
+    }
+    double open = -0.36 + (0.62 + 0.1 * ex.browUp - 0.08 * ex.frown) * (1 - ex.blink);
+    for (int l = 0; l < 2; l++) { /* the lids: the upper comes down to blink, the lower stays */
+      double from = l ? -0.38 : PI / 2, to = l ? -PI / 2 : open, lc[3];
+      tone(&h, L->eyeU + (l ? -0.04 : 0.04), L->eyeX, zf, lc);
+      for (int c = 0; c < 3; c++) lc[c] *= l ? 0.95 : 0.92;
+      V3 pts[4][11];
+      double r = RE * 1.07;
+      for (int k = 0; k <= 3; k++) {
+        double b = from + (to - from) * k / 3;
+        for (int i = 0; i <= 10; i++) {
+          double a = PI * 0.08 + PI * 0.84 * i / 10;
+          pts[k][i] = add(ec, add(mul(ax, cos(b) * cos(a) * r), add(mul(up, sin(b) * r), mul(fw, cos(b) * sin(a) * r))));
+        }
+      }
+      for (int k = 0; k < 3; k++)
+        for (int i = 0; i < 10; i++) {
+          put_own(o, pts[k][i], pts[k + 1][i + 1], pts[k][i + 1], FR_LID, FP_EYE, true, lc);
+          put_own(o, pts[k][i], pts[k + 1][i], pts[k + 1][i + 1], FR_LID, FP_EYE, true, lc);
+        }
+    }
+    { /* the brow: a band of hair over the ridge, the inner end lifting or drawing down */
+      V3 bp[5][2];
+      for (int q = 0; q < 5; q++) {
+        double k = q * 0.25, bu = 0.57 + 0.035 * ex.browUp * (1 - k * 0.3) - 0.025 * ex.frown * (1 - k);
+        double x = sx * (L->inner * 0.9 + (L->outer + 0.06 - L->inner * 0.9) * k), bx, zb;
+        surf(bu, angle_at(bu, x), &bx, &zb);
+        bp[q][0] = HP(&h, bu + 0.018 * sin(k * PI), x, zb + 0.022);
+        bp[q][1] = HP(&h, bu - 0.012, x, zb + 0.022);
+      }
+      for (int q = 0; q + 1 < 5; q++) {
+        put(o, bp[q][0], bp[q + 1][0], bp[q + 1][1], FR_BROW, FP_FACE, true);
+        put(o, bp[q][0], bp[q + 1][1], bp[q][1], FR_BROW, FP_FACE, true);
+      }
+    }
+    { /* the ear, between the brow line and the nose's base, flat against the head */
+      V3 ec2 = HP(&h, (L->earTop + L->earBottom) / 2, 0.375 * sx, -0.06);
+      double half = (L->earTop - L->earBottom) / 2 * h.hH;
+      V3 e0 = add(ec2, mul(h.F.along, -half)), e1 = add(ec2, mul(h.F.along, half * 0.15)), e2 = add(ec2, mul(h.F.along, half));
+      tube(K, e0, e1, h.F.fwd, 0.006, 0.003, 0.012, 0.0035, FR_SKIN, FP_NONE, o);
+      tube(K, e1, e2, h.F.fwd, 0.012, 0.0035, 0.007, 0.003, FR_SKIN, FP_NONE, o);
     }
   }
   const FigKit *C = &fig->kit;
@@ -360,25 +616,24 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
         put(o, caps[k][i], caps[k + 1][j], caps[k][j], FR_CAP, FP_NONE, false);
         put(o, caps[k][i], caps[k + 1][i], caps[k + 1][j], FR_CAP, FP_NONE, false);
       }
-    quad(o, HP(&h, 0.725, -0.42, 0.44), HP(&h, 0.725, 0.42, 0.44), HP(&h, 0.69, 0.34, 0.86), HP(&h, 0.69, -0.34, 0.86), FR_CAP, FP_NONE);
-    if (C->gold) /* the gold oak leaves along the bill's front edge */
-      quad(o, HP(&h, 0.712, -0.38, 0.6), HP(&h, 0.712, 0.38, 0.6), HP(&h, 0.692, 0.33, 0.84), HP(&h, 0.692, -0.33, 0.84), FR_GOLD, FP_NONE);
-    quad(o, HP(&h, 0.79, -0.22, 0.46), HP(&h, 0.79, 0.22, 0.46), HP(&h, 0.88, 0.19, 0.4), HP(&h, 0.88, -0.19, 0.4), FR_GOLD, FP_NONE);
+    quad(o, HP(&h, 0.725, -0.35, 0.44), HP(&h, 0.725, 0.35, 0.44), HP(&h, 0.69, 0.28, 0.86), HP(&h, 0.69, -0.28, 0.86), FR_CAP, FP_NONE);
+    if (C->gold) quad(o, HP(&h, 0.712, -0.31, 0.6), HP(&h, 0.712, 0.31, 0.6), HP(&h, 0.692, 0.27, 0.84), HP(&h, 0.692, -0.27, 0.84), FR_GOLD, FP_NONE);
+    quad(o, HP(&h, 0.79, -0.18, 0.46), HP(&h, 0.79, 0.18, 0.46), HP(&h, 0.88, 0.15, 0.4), HP(&h, 0.88, -0.15, 0.4), FR_GOLD, FP_NONE);
   }
   if (C->headset) { /* a band over the crown, cups over the ears, a boom to the corner of the mouth */
     V3 band[9];
     for (int i = 0; i <= 8; i++) {
       double a = PI * i / 8;
-      band[i] = HP(&h, 0.4 + sin(a) * 0.62, cos(a) * 0.5, -0.03);
+      band[i] = HP(&h, 0.4 + sin(a) * 0.62, cos(a) * 0.42, -0.03);
     }
     for (int i = 0; i + 1 < 9; i++) tube(K, band[i], band[i + 1], h.F.fwd, 0.004, 0.003, 0.004, 0.003, FR_KIT, FP_NONE, o);
     for (int e = 0; e < 2; e++) {
       double sx = e ? -1 : 1;
-      V3 c = HP(&h, 0.4, 0.5 * sx, -0.04);
+      V3 c = HP(&h, 0.4, 0.42 * sx, -0.04);
       tube(K, sub(c, mul(h.F.across, 0.04 * sx * h.hH)), add(c, mul(h.F.across, 0.04 * sx * h.hH)), h.F.fwd, 0.011, 0.012, 0.011, 0.012, FR_KIT, FP_NONE, o);
     }
-    tube(K, HP(&h, 0.38, 0.5, 0.0), HP(&h, 0.22, 0.25, 0.45), h.F.across, 0.0015, 0.0015, 0.0015, 0.0015, FR_KIT, FP_NONE, o);
-    tube(K, HP(&h, 0.22, 0.25, 0.45), HP(&h, 0.2, 0.1, 0.5), h.F.across, 0.004, 0.004, 0.004, 0.004, FR_KIT, FP_NONE, o);
+    tube(K, HP(&h, 0.38, 0.42, 0.0), HP(&h, 0.22, 0.2, 0.45), h.F.across, 0.0015, 0.0015, 0.0015, 0.0015, FR_KIT, FP_NONE, o);
+    tube(K, HP(&h, 0.22, 0.2, 0.45), HP(&h, 0.2, 0.08, 0.5), h.F.across, 0.004, 0.004, 0.004, 0.004, FR_KIT, FP_NONE, o);
   }
 }
 
@@ -526,14 +781,49 @@ void fig_colour(const FigSpec *f, int role, float c[3]) {
 }
 
 /* ---- drawing ---- */
-typedef struct { float z; int idx; float pts[3][2], col[3]; } Shaded;
+typedef struct { float z; int idx; float pts[3][2], col[3]; bool grad; FigGrad g; } Shaded;
 static int by_depth(const void *a, const void *b) {
   const Shaded *x = a, *y = b;
   if (x->z != y->z) return x->z < y->z ? 1 : -1; /* far first */
   return x->idx - y->idx;
 }
 
-#define FIG_MAX_TRIS 4096
+/* the gradient that reproduces three corner colours over a triangle (see figure.js) */
+static bool gradient(const float P[3][2], const double cs[3][3], FigGrad *G) {
+  double x1 = P[1][0] - P[0][0], y1 = P[1][1] - P[0][1], x2 = P[2][0] - P[0][0], y2 = P[2][1] - P[0][1], det = x1 * y2 - x2 * y1;
+  if (fabs(det) < 1e-9) return false;
+  double lum[3];
+  for (int q = 0; q < 3; q++) lum[q] = 0.3 * cs[q][0] + 0.59 * cs[q][1] + 0.11 * cs[q][2];
+  double a = lum[1] - lum[0], b = lum[2] - lum[0], gx = (a * y2 - b * y1) / det, gy = (b * x1 - a * x2) / det, gl = sqrt(gx * gx + gy * gy);
+  if (gl < 1e-6) return false;
+  double ux = gx / gl, uy = gy / gl, lo = INFINITY, hi = -INFINITY;
+  for (int q = 0; q < 3; q++) {
+    double pr = (P[q][0] - P[0][0]) * ux + (P[q][1] - P[0][1]) * uy;
+    if (pr < lo) lo = pr;
+    if (pr > hi) hi = pr;
+  }
+  for (int i = 0; i < 3; i++) {
+    double ai = cs[1][i] - cs[0][i], bi = cs[2][i] - cs[0][i], fx = (ai * y2 - bi * y1) / det, fy = (bi * x1 - ai * x2) / det, d = fx * ux + fy * uy;
+    double v0 = cs[0][i] + d * lo, v1 = cs[0][i] + d * hi;
+    G->c0[i] = (float)(v0 < 0 ? 0 : v0 > 255 ? 255 : v0);
+    G->c1[i] = (float)(v1 < 0 ? 0 : v1 > 255 ? 255 : v1);
+  }
+  G->x0 = (float)(P[0][0] + ux * lo), G->y0 = (float)(P[0][1] + uy * lo), G->x1 = (float)(P[0][0] + ux * hi), G->y1 = (float)(P[0][1] + uy * hi);
+  return true;
+}
+
+static void shade(V3 nn, const double base[3], V3 ld, V3 view, const FigLight *light, double out[3]) {
+  double kl = dot(nn, ld), vv = dot(nn, view);
+  if (kl < 0) kl = 0;
+  if (vv < 0) vv = 0;
+  double rim = pow(1 - vv, 3);
+  for (int q = 0; q < 3; q++) {
+    double v = base[q] * (0.24 + 0.85 * kl * light->key[q] / 255) + 255 * rim * 0.2 * light->rim[q] / 255;
+    out[q] = v > 255 ? 255 : v;
+  }
+}
+
+#define FIG_MAX_TRIS 8192
 void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *light, FigFill fill, void *ud) {
   static FigTri tris[FIG_MAX_TRIS];
   Shaded *all = malloc(sizeof *all * (size_t)FIG_MAX_TRIS * (size_t)(n > 0 ? n : 1));
@@ -557,6 +847,7 @@ void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *lig
       Shaded *s = &all[na];
       s->z = (float)z;
       s->idx = na;
+      s->grad = false;
       for (int q = 0; q < 3; q++) {
         V3 p = q == 0 ? a : q == 1 ? b : c, qd = sub(p, cp);
         double zz = dot(qd, cf);
@@ -564,21 +855,30 @@ void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *lig
         s->pts[q][0] = (float)(cam->cx + dot(qd, cr) / zz * cam->F);
         s->pts[q][1] = (float)(cam->cy - dot(qd, cu) / zz * cam->F);
       }
-      float base[3];
-      fig_colour(&figs[k], t->role, base);
-      double kl = dot(nn, ld), vv = -dot(nn, norm(d));
-      if (kl < 0) kl = 0;
-      if (vv < 0) vv = 0;
-      double rim = pow(1 - vv, 3);
-      for (int q = 0; q < 3; q++) {
-        double v = base[q] * (0.24 + 0.85 * kl * light->key[q] / 255) + 255 * rim * 0.2 * light->rim[q] / 255;
-        s->col[q] = (float)(v > 255 ? 255 : v);
+      V3 view = norm(mul(d, -1));
+      if (t->shade == FS_SMOOTH) {
+        double cs[3][3];
+        for (int q = 0; q < 3; q++) {
+          V3 vn = v3(t->ns[q][0], t->ns[q][1], t->ns[q][2]);
+          if (dot(vn, view) < 0) vn = mul(vn, -1);
+          double base[3] = { t->cs[q][0], t->cs[q][1], t->cs[q][2] };
+          shade(vn, base, ld, view, light, cs[q]);
+        }
+        for (int q = 0; q < 3; q++) s->col[q] = (float)((cs[0][q] + cs[1][q] + cs[2][q]) / 3);
+        s->grad = gradient((const float(*)[2])s->pts, (const double(*)[3])cs, &s->g);
+      } else {
+        float bf[3];
+        if (t->shade == FS_OWN) bf[0] = t->col[0], bf[1] = t->col[1], bf[2] = t->col[2];
+        else fig_colour(&figs[k], t->role, bf);
+        double base[3] = { bf[0], bf[1], bf[2] }, out[3];
+        shade(nn, base, ld, view, light, out);
+        for (int q = 0; q < 3; q++) s->col[q] = (float)out[q];
       }
       na++;
     }
   }
   qsort(all, (size_t)na, sizeof *all, by_depth);
-  for (int i = 0; i < na; i++) fill((const float(*)[2])all[i].pts, all[i].col, ud);
+  for (int i = 0; i < na; i++) fill((const float(*)[2])all[i].pts, all[i].col, all[i].grad ? &all[i].g : NULL, ud);
   free(all);
 }
 
@@ -611,14 +911,26 @@ static void seat(float H, FigPose *p) {
 }
 #define SET(b, x, y, z) (p->ang[b][0] = (float)(x), p->ang[b][1] = (float)(y), p->ang[b][2] = (float)(z))
 
-void fig_crew(int who, float H, float raise, FigSpec *f) {
+static const FigFace FACE_DEFAULT = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.3f, 0.2f };
+/* a figure with the default looks: what figure.js gives when nothing is set */
+static void spec_default(FigSpec *f, float H) {
   memset(f, 0, sizeof *f);
   f->height = H;
+  f->shape = FACE_DEFAULT;
+  memcpy(f->skin, (uint8_t[]){ 196, 152, 122 }, 3);
+  memcpy(f->hair, (uint8_t[]){ 52, 40, 32 }, 3);
+  memcpy(f->iris, (uint8_t[]){ 70, 58, 44 }, 3);
+}
+
+void fig_crew(int who, float H, float raise, FigSpec *f) {
+  spec_default(f, H);
   FigPose *p = &f->pose;
   if (who == FC_OPERATOR) { /* the ship's flame-resistant coveralls and a headset, seated, leaning in to his scope */
     f->kit = (FigKit){ FU_COVERALLS, FD_NONE, false, false, true, true, false, false };
     memcpy(f->skin, (uint8_t[]){ 205, 160, 128 }, 3);
     memcpy(f->hair, (uint8_t[]){ 34, 26, 20 }, 3);
+    memcpy(f->iris, (uint8_t[]){ 86, 62, 40 }, 3);
+    f->shape = (FigFace){ 0.3f, 0.45f, 0.45f, 0.45f, 0.35f, 0.55f, 0.65f, 0.3f, 0.05f, 0.08f }; /* twenty-four, clean-shaven */
     seat(H, p);
     SET(FB_HIPS, 14, 0, 0), SET(FB_CHEST, 8, 0, 0), SET(FB_NECK, -12, 0, 0), SET(FB_HEAD, -8, 0, 0);
     SET(FB_UPPER_L, 0, -62, -58), SET(FB_UPPER_R, 0, 62, 58), SET(FB_FORE_L, 0, -48, 6), SET(FB_FORE_R, 0, 48, -6);
@@ -628,6 +940,8 @@ void fig_crew(int who, float H, float raise, FigSpec *f) {
     f->kit = (FigKit){ FU_KHAKI, FD_ANCHOR, true, false, false, false, true, false };
     memcpy(f->skin, (uint8_t[]){ 190, 140, 110 }, 3);
     memcpy(f->hair, (uint8_t[]){ 46, 40, 36 }, 3);
+    memcpy(f->iris, (uint8_t[]){ 60, 70, 80 }, 3);
+    f->shape = (FigFace){ 0.75f, 0.55f, 0.8f, 0.6f, 0.7f, 0.65f, 0.4f, 0.6f, 0.5f, 0.55f }; /* forty-five, a day's stubble */
     pose_clear(p);
     SET(FB_UPPER_L, 0, -8, -82), SET(FB_FORE_L, 0, -86, 0), SET(FB_HAND_L, 0, 0, 16);
     SET(FB_UPPER_R, 0, 8, 82), SET(FB_FORE_R, 0, 12, 0), SET(FB_HEAD, 0, -6, 0);
@@ -636,6 +950,8 @@ void fig_crew(int who, float H, float raise, FigSpec *f) {
     f->kit = (FigKit){ FU_KHAKI, FD_OAK, true, true, false, false, false, false };
     memcpy(f->skin, (uint8_t[]){ 196, 150, 120 }, 3);
     memcpy(f->hair, (uint8_t[]){ 140, 138, 134 }, 3);
+    memcpy(f->iris, (uint8_t[]){ 76, 92, 104 }, 3);
+    f->shape = (FigFace){ 0.6f, 0.75f, 0.55f, 0.65f, 0.8f, 0.45f, 0.3f, 0.8f, 0.85f, 0.25f }; /* fifty-five, deep-set eyes */
     seat(H, p);
     SET(FB_HIPS, -6, 0, 0), SET(FB_CHEST, -2, 0, 0), SET(FB_NECK, 4, 0, 0);
     SET(FB_UPPER_L, 0, 12, -84), SET(FB_FORE_L, 0, -88, 0), SET(FB_HAND_L, 0, -6, -10);
@@ -699,8 +1015,7 @@ static bool is_boot(const FigTri *t, const void *c) {
 bool fig_measure(double H, FigRatios *r) {
   static FigTri T[FIG_MAX_TRIS], S[FIG_MAX_TRIS], Vt[FIG_MAX_TRIS];
   FigSpec f;
-  memset(&f, 0, sizeof f);
-  f.height = (float)H;
+  spec_default(&f, (float)H);
   int nt = fig_build(&f, T, FIG_MAX_TRIS);
   Skel K = skeleton(H);
   Joint W[FB_COUNT];
@@ -740,4 +1055,221 @@ bool fig_measure(double H, FigRatios *r) {
   r->thirds[0] = (K.nose - K.chin) / h, r->thirds[1] = (K.brow - K.nose) / h, r->thirds[2] = (K.hairline - K.brow) / h;
   r->circle = r_foot / r_tip;
   return true;
+}
+
+/* ---- the face's rules, measured on the mesh: each 1 when the rule holds ---- */
+bool fig_face_rules(int who, FigFaceRules *r) {
+  static FigTri t[FIG_MAX_TRIS];
+  FigSpec f;
+  fig_crew(who, 1.75f, 0, &f);
+  memset(&f.pose, 0, sizeof f.pose); /* standing straight: the head's axes are the world's */
+  int n = fig_build(&f, t, FIG_MAX_TRIS);
+  if (n < 0) return false;
+  Skel K = skeleton(1.75);
+  Land L = landmarks();
+  double hH = K.H / 8, bottom = K.chin + 0.01 * K.H - 0.01 * K.H;
+  /* the eyeballs (the white spheres: one eye wide each), the iris centres (the pupils), the nose's widest point, the
+   * mouth's inside (its corners), the ears' extents; in head units */
+  double ex0 = 1e9, ex1 = -1e9, ey = 0, ny = 0, nx = 0, mx = 0, px = 0, et = -1e9, eb = 1e9;
+  int ne = 0, np = 0;
+  for (int i = 0; i < n; i++) {
+    const FigTri *q = &t[i];
+    for (int k = 0; k < 3; k++) {
+      double x = q->v[k][0] / hH, u = (q->v[k][1] - bottom) / hH;
+      if (q->role == FR_EYE_WHITE && x > 0) ex0 = mind(ex0, x), ex1 = maxd(ex1, x), ey += u, ne++;
+      if (q->role == FR_IRIS && x > 0 && k == 0) px += x, np++;
+      if (q->part == FP_FACE && q->role == FR_SKIN && x > 0 && u < 0.29) nx = maxd(nx, x);
+      if (q->role == FR_MOUTH && q->part == FP_FACE && q->shade == FS_OWN && q->col[0] < 60) mx = maxd(mx, fabs(x));
+      if (q->role == FR_SKIN && q->part == FP_NONE && x > 0.3) et = maxd(et, u), eb = mind(eb, u);
+    }
+  }
+  (void)ny;
+  if (!ne || !np) return false;
+  double eye_w = ex1 - ex0, gap = 2 * ex0, pupil = px / np;
+  r->eye_height = ey / ne / EYE_U;
+  r->eye_gap = gap / eye_w;
+  r->nose_width = 2 * nx / gap;
+  r->mouth_corners = mx / 0.95 / pupil;
+  r->ear_top = et / L.earTop;
+  r->ear_bottom = eb / L.earBottom;
+  return true;
+}
+
+/* ---- speech (see figure.js: the same phonemes, shapes, pacing and blending) ---- */
+enum { V_REST, V_MBP, V_FV, V_TH, V_AA, V_EE, V_IH, V_OO, V_OH, V_W, V_SH, V_TT, V_KK, V_SS, V_COUNT };
+static const double VIS[V_COUNT][3] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0.08, 0.2, 0 }, { 0.15, 0.25, 0 }, { 0.75, 0.35, 0 }, { 0.3, 0.9, 0 },
+                                        { 0.4, 0.55, 0 }, { 0.35, 0, 0.9 }, { 0.6, 0.1, 0.6 }, { 0.15, 0, 0.8 }, { 0.25, 0.1, 0.5 }, { 0.25, 0.4, 0 },
+                                        { 0.35, 0.3, 0 }, { 0.12, 0.6, 0 } };
+static const struct { const char *ph; int vis; bool vowel; } PHON[] = {
+  { "AA", V_AA, 1 }, { "AE", V_AA, 1 }, { "AH", V_AA, 1 }, { "AO", V_OH, 1 }, { "AW", V_AA, 1 }, { "AY", V_AA, 1 }, { "EH", V_EE, 1 },
+  { "ER", V_IH, 1 }, { "EY", V_EE, 1 }, { "IH", V_IH, 1 }, { "IY", V_EE, 1 }, { "OW", V_OH, 1 }, { "OY", V_OH, 1 }, { "UH", V_OO, 1 },
+  { "UW", V_OO, 1 }, { "B", V_MBP, 0 }, { "P", V_MBP, 0 }, { "M", V_MBP, 0 }, { "F", V_FV, 0 }, { "V", V_FV, 0 }, { "TH", V_TH, 0 },
+  { "DH", V_TH, 0 }, { "T", V_TT, 0 }, { "D", V_TT, 0 }, { "N", V_TT, 0 }, { "L", V_TT, 0 }, { "S", V_SS, 0 }, { "Z", V_SS, 0 },
+  { "SH", V_SH, 0 }, { "TSH", V_SH, 0 }, { "JH", V_SH, 0 }, { "K", V_KK, 0 }, { "G", V_KK, 0 }, { "NG", V_KK, 0 }, { "HH", V_KK, 0 },
+  { "R", V_W, 0 }, { "W", V_W, 0 }, { "Y", V_EE, 0 } };
+static const struct { const char *w, *ph; } WORDLIST[] = {
+  { "BOGEYS", "B OW G IY Z" }, { "TWO", "T UW" }, { "CONTACTS", "K AA N T AE K T S" }, { "BEARING", "B EH R IH NG" }, { "THREE", "TH R IY" },
+  { "FIVE", "F AY V" }, { "ZERO", "Z IY R OW" }, { "CLOSING", "K L OW Z IH NG" }, { "FAST", "F AE S T" }, { "ALERT", "AH L ER T" },
+  { "WE", "W IY" }, { "HAVE", "HH AE V" }, { "INBOUND", "IH N B AW N D" }, { "SEND", "S EH N D" }, { "THE", "DH AH" }, { "BIRDS", "B ER D Z" } };
+static const char *const DIGIT[10] = { "ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE" };
+static const struct { const char *g, *ph; } RULES[] = {
+  { "TION", "SH AH N" }, { "SH", "SH" }, { "TH", "TH" }, { "PH", "F" }, { "NG", "NG" }, { "CK", "K" }, { "EE", "IY" }, { "EA", "IY" },
+  { "OO", "UW" }, { "OU", "AW" }, { "OW", "OW" }, { "AI", "EY" }, { "AY", "EY" }, { "OI", "OY" }, { "A", "AE" }, { "E", "EH" }, { "I", "IH" },
+  { "O", "AA" }, { "U", "AH" }, { "Y", "IY" }, { "B", "B" }, { "C", "K" }, { "D", "D" }, { "F", "F" }, { "G", "G" }, { "H", "HH" }, { "J", "JH" },
+  { "K", "K" }, { "L", "L" }, { "M", "M" }, { "N", "N" }, { "P", "P" }, { "Q", "K" }, { "R", "R" }, { "S", "S" }, { "T", "T" }, { "V", "V" },
+  { "W", "W" }, { "X", "K S" }, { "Z", "Z" } };
+
+/* a word's phonemes, as indexes into PHON; returns how many */
+static int phonemes(const char *word, int *out, int max) {
+  char buf[96] = "";
+  bool found = false;
+  for (size_t i = 0; i < sizeof WORDLIST / sizeof WORDLIST[0]; i++)
+    if (!strcmp(WORDLIST[i].w, word)) {
+      snprintf(buf, sizeof buf, "%s", WORDLIST[i].ph);
+      found = true;
+    }
+  if (!found) {
+    size_t len = strlen(word);
+    for (size_t i = 0; i < len;) {
+      size_t r = 0, best = sizeof RULES / sizeof RULES[0];
+      for (; r < sizeof RULES / sizeof RULES[0]; r++)
+        if (!strncmp(word + i, RULES[r].g, strlen(RULES[r].g))) {
+          best = r;
+          break;
+        }
+      if (best == sizeof RULES / sizeof RULES[0]) {
+        i++;
+        continue;
+      }
+      size_t at = strlen(buf);
+      snprintf(buf + at, sizeof buf - at, "%s%s", at ? " " : "", RULES[best].ph);
+      i += strlen(RULES[best].g);
+    }
+  }
+  int n = 0;
+  for (char *tok = buf; *tok && n < max;) {
+    char ph[4] = "";
+    int k = 0;
+    while (*tok && *tok != ' ' && k < 3) ph[k++] = *tok++;
+    ph[k] = 0;
+    while (*tok == ' ') tok++;
+    for (size_t p = 0; p < sizeof PHON / sizeof PHON[0]; p++)
+      if (!strcmp(PHON[p].ph, ph)) {
+        out[n++] = (int)p;
+        break;
+      }
+  }
+  return n;
+}
+
+static bool is_letter(char c) { return (c >= 'A' && c <= 'Z') || c == '\''; }
+void fig_speech(const char *text, float t0f, float t1f, FigSpeech *S) {
+  double t0 = t0f, t1 = t1f;
+  memset(S, 0, sizeof *S);
+  int ph[FIG_WORDS][24], nph[FIG_WORDS];
+  double pause[FIG_WORDS];
+  char up[256];
+  snprintf(up, sizeof up, "%s", text);
+  for (char *c = up; *c; c++)
+    if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 'a' + 'A');
+  int nw = 0;
+  for (const char *c = up; *c && nw < FIG_WORDS;) {
+    while (*c && !is_letter(*c) && !(*c >= '0' && *c <= '9')) c++;
+    if (!*c) break;
+    char w[32] = "", sp[32] = "";
+    int k = 0;
+    if (*c >= '0' && *c <= '9') w[k++] = *c++;
+    else
+      while (is_letter(*c) && k < 31) w[k++] = *c++;
+    w[k] = 0;
+    snprintf(S->word[nw], sizeof S->word[nw], "%.15s", w);
+    const char *say = w;
+    if (w[0] >= '0' && w[0] <= '9') say = DIGIT[w[0] - '0'];
+    else { /* drop apostrophes */
+      int j = 0;
+      for (int i = 0; w[i]; i++)
+        if (w[i] != '\'') sp[j++] = w[i];
+      sp[j] = 0;
+      say = sp;
+    }
+    nph[nw] = phonemes(say, ph[nw], 24);
+    const char *p = c;
+    bool stop = false, comma = false;
+    while (*p && !is_letter(*p) && !(*p >= '0' && *p <= '9')) {
+      if (*p == '.' || *p == '!' || *p == '?') stop = true;
+      if (*p == ',') comma = true;
+      p++;
+    }
+    pause[nw] = stop ? 0.18 : comma ? 0.1 : 0;
+    nw++;
+  }
+  S->nwords = nw;
+  double lead = 0.06, weight = 0, pauses = 0;
+  for (int i = 0; i < nw; i++) {
+    for (int k = 0; k < nph[i]; k++) weight += PHON[ph[i][k]].vowel ? 1 : 0.55;
+    pauses += pause[i];
+  }
+  double kk = (t1 - t0 - lead - pauses) / (weight != 0 ? weight : 1);
+  if (kk < 0.01) kk = 0.01;
+  int ns = 0;
+  S->t0[ns] = (float)t0, S->t1[ns] = (float)(t0 + lead), S->vis[ns++] = V_REST;
+  double t = t0 + lead;
+  for (int i = 0; i < nw; i++) {
+    S->start[i] = (float)t;
+    for (int k = 0; k < nph[i] && ns < FIG_SEGS; k++) {
+      double d = (PHON[ph[i][k]].vowel ? 1 : 0.55) * kk;
+      S->t0[ns] = (float)t, S->t1[ns] = (float)(t + d), S->vis[ns++] = (uint8_t)PHON[ph[i][k]].vis;
+      t += d;
+    }
+    if (pause[i] > 0 && ns < FIG_SEGS) {
+      S->t0[ns] = (float)t, S->t1[ns] = (float)(t + pause[i]), S->vis[ns++] = V_REST;
+      t += pause[i];
+    }
+  }
+  S->t1[ns - 1] = (float)t1; /* the last stretch ends with the card */
+  S->nseg = ns;
+}
+
+void fig_mouth(const FigSpeech *S, float tf, float *open, float *wide, float *round) {
+  double t = tf, o = 0, w = 0, r = 0, ws = 0;
+  for (int i = 0; i < S->nseg; i++) {
+    double mid = ((double)S->t0[i] + S->t1[i]) / 2, half = maxd(0.05, ((double)S->t1[i] - S->t0[i]) * 0.9), d = fabs(t - mid);
+    if (d >= half) continue;
+    double k = 0.5 + 0.5 * cos(PI * d / half);
+    o += VIS[S->vis[i]][0] * k, w += VIS[S->vis[i]][1] * k, r += VIS[S->vis[i]][2] * k, ws += k;
+  }
+  if (ws == 0) ws = 1, o = w = r = 0;
+  *open = (float)(o / ws), *wide = (float)(w / ws), *round = (float)(r / ws);
+}
+
+int fig_words_shown(const FigSpeech *S, float t) {
+  int n = 0;
+  for (int i = 0; i < S->nwords; i++) n += S->start[i] <= t;
+  return n;
+}
+
+/* the caption's text up to its nth spoken word, with the punctuation that follows that word */
+void fig_spoken_upto(const char *text, int n, char *out, size_t size) {
+  size_t i = 0, len = strlen(text), end = 0;
+  int k = 0;
+  if (n > 0) {
+    end = len;
+    while (i < len) {
+      char c = text[i];
+      bool letter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '\'';
+      if (!letter && !(c >= '0' && c <= '9')) {
+        i++;
+        continue;
+      }
+      if (c >= '0' && c <= '9') i++;
+      else
+        while (i < len && ((text[i] >= 'A' && text[i] <= 'Z') || (text[i] >= 'a' && text[i] <= 'z') || text[i] == '\'')) i++;
+      while (i < len && text[i] != ' ' && !((text[i] >= 'A' && text[i] <= 'Z') || (text[i] >= 'a' && text[i] <= 'z') || text[i] == '\'' || (text[i] >= '0' && text[i] <= '9'))) i++;
+      if (++k == n) {
+        end = i;
+        break;
+      }
+    }
+  }
+  snprintf(out, size, "%.*s", (int)end, text);
 }

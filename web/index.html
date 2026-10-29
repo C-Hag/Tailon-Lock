@@ -3539,11 +3539,11 @@ const Figure = (() => {
   // to the nose's base, the nose's base to the brows and the brows to the hairline are each a third of the face
   // (chin to hairline = 4/5 of the head); the ear is as long as one third, between the brows and the nose's base.
   const HEAD = [
-    // u, half-width, forward (the face's profile), back
-    [0.0, 0.14, 0.30, -0.05], [0.04, 0.2, 0.40, -0.1], [0.1, 0.28, 0.41, -0.2], [0.16, 0.33, 0.43, -0.3], [0.2, 0.35, 0.44, -0.34],
-    [0.24, 0.37, 0.45, -0.38], [0.267, 0.39, 0.44, -0.4], [0.33, 0.42, 0.43, -0.43], [0.4, 0.44, 0.44, -0.46], [0.47, 0.46, 0.43, -0.48],
-    [0.533, 0.46, 0.465, -0.49], [0.6, 0.46, 0.46, -0.5], [0.7, 0.46, 0.445, -0.5], [0.8, 0.45, 0.41, -0.49], [0.88, 0.41, 0.34, -0.44],
-    [0.94, 0.32, 0.24, -0.34], [0.98, 0.18, 0.12, -0.18], [1.0, 0.04, 0.02, -0.03]];
+    // u, half-width, forward (the face's profile), back: a head about three quarters as broad as it is tall
+    [0.0, 0.112, 0.30, -0.05], [0.04, 0.16, 0.40, -0.1], [0.1, 0.224, 0.41, -0.2], [0.16, 0.264, 0.43, -0.3], [0.2, 0.28, 0.44, -0.34],
+    [0.24, 0.296, 0.45, -0.38], [0.267, 0.312, 0.44, -0.4], [0.33, 0.336, 0.43, -0.43], [0.4, 0.352, 0.44, -0.46], [0.47, 0.368, 0.43, -0.48],
+    [0.533, 0.368, 0.465, -0.49], [0.6, 0.368, 0.46, -0.5], [0.7, 0.368, 0.445, -0.5], [0.8, 0.36, 0.41, -0.49], [0.88, 0.328, 0.34, -0.44],
+    [0.94, 0.256, 0.24, -0.34], [0.98, 0.144, 0.12, -0.18], [1.0, 0.032, 0.02, -0.03]];
   const HN = 24;   // segments round the head
   // a point on the head's surface: u up the head, a round it (0 = the left side, pi/2 = the face)
   const headAt = (u) => {
@@ -3559,54 +3559,197 @@ const Figure = (() => {
   };
   // the angle round the head at which the surface is x across (front half)
   const angleAt = (u, x) => { const [hw] = headAt(u), c = Math.max(-1, Math.min(1, x / hw)); return Math.acos(Math.sign(c) * Math.pow(Math.abs(c), 1 / 0.85)); };
+  // ---- the face engine ----
+  // The head is a fine mesh round the head bone, shaded smooth, its shape set by landmarks from the classical rules:
+  // the eyes at half the head's height, one eye's width apart (the head five eyes wide), the nose as wide as the eyes
+  // are apart at their inner corners, the mouth's corners under the pupils, the ears between the brow line and the
+  // nose's base, the face in thirds. Per person, parameters (0-1) shape the brow ridge, cheekbones, jaw, chin, nose,
+  // lips, eye sockets and age; expressions (jaw open, mouth shapes, brows, blink, smile, gaze) move it.
+  const FACE_DEFAULT = { brow: 0.5, cheek: 0.5, jaw: 0.5, chin: 0.5, bridge: 0.5, tip: 0.5, lips: 0.5, socket: 0.5, age: 0.3, stubble: 0.2 };
+  const FU = 36, FA = 40;   // rings up the head, segments round it
+  const EYE_U = 0.5;
+  // the landmarks in head units (head height = 1); x across, u up from the chin, z forward
+  function landmarks() {
+    const hwEye = headAt(EYE_U)[0], EW = 2 * hwEye / 5;   // five eyes across the head at the eyes
+    return {
+      EW, eyeX: EW, inner: EW / 2, outer: 1.5 * EW, eyeU: EYE_U, brow: 2 / 3 * 0.8, noseBase: 1 / 3 * 0.8, hairline: 0.8,
+      mouthU: 0.8 / 3 * 2 / 3, mouthX: EW, noseHalf: EW / 2, earTop: 2 / 3 * 0.8, earBottom: 1 / 3 * 0.8
+    };
+  }
+  const gauss = (d2, r) => Math.exp(-d2 / (r * r));
+  // the face's own value noise: a tiny hash of a lattice, smoothly blended, for skin tone and stubble
+  const hash = (i, j) => { let h = (i * 374761393 + j * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  const noise = (x, y) => {
+    const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const a = hash(i, j), b = hash(i + 1, j), c = hash(i, j + 1), d = hash(i + 1, j + 1);
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+  };
+  // the mouth's shape from the expression: open (the jaw), wide, round (pursed), smile
+  function headShape(u, a, fp, ex, L) {
+    let [x, z] = surf(u, a);
+    const front = Math.sin(a) > 0, ax = Math.abs(x);
+    let dz = 0, dx = 0, du = 0;
+    if (front) {
+      // the brow ridge over the eyes; the sockets under it; the cheekbones below and outside the eyes
+      dz += (0.015 + 0.04 * fp.brow) * gauss((u - 0.56) ** 2 * 6 + Math.max(0, ax - 0.32) ** 2, 0.06);
+      dz -= (0.02 + 0.05 * fp.socket) * gauss((u - L.eyeU) ** 2 + (ax - L.eyeX) ** 2, 0.075);
+      dz += (0.01 + 0.035 * fp.cheek) * gauss((u - 0.4) ** 2 + (ax - 0.3) ** 2, 0.09);
+      // the chin forward, the lips full, the mouth's line between them
+      dz += (0.01 + 0.04 * fp.chin) * gauss((u - 0.05) ** 2 * 3 + x * x, 0.1);
+      const mw = L.mouthX * (1 + 0.25 * ex.wide + 0.15 * ex.smile - 0.35 * ex.round);
+      const inMouth = gauss(Math.max(0, ax - mw * 0.8) ** 2, 0.05);
+      dz += (0.008 + 0.022 * fp.lips) * gauss((u - L.mouthU - 0.028) ** 2, 0.022) * inMouth * (1 + 0.6 * ex.round);
+      dz += (0.008 + 0.026 * fp.lips) * gauss((u - L.mouthU + 0.03) ** 2, 0.024) * inMouth * (1 + 0.6 * ex.round);
+      dz -= 0.012 * gauss((u - L.mouthU) ** 2, 0.01) * inMouth;
+      // age: the folds from the nose's wings to the mouth's corners
+      dz -= 0.012 * fp.age * gauss((ax - (L.noseHalf + (L.mouthX - L.noseHalf) * (L.noseBase - u) / (L.noseBase - L.mouthU))) ** 2 + 0, 0.03) * (u < L.noseBase && u > L.mouthU - 0.02 ? 1 : 0);
+      // the smile lifts the mouth's corners and the cheeks
+      du += ex.smile * 0.02 * gauss((u - L.mouthU) ** 2 + (ax - L.mouthX) ** 2, 0.06);
+      dz += ex.smile * 0.012 * gauss((u - 0.36) ** 2 + (ax - 0.26) ** 2, 0.07);
+    }
+    // the jaw: wider or narrower below the mouth
+    if (u < 0.3) x *= 1 + 0.22 * (fp.jaw - 0.5) * (1 - u / 0.3);
+    const n = Math.hypot(x, z) || 1;
+    return { x: x + x / n * dz + dx, z: z + z / n * dz, u: u + du };
+  }
   function head(K, w, fig, out) {
     const F = frame(w), hH = K.H / 8, bottom = add(w.at, mul(F.along, -0.01 * K.H)), C = fig.kit || {};
-    const open = (fig.face && fig.face.open) || 0, blink = (fig.face && fig.face.blink) || 0;
-    const jaw = u => (u < 0.205 ? open * 0.07 * Math.min(1, (0.205 - u) / 0.06) : 0);   // the jaw drops for speech
-    const P = (u, x, z) => add(bottom, add(mul(F.along, (u - jaw(u)) * hH), add(mul(F.across, x * hH), mul(F.fwd, z * hH))));
-    const S = (u, a, lift = 0) => { const [x, z] = surf(u, a), n = Math.hypot(x, z) || 1; return P(u, x + x / n * lift, z + z / n * lift); };
-    const rings = HEAD.map(([u]) => Array.from({ length: HN }, (_, i) => {
-      const a = i / HN * Math.PI * 2, [x, z] = surf(u, a);
-      return { p: P(u, x, z), u, a: ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), x, z };
+    const fp = Object.assign({}, FACE_DEFAULT, fig.faceShape || {}), L = landmarks();
+    const fe = fig.face || {}, ex = { open: fe.open || 0, wide: fe.wide || 0, round: fe.round || 0, smile: fe.smile || 0, browUp: fe.browUp || 0, frown: fe.frown || 0, blink: fe.blink || 0 };
+    const skin = fig.skin || [196, 152, 122], hair = fig.hair || [52, 40, 32];
+    // the jaw opens about a hinge in front of the ears: everything below the mouth's line turns down
+    const jawA = ex.open * 0.26;
+    const hinge = [0, 0.34, -0.12];   // u, z of the hinge
+    // the lips part along the mouth's line: inside the mouth's width the lower lip goes with the jaw and the upper
+    // stays; outside it the skin stretches smoothly from the cheeks down to the jaw
+    const MW = L.mouthX * (1 + 0.25 * ex.wide + 0.15 * ex.smile - 0.35 * ex.round);
+    const jawWeight = (u, x) => {
+      const soft = u >= L.mouthU + 0.02 ? 0 : u <= L.mouthU - 0.06 ? 1 : (L.mouthU + 0.02 - u) / 0.08;
+      const sharp = u < L.mouthU ? 1 : 0, inside = Math.max(0, Math.min(1, (MW * 1.05 - Math.abs(x)) / (MW * 0.25)));
+      return sharp * inside + soft * (1 - inside);
+    };
+    const place = (u, x, z) => {
+      const k = jawWeight(u, x) * jawA;
+      if (k) { const du = u - hinge[1], dz = z - hinge[2], c = Math.cos(k), s = Math.sin(k); u = hinge[1] + du * c - dz * s; z = hinge[2] + du * s + dz * c; }
+      return add(bottom, add(mul(F.along, u * hH), add(mul(F.across, x * hH), mul(F.fwd, z * hH))));
+    };
+    const P = (u, x, z) => place(u, x, z);
+    // the skin's colour at a point: tone variation, warmer cheeks, nose and lips; stubble on the jaw; the hair
+    const tone = (u, x, z) => {
+      let c = skin.map(v => v * (0.96 + 0.08 * noise(x * 9 + 3, u * 9)));
+      const warm = 0.08 * gauss((u - 0.38) ** 2 + (Math.abs(x) - 0.26) ** 2, 0.08) + 0.06 * gauss((u - 0.32) ** 2 + x * x, 0.05);
+      c = [c[0] * (1 + warm), c[1] * (1 - warm * 0.3), c[2] * (1 - warm * 0.4)];
+      // the lips: redder and a little darker, the lower one fuller in colour
+      const lip = gauss((u - L.mouthU) ** 2 * 1.2, 0.045) * gauss(Math.max(0, Math.abs(x) - L.mouthX * 0.85) ** 2, 0.03) * (z > 0.2 ? 1 : 0);
+      if (lip > 0.05) c = c.map((v, i) => v * (1 - lip * 0.35) + [170, 82, 80][i] * lip * 0.35);
+      const st = fp.stubble * (u < L.mouthU + 0.04 ? 1 : u < L.noseBase ? Math.max(0, Math.abs(x) - L.noseHalf) * 3 : 0) * (z > -0.2 ? 1 : 0);
+      if (st > 0) { const k = Math.min(1, st) * (0.25 + 0.2 * noise(x * 40, u * 40)); c = c.map((v, i) => v * (1 - k) + hair[i] * 0.6 * k); }
+      // age lines: across the forehead and from the eyes' outer corners
+      if (fp.age > 0.2 && z > 0.2) {
+        const fl = u > 0.62 && u < 0.76 ? Math.max(0, Math.sin((u - 0.62) * 90)) ** 8 : 0;
+        const cf = gauss((u - L.eyeU) ** 2 + (Math.abs(x) - L.outer - 0.05) ** 2, 0.05) * Math.max(0, Math.sin(u * 160)) ** 6;
+        const k = (fl + cf) * 0.12 * fp.age;
+        c = c.map(v => v * (1 - k));
+      }
+      return c;
+    };
+    // how much hair covers a point (0-1), soft at the hairline, the temples and the nape
+    const smooth01 = (e0, e1, v) => { const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+    const hairAt = (u, x, z) => Math.max(smooth01(L.hairline - 0.02, L.hairline + 0.03, u + 0.015 * Math.cos(x * 6)) * smooth01(-0.1, 0.0, z + 0.6 - u),
+      smooth01(0.0, -0.1, z) * smooth01(0.38, 0.46, u), smooth01(0.33, 0.4, Math.abs(x)) * smooth01(0.56, 0.64, u) * smooth01(0.3, 0.18, z));
+    // the grid: u from the chin to the crown, finer round the face
+    const us = Array.from({ length: FU + 1 }, (_, k) => { const t = k / FU; return t * t * (3 - 2 * t) * 0.5 + t * 0.5; })
+      .filter(u => Math.abs(u - L.mouthU) > 0.008).concat([L.mouthU - 0.002, L.mouthU + 0.002]).sort((a, b) => a - b);
+    const lipRow = us.indexOf(L.mouthU - 0.002);   // the row between the lips: left open across the mouth
+    const G = us.map(u => Array.from({ length: FA }, (_, i) => {
+      const a = i / FA * Math.PI * 2, sh = headShape(u, a, fp, ex, L), p = P(sh.u, sh.x, sh.z);
+      const h = hairAt(u, sh.x, sh.z), sk = tone(u, sh.x, sh.z), hc = hair.map(v => v * (0.9 + 0.2 * noise(sh.x * 30 + 7, u * 30)));
+      return { p, col: sk.map((v, j) => v * (1 - h) + hc[j] * h), hr: h > 0.5, u, x: sh.x, z: sh.z };
     }));
-    // hair: above the hairline at the front, down to the nape behind, over the ears' tops at the sides
-    const hairAt = q => q.u >= 0.8 || (q.z < -0.05 && q.u > 0.4) || (q.u > 0.6 && Math.abs(q.x) > 0.3 && q.z < 0.25);
-    for (let k = 0; k + 1 < rings.length; k++)
-      for (let i = 0; i < HN; i++) {
-        const j = (i + 1) % HN, a = rings[k], b = rings[k + 1];
-        const role = hairAt(a[i]) && hairAt(b[j]) && hairAt(a[j]) ? 'hair' : 'skin';
-        out.push({ v: [a[i].p, b[j].p, a[j].p], role, part: 'head' }, { v: [a[i].p, b[i].p, b[j].p], role, part: 'head' });
+    // smooth normals: each vertex's from its neighbours round and up the grid
+    const N = G.map((row, k) => row.map((q, i) => {
+      const a = G[Math.min(G.length - 1, k + 1)][i].p, b = G[Math.max(0, k - 1)][i].p, c = row[(i + 1) % FA].p, d = row[(i + FA - 1) % FA].p;
+      return norm(cross(sub(c, d), sub(a, b)));
+    }));
+    const tri = (A, B, Cc, nA, nB, nC, part) => out.push({ v: [A.p, B.p, Cc.p], role: A.hr && B.hr && Cc.hr ? 'hair' : 'skin', part, ns: [nA, nB, nC], cs: [A.col, B.col, Cc.col] });
+    for (let k = 0; k + 1 < us.length; k++)
+      for (let i = 0; i < FA; i++) {
+        const j = (i + 1) % FA;
+        if (k === lipRow && G[k][i].z > 0.2 && Math.abs(G[k][i].x) < MW * 0.98 && Math.abs(G[k][j].x) < MW * 0.98) continue;
+        tri(G[k][i], G[k + 1][j], G[k][j], N[k][i], N[k + 1][j], N[k][j], 'head');
+        tri(G[k][i], G[k + 1][i], G[k + 1][j], N[k][i], N[k + 1][i], N[k + 1][j], 'head');
       }
     const c0 = P(0, 0, 0.12);
-    for (let i = 0; i < HN; i++) out.push({ v: [rings[0][i].p, rings[0][(i + 1) % HN].p, c0], role: 'skin', part: 'head' });
-    const quad = (a, b, c, d, role) => out.push({ v: [a, b, c], role, part: 'face', two: true }, { v: [a, c, d], role, part: 'face', two: true });
-    // the nose: the bridge between the eyes, the tip forward of the face, the wings and the base
-    const bridge = P(0.52, 0, 0.47), bl = P(0.43, 0.05, 0.452), br = P(0.43, -0.05, 0.452), tip = P(0.31, 0, 0.555);
-    const wl = P(0.28, 0.075, 0.445), wr = P(0.28, -0.075, 0.445), base = P(0.265, 0, 0.47);
-    for (const [v, role] of [[[bridge, bl, tip], 'skin'], [[bridge, tip, br], 'skin'], [[bl, wl, tip], 'skin'], [[br, tip, wr], 'skin'],
-      [[wl, base, tip], 'skinShade'], [[tip, base, wr], 'skinShade']]) out.push({ v, role, part: 'face', two: true });
-    for (const sx of [1, -1]) {
-      // the eye: the white, the iris; the upper lid comes down to blink
-      const ac = angleAt(0.5, 0.2 * sx), eu0 = 0.475, eu1 = 0.525;
-      const E = (u, da, lift) => S(u, ac + da * sx, lift);
-      const top = eu1 - (eu1 - eu0) * blink;
-      out.push({ v: [E(0.5, -0.13, 0.008), E(eu0, 0, 0.008), E(0.5, 0.13, 0.008)], role: 'eyeWhite', two: true });
-      if (blink < 0.6) out.push({ v: [E(0.5, -0.13, 0.008), E(0.5, 0.13, 0.008), E(top, 0, 0.008)], role: 'eyeWhite', two: true });
-      if (blink < 0.6) quad(E(0.482, -0.04, 0.011), E(0.482, 0.04, 0.011), E(Math.min(top, 0.518), 0.04, 0.011), E(Math.min(top, 0.518), -0.04, 0.011), 'iris');
-      quad(E(top - 0.004, -0.14, 0.012), E(top - 0.004, 0.14, 0.012), E(top + 0.01, 0.12, 0.012), E(top + 0.01, -0.12, 0.012), 'lid');
-      // the brow along the brow ridge
-      quad(E(0.56, -0.2, 0.012), E(0.565, 0.18, 0.012), E(0.595, 0.16, 0.012), E(0.59, -0.2, 0.012), 'brow');
-      // the ear, as long as one third of the face, between the brows and the nose's base, flat against the head
-      const ec = P(0.4, 0.455 * sx, -0.06);
-      const e0 = add(ec, mul(F.along, -hH * 0.133)), e1 = add(ec, mul(F.along, hH * 0.02)), e2 = add(ec, mul(F.along, hH * 0.133));
-      tube(K, e0, e1, F.fwd, 0.006, 0.003, 0.012, 0.0035, 'skin', out);   // the lobe widening to the bowl
-      tube(K, e1, e2, F.fwd, 0.012, 0.0035, 0.007, 0.003, 'skin', out);   // the helix rounding over the top
+    for (let i = 0; i < FA; i++) out.push({ v: [G[0][i].p, G[0][(i + 1) % FA].p, c0], role: 'skin', part: 'head', col: tone(0, 0, 0.1) });
+    // the mouth's inside, dark, and the teeth, seen when the jaw opens
+    {
+      const mz = 0.38, mw = MW * 0.95, P0 = (u, x, z) => add(bottom, add(mul(F.along, u * hH), add(mul(F.across, x * hH), mul(F.fwd, z * hH))));
+      const q = (u0, u1, x0, x1, z, col) => { const A = P0(u0, x0, z), B = P0(u0, x1, z), Cc = P0(u1, x1, z), Dd = P0(u1, x0, z); out.push({ v: [A, B, Cc], role: 'mouth', two: true, part: 'face', col }, { v: [A, Cc, Dd], role: 'mouth', two: true, part: 'face', col }); };
+      q(L.mouthU - 0.02 - ex.open * 0.09, L.mouthU + 0.01, -mw, mw, mz, [52, 20, 22]);
+      if (ex.open > 0.05) q(L.mouthU - 0.006 - 0.012 * ex.open, L.mouthU + 0.004, -mw * 0.7, mw * 0.7, mz + 0.03, [214, 208, 196]);   // the upper teeth
     }
-    // the lips round the front of the face, the mouth's line between them
-    const lip = (u0, u1, role, lift) => { for (let k = -3; k < 3; k++) { const a0 = Math.PI / 2 + k * 0.09, a1 = a0 + 0.09; quad(S(u0, a0, lift), S(u0, a1, lift), S(u1, a1, lift), S(u1, a0, lift), role); } };
-    lip(0.212, 0.238, 'lip', 0.006);
-    lip(0.17, 0.196, 'lip', 0.008);
-    lip(0.198 - open * 0.05, 0.212, 'mouth', 0.009);
+    // the nose: rings from between the eyes to the tip, then in to the base between the wings
+    const noseRing = (u, w, d) => {
+      const [, zf] = surf(u, Math.PI / 2), rows = [];
+      for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8, x = Math.cos(a) * w, zz = zf + Math.sin(a) * d - 0.004; rows.push({ p: P(u, x, zz), col: tone(u, x, zz), hr: false }); }
+      return rows;
+    };
+    const bridge = 0.6 + 0.8 * fp.bridge, tip = 0.7 + 0.6 * fp.tip;
+    const NR = [[0.53, 0.04, 0.01 * bridge], [0.47, 0.05, 0.03 * bridge], [0.41, 0.06, 0.05 * bridge], [0.35, 0.075, 0.075 * tip], [0.31, 0.09, 0.09 * tip], [0.285, L.noseHalf, 0.07 * tip], [0.268, L.noseHalf * 0.85, 0.035]].map(r => noseRing(...r));
+    const NN = NR.map((row, k) => row.map((q, i) => {
+      const up = NR[Math.max(0, k - 1)][i].p, dn = NR[Math.min(NR.length - 1, k + 1)][i].p, l = row[Math.max(0, i - 1)].p, r = row[Math.min(8, i + 1)].p;
+      return norm(cross(sub(r, l), sub(dn, up)));
+    }));
+    for (let k = 0; k + 1 < NR.length; k++)
+      for (let i = 0; i < 8; i++) {
+        const A = NR[k][i], B = NR[k][i + 1], Cc = NR[k + 1][i + 1], Dd = NR[k + 1][i];
+        out.push({ v: [A.p, Dd.p, Cc.p], role: 'skin', part: 'face', two: true, ns: [NN[k][i], NN[k + 1][i], NN[k + 1][i + 1]], cs: [A.col, Dd.col, Cc.col] },
+          { v: [A.p, Cc.p, B.p], role: 'skin', part: 'face', two: true, ns: [NN[k][i], NN[k + 1][i + 1], NN[k][i + 1]], cs: [A.col, Cc.col, B.col] });
+      }
+    // the nostrils: two dark slots under the tip
+    for (const sx of [1, -1]) {
+      const [, zf] = surf(0.275, Math.PI / 2), a0 = P(0.272, sx * 0.02, zf + 0.06), a1 = P(0.272, sx * 0.065, zf + 0.04), a2 = P(0.278, sx * 0.045, zf + 0.075);
+      out.push({ v: [a0, a1, a2], role: 'mouth', part: 'face', two: true, col: [70, 40, 38] });
+    }
+    // the eyes: eyeballs in their sockets, the iris and pupil turned to the gaze, lids that close to blink
+    const gaze = fe.gaze ? norm(sub(fe.gaze, add(bottom, mul(F.along, L.eyeU * hH)))) : F.fwd;
+    for (const sx of [1, -1]) {
+      const rE = L.EW * 0.5, [, zf] = surf(L.eyeU, angleAt(L.eyeU, L.eyeX * sx)), ec = P(L.eyeU, L.eyeX * sx, zf - rE * 0.9 - 0.03 * fp.socket);
+      const RE = rE * hH, ax = F.across, up = F.along, fw = F.fwd;
+      const sphere = (c, r, role, col, cutTop) => {
+        const rows = 6, segs = 10, pts = [];
+        for (let k = 0; k <= rows; k++) { const b = -Math.PI / 2 + Math.PI * k / rows; pts.push(Array.from({ length: segs }, (_, i) => { const a = i / segs * Math.PI * 2; return add(c, add(mul(ax, Math.cos(b) * Math.cos(a) * r), add(mul(up, Math.sin(b) * r), mul(fw, Math.cos(b) * Math.sin(a) * r)))); })); }
+        for (let k = 0; k < rows; k++) for (let i = 0; i < segs; i++) { const j = (i + 1) % segs; out.push({ v: [pts[k][i], pts[k + 1][j], pts[k][j]], role, part: 'eye', col }, { v: [pts[k][i], pts[k + 1][i], pts[k + 1][j]], role, part: 'eye', col }); }
+      };
+      sphere(ec, RE, 'eyeWhite', [222, 216, 208]);
+      // the iris and pupil: discs on the eyeball's front, toward the gaze
+      const g = norm(add(mul(gaze, 1), mul(fw, 0.4))), gx = norm(cross(up, g)), gy = cross(g, gx);
+      const disc = (r, lift, col, role) => {
+        const c = add(ec, mul(g, RE * lift)), ring = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * Math.PI * 2; return add(c, add(mul(gx, Math.cos(a) * r), mul(gy, Math.sin(a) * r))); });
+        for (let i = 0; i < 10; i++) out.push({ v: [c, ring[i], ring[(i + 1) % 10]], role, part: 'eye', two: true, col });
+      };
+      disc(RE * 0.46, 1.0, fig.iris || [70, 58, 44], 'iris');
+      disc(RE * 0.19, 1.012, [10, 10, 12], 'iris');
+      disc(RE * 0.065, 1.022, [235, 235, 230], 'iris');   // the screen light caught in it
+      // the lids: the upper comes down over the eyeball to blink, the lower stays
+      const lid = (from, to, col) => {
+        const segs = 10, rows = 3, r = RE * 1.07, pts = [];
+        for (let k = 0; k <= rows; k++) { const b = from + (to - from) * k / rows; pts.push(Array.from({ length: segs + 1 }, (_, i) => { const a = Math.PI * 0.08 + Math.PI * 0.84 * i / segs; return add(ec, add(mul(ax, Math.cos(b) * Math.cos(a) * r), add(mul(up, Math.sin(b) * r), mul(fw, Math.cos(b) * Math.sin(a) * r)))); })); }
+        for (let k = 0; k < rows; k++) for (let i = 0; i < segs; i++) out.push({ v: [pts[k][i], pts[k + 1][i + 1], pts[k][i + 1]], role: 'lid', part: 'eye', two: true, col }, { v: [pts[k][i], pts[k + 1][i], pts[k + 1][i + 1]], role: 'lid', part: 'eye', two: true, col });
+      };
+      const open = -0.36 + (0.62 + 0.1 * ex.browUp - 0.08 * ex.frown) * (1 - ex.blink);   // the upper lid's edge, from the eye's middle
+      lid(Math.PI / 2, open, tone(L.eyeU + 0.04, L.eyeX, zf).map(v => v * 0.92));
+      lid(-0.38, -Math.PI / 2, tone(L.eyeU - 0.04, L.eyeX, zf).map(v => v * 0.95));
+      // the brow: a band of hair over the ridge, the inner end lifting or drawing down
+      const bu = (k) => 0.57 + 0.035 * ex.browUp * (1 - k * 0.3) - 0.025 * ex.frown * (1 - k);
+      const bpts = [0, 0.25, 0.5, 0.75, 1].map(k => { const x = sx * (L.inner * 0.9 + (L.outer + 0.06 - L.inner * 0.9) * k), [, zb] = surf(bu(k), angleAt(bu(k), x)); return [P(bu(k) + 0.018 * Math.sin(k * Math.PI), x, zb + 0.022), P(bu(k) - 0.012, x, zb + 0.022)]; });
+      for (let k = 0; k + 1 < bpts.length; k++) out.push({ v: [bpts[k][0], bpts[k + 1][0], bpts[k + 1][1]], role: 'brow', part: 'face', two: true }, { v: [bpts[k][0], bpts[k + 1][1], bpts[k][1]], role: 'brow', part: 'face', two: true });
+      // the ear, between the brow line and the nose's base, flat against the head
+      const ec2 = P((L.earTop + L.earBottom) / 2, 0.375 * sx, -0.06), half = (L.earTop - L.earBottom) / 2 * hH;
+      const e0 = add(ec2, mul(F.along, -half)), e1 = add(ec2, mul(F.along, half * 0.15)), e2 = add(ec2, mul(F.along, half));
+      tube(K, e0, e1, F.fwd, 0.006, 0.003, 0.012, 0.0035, 'skin', out);
+      tube(K, e1, e2, F.fwd, 0.012, 0.0035, 0.007, 0.003, 'skin', out);
+    }
     // the ball cap: a crown over the skull and the bill over the eyes, with the ship's gold on the bill for an officer
     if (C.cap) {
       // the crown from just above the brows (u 0.7) over the top, a little off the head
@@ -3617,23 +3760,23 @@ const Figure = (() => {
       }));
       for (let k = 0; k + 1 < caps.length; k++)
         for (let i = 0; i < HN; i++) { const j = (i + 1) % HN; out.push({ v: [caps[k][i], caps[k + 1][j], caps[k][j]], role: 'cap' }, { v: [caps[k][i], caps[k + 1][i], caps[k + 1][j]], role: 'cap' }); }
-      const bill = [P(0.725, -0.42, 0.44), P(0.725, 0.42, 0.44), P(0.69, 0.34, 0.86), P(0.69, -0.34, 0.86)];
+      const bill = [P(0.725, -0.35, 0.44), P(0.725, 0.35, 0.44), P(0.69, 0.28, 0.86), P(0.69, -0.28, 0.86)];
       out.push({ v: [bill[0], bill[1], bill[2]], role: 'cap', two: true }, { v: [bill[0], bill[2], bill[3]], role: 'cap', two: true });
       if (C.gold) { /* the gold oak leaves along the bill's front edge */
-        const g0 = [P(0.712, -0.38, 0.6), P(0.712, 0.38, 0.6), P(0.692, 0.33, 0.84), P(0.692, -0.33, 0.84)];
+        const g0 = [P(0.712, -0.31, 0.6), P(0.712, 0.31, 0.6), P(0.692, 0.27, 0.84), P(0.692, -0.27, 0.84)];
         out.push({ v: [g0[0], g0[1], g0[2]], role: 'gold', two: true }, { v: [g0[0], g0[2], g0[3]], role: 'gold', two: true });
       }
-      const ship = [P(0.79, -0.22, 0.46), P(0.79, 0.22, 0.46), P(0.88, 0.19, 0.4), P(0.88, -0.19, 0.4)];
+      const ship = [P(0.79, -0.18, 0.46), P(0.79, 0.18, 0.46), P(0.88, 0.15, 0.4), P(0.88, -0.15, 0.4)];
       out.push({ v: [ship[0], ship[1], ship[2]], role: 'gold', two: true }, { v: [ship[0], ship[2], ship[3]], role: 'gold', two: true });
     }
     // the headset: a band over the crown, cups over the ears, a boom to the corner of the mouth
     if (C.headset) {
       const band = [];
-      for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8; band.push(P(0.4 + Math.sin(a) * 0.62, Math.cos(a) * 0.5, -0.03)); }
+      for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8; band.push(P(0.4 + Math.sin(a) * 0.62, Math.cos(a) * 0.42, -0.03)); }
       for (let i = 0; i + 1 < band.length; i++) tube(K, band[i], band[i + 1], F.fwd, 0.004, 0.003, 0.004, 0.003, 'kit', out);
-      for (const sx of [1, -1]) { const c = P(0.4, 0.5 * sx, -0.04); tube(K, sub(c, mul(F.across, 0.04 * sx * hH)), add(c, mul(F.across, 0.04 * sx * hH)), F.fwd, 0.011, 0.012, 0.011, 0.012, 'kit', out); }
-      tube(K, P(0.38, 0.5, 0.0), P(0.22, 0.25, 0.45), F.across, 0.0015, 0.0015, 0.0015, 0.0015, 'kit', out);
-      tube(K, P(0.22, 0.25, 0.45), P(0.2, 0.1, 0.5), F.across, 0.004, 0.004, 0.004, 0.004, 'kit', out);
+      for (const sx of [1, -1]) { const c = P(0.4, 0.42 * sx, -0.04); tube(K, sub(c, mul(F.across, 0.04 * sx * hH)), add(c, mul(F.across, 0.04 * sx * hH)), F.fwd, 0.011, 0.012, 0.011, 0.012, 'kit', out); }
+      tube(K, P(0.38, 0.42, 0.0), P(0.22, 0.2, 0.45), F.across, 0.0015, 0.0015, 0.0015, 0.0015, 'kit', out);
+      tube(K, P(0.22, 0.2, 0.45), P(0.2, 0.08, 0.5), F.across, 0.004, 0.004, 0.004, 0.004, 'kit', out);
     }
   }
 
@@ -3678,6 +3821,21 @@ const Figure = (() => {
     return U[role] || PALETTES.shared[role] || [255, 0, 255];
   }
 
+  // the gradient that reproduces three corner colours over a triangle: along the direction the brightness changes
+  // fastest, from the colour at one end of the triangle's extent to the other (each colour channel is affine over the
+  // triangle, so it is exact for the brightness and close for the hue)
+  function gradient(P, cs) {
+    const lum = c => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+    const x1 = P[1][0] - P[0][0], y1 = P[1][1] - P[0][1], x2 = P[2][0] - P[0][0], y2 = P[2][1] - P[0][1], det = x1 * y2 - x2 * y1;
+    if (Math.abs(det) < 1e-9) return null;
+    const field = f => { const a = f(cs[1]) - f(cs[0]), b = f(cs[2]) - f(cs[0]); return [(a * y2 - b * y1) / det, (b * x1 - a * x2) / det]; };
+    const g = field(lum), gl = Math.hypot(g[0], g[1]);
+    if (gl < 1e-6) return null;
+    const ux = g[0] / gl, uy = g[1] / gl, proj = P.map(p => (p[0] - P[0][0]) * ux + (p[1] - P[0][1]) * uy), lo = Math.min(...proj), hi = Math.max(...proj);
+    const at = s => [0, 1, 2].map(i => { const gi = field(c => c[i]); return cs[0][i] + (gi[0] * ux + gi[1] * uy) * s; }).map(v => Math.max(0, Math.min(255, v)));
+    return { x0: P[0][0] + ux * lo, y0: P[0][1] + uy * lo, x1: P[0][0] + ux * hi, y1: P[0][1] + uy * hi, c0: at(lo), c1: at(hi) };
+  }
+
   // ---- drawing: project, sort far to near, shade each facet (key light, fill, rim) ----
   // cam: { pos, f (forward), u (up), r (right), F (focal length in pixels), cx, cy }; light: direction toward the key
   // light and its colour. fill(points, colour) draws one triangle.
@@ -3694,13 +3852,22 @@ const Figure = (() => {
           n = mul(n, -1);       // a flat part (eyes, lips, insignia) shows either side
         }
         const pts = t.v.map(v => { const q = sub(v, cam.pos), zz = Math.max(0.05, dot(q, cam.f)); return [cam.cx + dot(q, cam.r) / zz * cam.F, cam.cy - dot(q, cam.u) / zz * cam.F]; });
-        const base = colour(fig, t.role), k = Math.max(0, dot(n, light.dir)), view = norm(mul(d, -1)), rim = Math.pow(1 - Math.max(0, dot(n, view)), 3);
-        const lit = base.map((b, i) => Math.min(255, b * (0.24 + 0.85 * k * light.key[i] / 255) + 255 * rim * 0.2 * light.rim[i] / 255));
-        all.push({ z, pts, col: lit });
+        const view = norm(mul(d, -1));
+        const shade = (nn, base) => {
+          const k = Math.max(0, dot(nn, light.dir)), rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
+          return base.map((b, i) => Math.min(255, b * (0.24 + 0.85 * k * light.key[i] / 255) + 255 * rim * 0.2 * light.rim[i] / 255));
+        };
+        if (t.ns) {
+          // a smooth part (the face): each corner lit by its own normal; the colour across the facet is then an affine
+          // field, drawn as a linear gradient along its steepest direction (the same as shading the corners and
+          // blending between them)
+          const cs = t.ns.map((nn, q) => shade(dot(nn, view) < 0 ? mul(nn, -1) : nn, t.cs[q]));
+          all.push({ z, pts, col: cs.reduce((a, c) => a.map((v, i) => v + c[i] / 3), [0, 0, 0]), grad: gradient(pts, cs) });
+        } else all.push({ z, pts, col: shade(n, t.col || colour(fig, t.role)) });
       }
     }
     all.sort((a, b) => b.z - a.z);
-    for (const t of all) fill(t.pts, t.col);
+    for (const t of all) fill(t.pts, t.col, t.grad);
   }
 
   // ---- measuring a figure against the canon (the checker's test, and the viewer's table) ----
@@ -3751,20 +3918,121 @@ const Figure = (() => {
   const CREW = {
     // the air detector in the ship's flame-resistant coveralls and a headset, seated, leaning in to his scope,
     // both hands forward on the keyboard
-    operator: { kit: { uniform: 'coveralls', headset: true, nametape: true }, skin: [205, 160, 128], hair: [34, 26, 20],
+    // twenty-four: a smooth face, a short nose, full lips, shallow sockets, a clean shave
+    operator: { kit: { uniform: 'coveralls', headset: true, nametape: true }, skin: [205, 160, 128], hair: [34, 26, 20], iris: [86, 62, 40],
+      faceShape: { brow: 0.3, cheek: 0.45, jaw: 0.45, chin: 0.45, bridge: 0.35, tip: 0.55, lips: 0.65, socket: 0.3, age: 0.05, stubble: 0.08 },
       pose: H => SEAT(H, { hips: [14, 0, 0], chest: [8, 0, 0], neck: [-12, 0, 0], head: [-8, 0, 0],
         upperL: [0, -62, -58], upperR: [0, 62, 58], foreL: [0, -48, 6], foreR: [0, 48, -6], handL: [0, -10, -8], handR: [0, 10, 8], curlL: 30, curlR: 34 }) },
     // the chief in service khakis with his anchors, standing, the clipboard held at his waist
-    supervisor: { kit: { uniform: 'khaki', cap: true, device: 'anchor', clipboard: true }, skin: [190, 140, 110], hair: [46, 40, 36],
+    // forty-five: a heavy brow and a square jaw, a broken-in nose, a day's stubble
+    supervisor: { kit: { uniform: 'khaki', cap: true, device: 'anchor', clipboard: true }, skin: [190, 140, 110], hair: [46, 40, 36], iris: [60, 70, 80],
+      faceShape: { brow: 0.75, cheek: 0.55, jaw: 0.8, chin: 0.6, bridge: 0.7, tip: 0.65, lips: 0.4, socket: 0.6, age: 0.5, stubble: 0.55 },
       pose: () => ({ upperL: [0, -8, -82], foreL: [0, -86, 0], handL: [0, 0, 16], curlL: 60, upperR: [0, 8, 82], foreR: [0, 12, 0], handR: [0, 0, 0], curlR: 24, head: [0, -6, 0] }) },
     // the commander in khakis with his silver oak leaves and the ship's cap with gold on the bill, in his chair;
     // raise from 0 to 1 lifts his right hand as he gives the order
-    commander: { kit: { uniform: 'khaki', cap: true, gold: true, device: 'oak' }, skin: [196, 150, 120], hair: [140, 138, 134],
+    // fifty-five: high cheekbones, a long straight nose, thin lips, deep-set eyes, lines at the eyes and brow
+    commander: { kit: { uniform: 'khaki', cap: true, gold: true, device: 'oak' }, skin: [196, 150, 120], hair: [140, 138, 134], iris: [76, 92, 104],
+      faceShape: { brow: 0.6, cheek: 0.75, jaw: 0.55, chin: 0.65, bridge: 0.8, tip: 0.45, lips: 0.3, socket: 0.8, age: 0.85, stubble: 0.25 },
       pose: (H, raise = 0) => SEAT(H, { hips: [-6, 0, 0], chest: [-2, 0, 0], neck: [4, 0, 0],
         upperL: [0, 12, -84], foreL: [0, -88, 0], handL: [0, -6, -10], curlL: 45,
         upperR: [0, -12 + 62 * raise, 84 - 40 * raise], foreR: [0, 88 - 20 * raise, 55 * raise], handR: [0, 0, -15 * raise], curlR: 45 - 38 * raise }) }
   };
-  return { VITRUVIAN, PALM, skeleton, solve, build, draw, measureMesh, vitruvianPose, POSES, SEAT, CREW, colour };
+  // ---- speech: the dialogue's words turned into mouth shapes over the card's time ----
+  // Our own small letter-to-sound rules and a word list for the film's lines give phonemes; each phoneme has a mouth
+  // shape (a viseme: how open, wide and round the mouth is); the phonemes are paced over the card's window (vowels
+  // longer than consonants, pauses at the punctuation, the brisk pace of a voice on a ship's net), and the shapes are
+  // blended where they meet, as a real mouth runs one sound into the next.
+  const VISEMES = {
+    rest: [0, 0, 0], mbp: [0, 0, 0], fv: [0.08, 0.2, 0], th: [0.15, 0.25, 0], aa: [0.75, 0.35, 0], ee: [0.3, 0.9, 0],
+    ih: [0.4, 0.55, 0], oo: [0.35, 0, 0.9], oh: [0.6, 0.1, 0.6], w: [0.15, 0, 0.8], sh: [0.25, 0.1, 0.5], tt: [0.25, 0.4, 0],
+    kk: [0.35, 0.3, 0], ss: [0.12, 0.6, 0]
+  };
+  // phonemes (our own short names) and their mouth shapes
+  const PH = {
+    AA: 'aa', AE: 'aa', AH: 'aa', AO: 'oh', AW: 'aa', AY: 'aa', EH: 'ee', ER: 'ih', EY: 'ee', IH: 'ih', IY: 'ee', OW: 'oh', OY: 'oh',
+    UH: 'oo', UW: 'oo', B: 'mbp', P: 'mbp', M: 'mbp', F: 'fv', V: 'fv', TH: 'th', DH: 'th', T: 'tt', D: 'tt', N: 'tt', L: 'tt',
+    S: 'ss', Z: 'ss', SH: 'sh', TSH: 'sh', JH: 'sh', K: 'kk', G: 'kk', NG: 'kk', HH: 'kk', R: 'w', W: 'w', Y: 'ee'
+  };
+  const VOWEL = new Set(['AA', 'AE', 'AH', 'AO', 'AW', 'AY', 'EH', 'ER', 'EY', 'IH', 'IY', 'OW', 'OY', 'UH', 'UW']);
+  // the words of the film's lines, and the numbers as a ship's voice says them
+  const WORDS = {
+    BOGEYS: 'B OW G IY Z', TWO: 'T UW', CONTACTS: 'K AA N T AE K T S', BEARING: 'B EH R IH NG', THREE: 'TH R IY', FIVE: 'F AY V',
+    ZERO: 'Z IY R OW', CLOSING: 'K L OW Z IH NG', FAST: 'F AE S T', ALERT: 'AH L ER T', WE: 'W IY', HAVE: 'HH AE V',
+    INBOUND: 'IH N B AW N D', SEND: 'S EH N D', THE: 'DH AH', BIRDS: 'B ER D Z'
+  };
+  const DIGITS = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE'];
+  // letter-to-sound rules for words not in the list: the common English spellings, longest first
+  const RULES = [['TION', 'SH AH N'], ['SH', 'SH'], ['TH', 'TH'], ['PH', 'F'], ['NG', 'NG'], ['CK', 'K'], ['EE', 'IY'], ['EA', 'IY'], ['OO', 'UW'],
+    ['OU', 'AW'], ['OW', 'OW'], ['AI', 'EY'], ['AY', 'EY'], ['OI', 'OY'], ['A', 'AE'], ['E', 'EH'], ['I', 'IH'], ['O', 'AA'], ['U', 'AH'], ['Y', 'IY'],
+    ['B', 'B'], ['C', 'K'], ['D', 'D'], ['F', 'F'], ['G', 'G'], ['H', 'HH'], ['J', 'JH'], ['K', 'K'], ['L', 'L'], ['M', 'M'], ['N', 'N'], ['P', 'P'],
+    ['Q', 'K'], ['R', 'R'], ['S', 'S'], ['T', 'T'], ['V', 'V'], ['W', 'W'], ['X', 'K S'], ['Z', 'Z']];
+  function toPhonemes(word) {
+    if (WORDS[word]) return WORDS[word].split(' ');
+    const out = [];
+    for (let i = 0; i < word.length;) {
+      const r = RULES.find(([g]) => word.startsWith(g, i));
+      if (!r) { i++; continue; }
+      out.push(...r[1].split(' '));
+      i += r[0].length;
+    }
+    return out;
+  }
+  // the words of a line, numbers spelt digit by digit, each with its phonemes and the pause after it
+  function words(text) {
+    const out = [];
+    const re = /([A-Z']+|\d)([^A-Z'\d]*)/g;
+    let m;
+    while ((m = re.exec(text.toUpperCase()))) {
+      const w = /\d/.test(m[1]) ? DIGITS[+m[1]] : m[1].replace(/'/g, '');
+      const p = m[2], pause = /[.!?]/.test(p) ? 0.18 : /,/.test(p) ? 0.1 : 0;
+      out.push({ word: m[1], ph: toPhonemes(w), pause });
+    }
+    return out;
+  }
+  // a line's timeline over [t0, t1]: every phoneme's start and end and shape, and where each word starts. The voice
+  // fills the window but for a breath at the start and its last pause, the pace set by the window
+  function speechTrack(text, t0, t1) {
+    const W = words(text), lead = 0.06;
+    let weight = 0, pauses = 0;
+    for (const w of W) { for (const p of w.ph) weight += VOWEL.has(p) ? 1 : 0.55; pauses += w.pause; }
+    const tail = W.length ? W[W.length - 1].pause : 0;
+    const k = Math.max(0.01, (t1 - t0 - lead - pauses) / (weight || 1));
+    const seg = [{ t0, t1: t0 + lead, v: 'rest' }], starts = [];
+    let t = t0 + lead;
+    W.forEach((w, i) => {
+      starts.push(t);
+      for (const p of w.ph) { const d = (VOWEL.has(p) ? 1 : 0.55) * k; seg.push({ t0: t, t1: t + d, v: PH[p] || 'rest', ph: p, word: i }); t += d; }
+      if (w.pause) { seg.push({ t0: t, t1: t + w.pause, v: 'rest', word: i }); t += w.pause; }
+    });
+    seg[seg.length - 1].t1 = t1;   // the last stretch ends with the card
+    void tail;
+    return { seg, words: W.map(w => w.word), starts };
+  }
+  // the mouth at time t: the shapes of the phonemes near t, each weighted by a short raised-cosine round its middle,
+  // so neighbouring sounds overlap (open, wide, round); outside the line the mouth rests
+  function mouthAt(track, t) {
+    let open = 0, wide = 0, round = 0, wsum = 0;
+    for (const s of track.seg) {
+      const mid = (s.t0 + s.t1) / 2, half = Math.max(0.05, (s.t1 - s.t0) * 0.9), d = Math.abs(t - mid);
+      if (d >= half) continue;
+      const w = 0.5 + 0.5 * Math.cos(Math.PI * d / half), v = VISEMES[s.v];
+      open += v[0] * w; wide += v[1] * w; round += v[2] * w; wsum += w;
+    }
+    if (!wsum) return { open: 0, wide: 0, round: 0 };
+    return { open: open / wsum, wide: wide / wsum, round: round / wsum };
+  }
+  // how many words of the caption are showing at t: a word appears as its first sound starts
+  const wordsShown = (track, t) => track.starts.filter(s => s <= t).length;
+  // the caption's text up to its nth spoken word, with the punctuation that follows that word
+  function spokenUpTo(text, n) {
+    if (n <= 0) return '';
+    const re = /([A-Za-z']+|\d)([^A-Za-z'\d ]*)/g;
+    let m, k = 0;
+    while ((m = re.exec(text))) if (++k === n) return text.slice(0, m.index + m[0].length);
+    return text;
+  }
+
+  return { VITRUVIAN, PALM, skeleton, solve, build, draw, measureMesh, vitruvianPose, POSES, SEAT, CREW, colour, speechTrack, mouthAt, wordsShown, spokenUpTo, words, toPhonemes, FACE_DEFAULT, landmarks };
 })();
 // ---- the figure engine ends ----
 const Intro = (() => {
@@ -4451,7 +4719,7 @@ const Intro = (() => {
       if (st.menuOpen && (c.style === 'title' || c.style === 'press')) continue;
       const fade = c.t1 < 1e8 ? clamp((c.t1 - t) / 0.5, 0, 1) : 1;
       ctx.globalAlpha = fade;
-      const s = typed(c, t);
+      let s = typed(c, t);
       if (c.style === 'location') {
         const sz = Math.round(u0 * 0.042), y = H - barH - sh * 0.2;
         txt(s, W / 2, y, sz, '#fbe9cc', 'center');
@@ -4466,6 +4734,9 @@ const Intro = (() => {
       } else if (c.style === 'alert-sub') txt(s, W / 2, barH + sh * 0.26 + u0 * 0.07, Math.round(u0 * 0.022), '#ffd25a', 'center');
       else if (c.style === 'callsign') txt(s, Math.max(12, W * 0.04), barH ? H - barH / 2 : H - u0 * 0.05, Math.round(Math.min(u0 * 0.02, (barH || 40) * 0.42)), HUDC, 'left');
       else if (c.style === 'dialog') {
+        // the words appear as they are spoken (the figure engine's speech timeline for this card)
+        const n = Figure.wordsShown(Figure.speechTrack(c.text, c.t0, c.t1), t);
+        s = Figure.spokenUpTo(c.text, n);
         const sz = Math.round(Math.min(u0 * 0.024, (barH || 40) * 0.46)), y = barH ? H - barH / 2 : H - u0 * 0.06, lab = c.speaker + ':  ';
         ctx.font = `${sz}px ${FONT}`; const wl = ctx.measureText(lab).width, wt = ctx.measureText(c.text).width, x0 = W / 2 - (wl + wt) / 2;
         txt(lab, x0, y, sz, '#ffd25a', 'left'); txt(s, x0 + wl, y, sz, '#ffffff', 'left');
@@ -4894,17 +5165,30 @@ const Intro = (() => {
       const W = Figure.solve(Figure.skeleton(H), pose), cr = W.head.end, r0 = pose.root || [0, 0, 0];
       pose.root = [r0[0] + target[0] - cr[0], r0[1] + target[1] - cr[1], r0[2] + target[2] - cr[2]];
       const lw = 1.2 / (sc * z);   // a hairline round each facet, so no seams show between them
-      Figure.draw([{ height: H, kit: c0.kit, skin: c0.skin, hair: c0.hair, pose, face }], CAM,
-        { dir: [-0.62, 0.36, -0.7], key, rim: blueRim }, (pts, col) => {
+      Figure.draw([{ height: H, kit: c0.kit, skin: c0.skin, hair: c0.hair, iris: c0.iris, faceShape: c0.faceShape, pose, face }], CAM,
+        { dir: [-0.62, 0.36, -0.7], key, rim: blueRim }, (pts, col, gr) => {
           c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(pts[2][0], pts[2][1]); c.closePath();
-          const k = `rgb(${col[0] | 0},${col[1] | 0},${col[2] | 0})`; c.fillStyle = k; c.strokeStyle = k; c.lineWidth = lw; c.fill(); c.stroke();
+          const css = q => `rgb(${q[0] | 0},${q[1] | 0},${q[2] | 0})`;
+          let k = css(col);
+          if (gr) { k = c.createLinearGradient(gr.x0, gr.y0, gr.x1, gr.y1); k.addColorStop(0, css(gr.c0)); k.addColorStop(1, css(gr.c1)); }
+          c.fillStyle = k; c.strokeStyle = k; c.lineWidth = lw; c.fill(); c.stroke();
         });
+    };
+    // where a point of the scene lies in the room, at a depth (for where the crew look)
+    const roomAt = (x, y, dz) => [(x - CAM.cx) * dz / CAM.F, CAM.pos[1] - (y - CAM.cy) * dz / CAM.F, dz];
+    // a man speaking his line: the mouth from the words, a blink as he finishes, his eyes on gaze
+    const LINES3 = { radar: 'BOGEYS! TWO CONTACTS, BEARING 3-5-0, CLOSING FAST.', supervisor: 'ALERT, ALERT! WE HAVE INBOUND.', commander: 'SEND THE BIRDS.' };
+    const voice = (text, L, blinkSeed, gaze, more) => {
+      const m = Figure.mouthAt(Figure.speechTrack(text, L[0], L[1]), t), after = t - L[1];
+      return Object.assign({ open: m.open, wide: m.wide, round: m.round, blink: Math.max(blinkAt(blinkSeed), after > 0.02 && after < 0.2 ? 1 - Math.abs(after - 0.11) / 0.09 : 0), gaze }, more || {});
     };
 
     // ---- the supervisor: a chief in khaki, standing behind the operator, turned toward the commander, clipboard in hand ----
     const s2 = 118, step = ease(clamp((t - L2[0]) / 0.4, 0, 1)), sx = 1010 + 8 * step, sy = 262 + 4 * Math.sin(t * 1.5) - 3 * step;
     const sOpen = speak(L2, 22);
-    crew3d('supervisor', sx, sy, s2, 100, mix([140, 190, 255], [255, 80, 60], redK).map(v => v * 0.9), 0, { open: sOpen, blink: blinkAt(0.3) }, { head: [alert ? -4 : 0, -6, 0] });
+    void sOpen;
+    crew3d('supervisor', sx, sy, s2, 100, mix([140, 190, 255], [255, 80, 60], redK).map(v => v * 0.9), 0,
+      voice(LINES3.supervisor, L2, 0.3, roomAt(1395, 330, H / 8 * CAM.F / 178), { browUp: alert ? 0.7 : 0 }), { head: [alert ? -4 : 0, -6, 0] });
 
     // ---- the operator's console: radar repeater angled toward him, keyboard, trackball, the sound-powered phone ----
     c.fillStyle = lg(0, 600, 0, 900, [[0, '#1a2128'], [0.08, '#0c1014'], [1, '#040506']]); c.beginPath(); c.moveTo(-200, 600); c.lineTo(820, 620); c.lineTo(900, 900); c.lineTo(-200, 900); c.fill();
@@ -4963,7 +5247,9 @@ const Intro = (() => {
     // ---- the air detector: young, headset on, seated, leaning in to his scope ----
     const s1 = 150, lean = ease(clamp((t - 5.3) / 0.6, 0, 1)) * 10 - ease(clamp((t - L2[0]) / 0.5, 0, 1)) * 6;
     const o1 = speak(L1, 46);
-    crew3d('operator', 760 - lean, 318 + lean * 0.3 + 2 * Math.sin(t * 1.7), s1, -108, mix([110, 255, 180], [255, 80, 60], redK), 0, { open: o1, blink: blinkAt(0.7) }, { hips: [14 + lean * 0.8, 0, 0] });
+    void o1;
+    crew3d('operator', 760 - lean, 318 + lean * 0.3 + 2 * Math.sin(t * 1.7), s1, -108, mix([110, 255, 180], [255, 80, 60], redK), 0,
+      voice(LINES3.radar, L1, 0.7, roomAt(310, 450, 1.25), { browUp: t > 5.5 && t < 7 ? 0.5 : 0 }), { hips: [14 + lean * 0.8, 0, 0] });
     // his chair back, between us and him
     c.fillStyle = lg(905, 0, 995, 0, [[0, '#0a0c0e'], [0.75, '#171b20'], [1, '#060708']]);
     c.beginPath(); curve([[915, 900], [905, 600], [918, 545], [950, 528], [985, 545], [995, 610], [992, 900]]); c.fill();
@@ -4975,7 +5261,9 @@ const Intro = (() => {
     c.fillStyle = lg(1450, 0, 1640, 0, [[0, '#08090b'], [0.5, '#15181c'], [1, '#050607']]);
     c.beginPath(); curve([[1460, 430], [1560, 410], [1650, 450], [1660, 900], [1450, 900]]); c.fill();
     c.strokeStyle = rgb(...blueRim, 0.3); c.lineWidth = 3; c.beginPath(); curve([[1460, 430], [1560, 410], [1650, 450], [1660, 900]], false); c.stroke();
-    crew3d('commander', 1395 - turn * 10, 246 + 3 * Math.sin(t * 1.3) - turn * 4 + nod, s3, -100 - 14 * turn, mix([130, 180, 240], [255, 80, 60], redK).map(v => v * (0.95 - 0.1 * turn)), ease(clamp((t - L3[0]) / 0.4, 0, 1)), { open: o3, blink: blinkAt(0.1) }, { head: [nod * 2, 0, 0] });
+    void o3;
+    crew3d('commander', 1395 - turn * 10, 246 + 3 * Math.sin(t * 1.3) - turn * 4 + nod, s3, -100 - 14 * turn, mix([130, 180, 240], [255, 80, 60], redK).map(v => v * (0.95 - 0.1 * turn)), ease(clamp((t - L3[0]) / 0.4, 0, 1)),
+      voice(LINES3.commander, L3, 0.1, roomAt(turn > 0.5 ? 1050 : 760, 300, H / 8 * CAM.F / 130), { frown: t < L3[0] ? 0.35 : 0 }), { head: [nod * 2, 0, 0] });
     // ---- light: bloom from the screens, the room's falloff, and the alarm's pulse ----
     c.globalCompositeOperation = 'lighter';
     glow(535, 340, 420, [40, 90, 170], 0.06); glow(985, 340, 300, [40, 90, 170], 0.05); glow(1350, 340, 300, [40, 90, 170], 0.05);
