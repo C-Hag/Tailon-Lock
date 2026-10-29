@@ -708,6 +708,15 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[i], "--compose-test")) return compose_test(argv[i + 1], argv[i + 2]);
   for (int i = 1; i + 2 < argc; i++)
     if (!strcmp(argv[i], "--render-music")) return render_music(argv[i + 1], argv[i + 2]);
+  for (int i = 1; i + 1 < argc; i++) /* tests (tools/check): the source meshes as dumps, or as .glb files */
+    if (!strcmp(argv[i], "--dump-meshes") || !strcmp(argv[i], "--export-glb")) {
+      if (!SDL_Init(0)) return 1;
+      assets_init();
+      int n = assets_export_meshes(argv[i + 1], !strcmp(argv[i], "--export-glb"));
+      SDL_Log("%s: %d meshes into %s", argv[i], n, argv[i + 1]);
+      SDL_Quit();
+      return n > 0 ? 0 : 1;
+    }
   static App app; /* the Game struct is large; keep it off the stack */
   app.scale = 0; /* auto */
   bool checking = getenv("A4C_CHECK") != NULL;

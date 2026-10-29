@@ -11,7 +11,8 @@
  * chunk is first and non-empty, and that a refusal says why. It then loads
  * the model and reads every element of every accessor it accepts; the numbers
  * in the JSON chunk are mutated too (digits changed in place, so the chunk
- * keeps its length). Exits 1 on a broken rule (the input is saved to
+ * keeps its length), and builds the mesh (brick 7): every face it makes must
+ * point at vertices that exist. Exits 1 on a broken rule (the input is saved to
  * fuzz-fail.glb). */
 #include <stdint.h>
 #include <stdio.h>
@@ -21,6 +22,7 @@
 
 #include "core/glb.h"
 #include "core/json.h"
+#include "core/mesh.h"
 
 static uint64_t rng = 0x243F6A8885A308D3ull;
 static uint64_t next(void) {
@@ -55,7 +57,7 @@ static size_t build(uint8_t *b, const char *json, size_t bin_len) {
   return n;
 }
 
-static long accepted, accessors_read, elements_read;
+static long accepted, accessors_read, elements_read, meshes_built;
 
 static int check(const uint8_t *src, size_t n) {
   uint8_t *data = malloc(n ? n : 1);
@@ -87,6 +89,16 @@ static int check(const uint8_t *src, size_t n) {
         elements_read += (long)a.count;
         (void)sum;
       }
+      static Mesh mesh;
+      if (glb_mesh(&m, &mesh, &err)) {
+        meshes_built++;
+        if (mesh.nf < 1 || mesh.nv > 65535) ok = 0;
+        for (int f = 0; f < mesh.nf && ok; f++) {
+          if (mesh.f[f].n < 3 || mesh.f[f].n > FACE_MAX_V) ok = 0;
+          for (int k = 0; k < mesh.f[f].n; k++)
+            if (mesh.f[f].i[k] >= mesh.nv) ok = 0;
+        }
+      } else if (!err) ok = 0;
       glb_close(&m);
     }
   } else if (!err) ok = 0;
@@ -116,6 +128,18 @@ int main(int argc, char **argv) {
                      "{\"bufferView\":1,\"componentType\":5126,\"count\":2,\"type\":\"VEC4\"},"
                      "{\"bufferView\":0,\"componentType\":5120,\"count\":3,\"type\":\"MAT4\"}]}",
                      96), ns++;
+  /* our own writer's files: a built-in jet and the drone */
+  mesh_init_builtin();
+  const Mesh *own[] = { &MESH_JET[0], &MESH_DRONE, &MESH_SAM_BOX };
+  for (size_t k = 0; k < sizeof own / sizeof *own && ns < MAX_SEEDS; k++) {
+    size_t n;
+    uint8_t *b = glb_write_mesh(own[k], "seed", &n);
+    if (b && n <= CAP) {
+      memcpy(seeds[ns], b, n);
+      seed_n[ns++] = n;
+    }
+    free(b);
+  }
   for (int i = 2; i < argc && ns < MAX_SEEDS; i++) {
     FILE *f = fopen(argv[i], "rb");
     if (!f) continue;
@@ -183,7 +207,7 @@ int main(int argc, char **argv) {
       }
     }
   }
-  printf("fuzz_glb: %ld inputs (%ld accepted, %ld accessors and %ld elements read), %d seeds, no rule broken\n", tried,
-         accepted, accessors_read, elements_read, ns);
+  printf("fuzz_glb: %ld inputs (%ld accepted, %ld accessors and %ld elements read, %ld meshes built), %d seeds, no rule "
+         "broken\n", tried, accepted, accessors_read, elements_read, meshes_built, ns);
   return 0;
 }

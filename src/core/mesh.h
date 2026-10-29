@@ -5,6 +5,7 @@
 #define A4C_MESH_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include "core/mathx.h"
 
@@ -46,5 +47,8 @@ void mesh_face(Mesh *m, const int *idx, int n, uint32_t col);
 void mesh_face3(Mesh *m, int a, int b, int c, uint32_t col);
 void mesh_face4(Mesh *m, int a, int b, int c, int d, uint32_t col);
 void mesh_init_builtin(void);
+/* The mesh as canonical text, for golden checks: its radius and counts, then
+ * every vertex (%.9g: a float exactly) and every face (corners, colour). */
+void mesh_dump(const Mesh *m, FILE *f);
 
 #endif

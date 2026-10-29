@@ -18,6 +18,9 @@ const char *assets_path(const char *rel);
 struct Json *assets_json(const char *rel);
 /* {v: [[x, y, z]...], f: [[[i...], "#rrggbb"]...], rad} -> mesh */
 bool assets_mesh(const struct Json *j, Mesh *m);
+/* Every source mesh (the jets and the carrier) into dir: as .glb files from
+ * our writer (glb) or as canonical dumps (.txt). Returns how many, or -1. */
+int assets_export_meshes(const char *out_dir, bool glb);
 /* The maps listed in assets/maps/maps_index.json, loaded on first use. */
 #define MAX_MAPS 8
 int         assets_map_count(void);

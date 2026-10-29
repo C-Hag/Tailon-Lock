@@ -18,7 +18,17 @@
  * aligned to the component size, matrix columns start on 4-byte boundaries,
  * and the last element must end inside its view, which must end inside its
  * buffer. Sparse accessors and accessors without a view are refused.
- */
+ *
+ * Brick 7, meshes, materials and nodes, into our mesh format (core/mesh.h):
+ * the scene's node tree is walked with each node's matrix or translation,
+ * rotation and scale; every triangle primitive (list, strip or fan) of every
+ * mesh is added, with the colour of its material. Our own writer stores a
+ * mesh so that it reads back exactly: the vertices once, as 32-bit floats;
+ * the faces in their order, one primitive for each run of faces of one
+ * colour, as triangle fans; and, in the primitives' and materials' extras
+ * (the format's place for an application's own data), each face's corner
+ * count, the exact colour and the mesh's radius. Other glTF readers see
+ * ordinary coloured triangles. */
 #ifndef A4C_GLB_H
 #define A4C_GLB_H
 
@@ -72,5 +82,13 @@ bool glb_accessor(const GlbModel *m, int index, GlbAccessor *out, const char **e
 /* Component comp (column-major for matrices) of element i, as a double: the
  * integer value, or the float, or the normalized value when normalized. */
 double glb_get(const GlbAccessor *a, size_t i, int comp);
+
+struct Mesh;
+
+/* The model's default scene as one mesh (cleared first). False, with why, if
+ * there is no triangle to draw or the mesh would pass 65535 vertices. */
+bool glb_mesh(const GlbModel *m, struct Mesh *out, const char **err);
+/* A .glb file holding mesh m; free() it. NULL when out of memory. */
+uint8_t *glb_write_mesh(const struct Mesh *m, const char *name, size_t *len);
 
 #endif

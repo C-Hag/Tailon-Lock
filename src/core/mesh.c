@@ -397,3 +397,13 @@ void mesh_init_builtin(void) {
   box(&MESH_CREW, 0, 0.85f, 0, 0.26f, 0.65f, 0.15f, 0xb8a070, 0);
   box(&MESH_CREW, 0, 1.52f, 0, 0.11f, 0.25f, 0.12f, 0xd8b090, 0x3a3a40);
 }
+
+void mesh_dump(const Mesh *m, FILE *f) {
+  fprintf(f, "mesh rad %.9g nv %d nf %d\n", m->rad, m->nv, m->nf);
+  for (int i = 0; i < m->nv; i++) fprintf(f, "v %.9g %.9g %.9g\n", m->v[i].x, m->v[i].y, m->v[i].z);
+  for (int i = 0; i < m->nf; i++) {
+    fprintf(f, "f %d", m->f[i].n);
+    for (int k = 0; k < m->f[i].n; k++) fprintf(f, " %d", m->f[i].i[k]);
+    fprintf(f, " c %08x\n", m->f[i].c);
+  }
+}

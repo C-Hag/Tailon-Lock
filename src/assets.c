@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "core/json.h"
+#include "core/glb.h"
 #include "core/jets.h"
 #include "core/json.h"
 
@@ -518,4 +519,43 @@ bool assets_init(void) {
   load_carrier();
   load_map_index();
   return true;
+}
+
+/* ---- exporting the meshes (brick 7) --------------------------------------- */
+
+/* one source mesh: <dir>/<id>.glb from our writer, or <dir>/<id>.txt, the canonical dump */
+static bool export_one(const char *out_dir, const char *id, const Json *mj, bool glb) {
+  static Mesh m;
+  if (!assets_mesh(mj, &m)) return false;
+  char path[1200];
+  snprintf(path, sizeof path, "%s/%s.%s", out_dir, id, glb ? "glb" : "txt");
+  FILE *f = fopen(path, "wb");
+  if (!f) return false;
+  bool ok = true;
+  if (glb) {
+    size_t n;
+    uint8_t *b = glb_write_mesh(&m, id, &n);
+    ok = b && fwrite(b, 1, n, f) == n;
+    free(b);
+  } else mesh_dump(&m, f);
+  return fclose(f) == 0 && ok;
+}
+
+int assets_export_meshes(const char *out_dir, bool glb) {
+  int n = 0;
+  Json *root = json_in_js("jets/jets_game.js", '[', ']');
+  const Json *j;
+  JSON_FOR(j, root) {
+    if (!export_one(out_dir, str(j, "id"), json_get(j, "mesh"), glb)) {
+      json_free(root);
+      return -1;
+    }
+    n++;
+  }
+  json_free(root);
+  root = json_in_js("jets/carrier_game.js", '{', '}');
+  if (root && !export_one(out_dir, str(root, "id"), json_get(root, "mesh"), glb)) n = -1;
+  else if (root) n++;
+  json_free(root);
+  return n;
 }

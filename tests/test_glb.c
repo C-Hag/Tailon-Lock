@@ -1,7 +1,8 @@
 /* test_glb.c - checks for our own GLB reader (src/core/glb.c): the container
  * rules of the glTF 2.0 binary format, buffer views and accessors (every
- * component type, normalized integers, matrices, strides), and files it must
- * refuse. Original
+ * component type, normalized integers, matrices, strides), meshes, materials
+ * and nodes (our own writer's files read back exactly; transforms, strips and
+ * fans, colours from plain materials), and files it must refuse. Original
  * code for this project, written from the Khronos glTF 2.0 specification. */
 #include <math.h>
 #include <stdint.h>
@@ -11,6 +12,7 @@
 
 #include "core/glb.h"
 #include "core/json.h"
+#include "core/mesh.h"
 
 static int failures, checks;
 
@@ -293,11 +295,162 @@ static void test_accessors_refused(void) {
   printf("accessors refused: %d of %d\n", refused, n);
 }
 
+/* ---- meshes, materials and nodes ------------------------------------------ */
+
+/* a mesh's canonical dump, as a string (free it) */
+static char *dump_of(const Mesh *m) {
+  FILE *f = tmpfile();
+  if (!f) return NULL;
+  mesh_dump(m, f);
+  long n = ftell(f);
+  rewind(f);
+  char *s = malloc((size_t)n + 1);
+  if (s) {
+    s[fread(s, 1, (size_t)n, f)] = 0;
+  }
+  fclose(f);
+  return s;
+}
+
+static int round_trip(const Mesh *src, const char *name) {
+  size_t n;
+  uint8_t *b = glb_write_mesh(src, name, &n);
+  GlbModel m;
+  const char *err = NULL;
+  static Mesh back;
+  int ok = b && glb_load(b, n, &m, &err) && glb_mesh(&m, &back, &err);
+  if (ok) {
+    char *a = dump_of(src), *c = dump_of(&back);
+    ok = a && c && !strcmp(a, c);
+    free(a);
+    free(c);
+    glb_close(&m);
+  }
+  if (!ok) fprintf(stderr, "  %s: round trip failed (%s)\n", name, err ? err : "the dumps differ");
+  free(b);
+  return ok;
+}
+
+static void test_mesh_round_trip(void) {
+  mesh_init_builtin();
+  CHECK(round_trip(&MESH_JET[0], "jet0"));
+  CHECK(round_trip(&MESH_JET[1], "jet1"));
+  CHECK(round_trip(&MESH_DRONE, "drone"));
+  CHECK(round_trip(&MESH_TANKER, "tanker"));
+  CHECK(round_trip(&MESH_CIWS_BASE, "ciws"));
+  CHECK(round_trip(&MESH_SAM_BOX, "sam"));
+  CHECK(round_trip(&MESH_BRIDGE, "bridge"));
+  CHECK(round_trip(&MESH_CREW, "crew"));
+  for (int t = 0; t < TGT_TYPES; t++) CHECK(round_trip(&MESH_TARGET[0][t], "target"));
+  /* a glowing face, an octagon, a -0 vertex and one face of each corner count */
+  static Mesh m;
+  mesh_reset(&m, 12.5f);
+  for (int i = 0; i < 8; i++) mesh_vert(&m, (float)i, i == 0 ? -0.0f : (float)(i * i) / 7.0f, -(float)i);
+  int oct[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+  mesh_face(&m, oct, 8, 0x123456 | FACE_GLOW);
+  mesh_face3(&m, 0, 1, 2, 0x123456);
+  mesh_face4(&m, 3, 4, 5, 6, 0xabcdef);
+  mesh_face3(&m, 7, 6, 5, 0x123456);
+  CHECK(round_trip(&m, "edges"));
+}
+
+/* a model from JSON with positions at BIN 0 (4 VEC3 floats) and u16 indices at 48 */
+static Buf model(const char *rest) {
+  static uint8_t bin[64];
+  float p[12] = { 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0 };
+  uint16_t idx[6] = { 0, 1, 2, 3, 0, 2 };
+  memcpy(bin, p, sizeof p);
+  memcpy(bin + 48, idx, sizeof idx);
+  char json[4096];
+  snprintf(json, sizeof json, "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":64}],"
+           "\"bufferViews\":[{\"buffer\":0,\"byteLength\":48},{\"buffer\":0,\"byteOffset\":48,\"byteLength\":12}],"
+           "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":4,\"type\":\"VEC3\"},"
+           "{\"bufferView\":1,\"componentType\":5123,\"count\":6,\"type\":\"SCALAR\"},"
+           "{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"},"
+           "{\"bufferView\":1,\"byteOffset\":2,\"componentType\":5123,\"count\":2,\"type\":\"SCALAR\"}],%s}", rest);
+  return make(json, bin, sizeof bin);
+}
+
+static int mesh_of(const char *rest, Mesh *out, const char **err) {
+  Buf f = model(rest);
+  GlbModel m;
+  int ok = glb_load(f.b, f.n, &m, err) && glb_mesh(&m, out, err);
+  if (m.doc) glb_close(&m);
+  return ok;
+}
+
+static void test_mesh_reading(void) {
+  static Mesh m;
+  const char *err;
+  const char *tri = "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1%s}]}]";
+  char rest[1024], prim[256];
+  /* two triangles, no material: grey; the radius from the farthest vertex */
+  snprintf(prim, sizeof prim, tri, "");
+  snprintf(rest, sizeof rest, "%s,\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]", prim);
+  CHECK(mesh_of(rest, &m, &err) && m.nv == 4 && m.nf == 2 && m.f[0].n == 3 && m.f[1].i[0] == 3 && m.f[0].c == 0xCCCCCC);
+  CHECK(fabsf(m.rad - sqrtf(2)) < 1e-6f);
+  /* a material without our extras: its base colour (linear) as sRGB; emission makes the face glow */
+  snprintf(prim, sizeof prim, tri, ",\"material\":0");
+  snprintf(rest, sizeof rest, "%s,\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,0.2140411,0,1]},"
+           "\"emissiveFactor\":[0,0,0.5]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]", prim);
+  CHECK(mesh_of(rest, &m, &err) && m.f[0].c == (0xFF7F00 | FACE_GLOW));
+  /* a translated child under a scaled parent */
+  snprintf(prim, sizeof prim, tri, "");
+  snprintf(rest, sizeof rest, "%s,\"nodes\":[{\"scale\":[2,2,2],\"children\":[1]},{\"mesh\":0,\"translation\":[10,0,0]}],"
+           "\"scenes\":[{\"nodes\":[0]}]", prim);
+  CHECK(mesh_of(rest, &m, &err) && m.v[1].x == 22 && m.v[2].y == 2 && m.v[0].x == 20);
+  /* a rotation of 90 degrees about Y: x goes to -z */
+  snprintf(rest, sizeof rest, "%s,\"nodes\":[{\"mesh\":0,\"rotation\":[0,0.70710678,0,0.70710678]}],\"scenes\":[{\"nodes\":[0]}]", prim);
+  CHECK(mesh_of(rest, &m, &err) && fabsf(m.v[1].z + 1) < 1e-6f && fabsf(m.v[1].x) < 1e-6f);
+  /* a matrix (column-major): translation in the last column */
+  snprintf(rest, sizeof rest, "%s,\"nodes\":[{\"mesh\":0,\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,5,6,7,1]}],\"scenes\":[{\"nodes\":[0]}]", prim);
+  CHECK(mesh_of(rest, &m, &err) && m.v[0].x == 5 && m.v[0].y == 6 && m.v[0].z == 7);
+  /* a strip and a fan over the 4 vertices: 2 triangles each, the strip's second turned */
+  snprintf(rest, sizeof rest, "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"mode\":5},"
+           "{\"attributes\":{\"POSITION\":0},\"mode\":6},{\"attributes\":{\"POSITION\":0},\"mode\":1}]}],"
+           "\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]");
+  CHECK(mesh_of(rest, &m, &err) && m.nv == 4 && m.nf == 4);
+  CHECK(m.nf == 4 && m.f[1].i[0] == 2 && m.f[1].i[1] == 1 && m.f[1].i[2] == 3 && m.f[3].i[0] == 0 && m.f[3].i[2] == 3);
+  /* our extras: one quad from the two fan triangles */
+  snprintf(prim, sizeof prim, tri, ",\"extras\":{\"tl_faces\":[4]}");
+  snprintf(rest, sizeof rest, "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":2,\"extras\":{\"tl_faces\":[3]}}],"
+           "\"extras\":{\"tl_rad\":9.5}}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]");
+  CHECK(mesh_of(rest, &m, &err) && m.nf == 1 && m.rad == 9.5f);
+  /* extras that do not fit the triangles are ignored: plain triangles */
+  snprintf(prim, sizeof prim, tri, ",\"extras\":{\"tl_faces\":[5]}");
+  snprintf(rest, sizeof rest, "%s,\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]", prim);
+  CHECK(mesh_of(rest, &m, &err) && m.nf == 2 && m.f[0].n == 3);
+
+  /* refused */
+  static const char *const BAD[] = {
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"mode\":1}]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1}]}],\"nodes\":[{\"mesh\":0,\"children\":[0]}],\"scenes\":[{\"nodes\":[0]}]",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1}]}],\"nodes\":[{\"mesh\":3}],\"scenes\":[{\"nodes\":[0]}]",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1}]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[4]}]",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":1}}]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":0}]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"material\":2}]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1}]}],\"nodes\":[{\"mesh\":0,\"matrix\":[1,0,0]}],\"scenes\":[{\"nodes\":[0]}]",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1}]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}],\"scene\":3",
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"mode\":9}]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}]",
+  };
+  int refused = 0, n = (int)(sizeof BAD / sizeof *BAD);
+  for (int i = 0; i < n; i++) {
+    err = NULL;
+    if (!mesh_of(BAD[i], &m, &err) && err) refused++;
+    else fprintf(stderr, "  mesh accepted: %s\n", BAD[i]);
+  }
+  CHECK(refused == n);
+  printf("meshes refused: %d of %d\n", refused, n);
+}
+
 int main(void) {
   test_container();
   test_refused();
   test_accessors();
   test_accessors_refused();
+  test_mesh_round_trip();
+  test_mesh_reading();
   if (failures) {
     fprintf(stderr, "%d of %d glb checks failed\n", failures, checks);
     return 1;

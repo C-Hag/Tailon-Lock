@@ -17,7 +17,8 @@ The stages:
    1 build       release and ASan+UBSan, with GCC and with Clang, -Wall -Wextra -Werror on our code
    2 tests       the unit tests (ctest) in the GCC release and the Clang ASan builds
    3 golden      every JSON the game reads, dumped by our own reader and compared byte for byte with the
-                 reference dumps (taken with the old reader in brick 0)
+                 reference dumps (taken with the old reader in brick 0); every game mesh, and the same mesh
+                 written to and read back from our own .glb, against its reference dump
    4 deps        what the binaries link and load, what CMake fetches, what the sources include
    5 cleanroom   no third-party names past the allow-list, no licence headers, no personal or machine
                  terms, the homage line the only reference to the original game
@@ -315,11 +316,65 @@ def stage_golden(baseline):
     if invalid:
         say('    unparsable: ' + ', '.join(invalid))
         ok_all = False
+    # the meshes (brick 7): today's source meshes as canonical dumps, and the same meshes through our own .glb
+    # writer and reader; both must match the reference hashes
+    ok_all &= golden_meshes(baseline, bad)
     glb = tracked('*.glb', '*.gltf')
-    say('    %d .glb/.gltf files (the game loads none today)' % len(glb))
+    say('    %d .glb/.gltf files tracked' % len(glb))
     for b in bad[:10]:
         say('      ' + b)
     return ok_all
+
+
+def golden_meshes(baseline, bad):
+    rel = bdir('gcc-release')
+    exe, dumper = os.path.join(rel, 'tailonlock'), os.path.join(rel, 'glb_dump')
+    work = tempfile.mkdtemp(prefix='check-meshes-')
+    src, glbd = os.path.join(work, 'src'), os.path.join(work, 'glb')
+    os.makedirs(src)
+    os.makedirs(glbd)
+    env = game_env(work)
+    r1, o1 = run([exe, '--dump-meshes', src], env=env, timeout=300)
+    r2, o2 = run([exe, '--export-glb', glbd], env=env, timeout=300)
+    if r1 or r2:
+        bad.append('meshes: the game could not dump or export them')
+        shutil.rmtree(work, ignore_errors=True)
+        return False
+    manifest_p = os.path.join(GOLD, 'meshes.sha256')
+    manifest = {}
+    if os.path.exists(manifest_p):
+        for l in open(manifest_p):
+            h, p = l.rstrip('\n').split('  ', 1)
+            manifest[p] = h
+    ids = sorted(f[:-4] for f in os.listdir(src) if f.endswith('.txt'))
+    new, same_src, same_glb = {}, 0, 0
+    for i in ids:
+        d = open(os.path.join(src, i + '.txt'), 'rb').read()
+        new[i] = hashlib.sha256(d).hexdigest()
+        rc, out = run([dumper, os.path.join(glbd, i + '.glb')])
+        rt = out.encode()
+        if baseline:
+            continue
+        if manifest.get(i) == new[i]:
+            same_src += 1
+        else:
+            bad.append('mesh %s: the source mesh differs from its reference' % i)
+        if rc == 0 and hashlib.sha256(rt).hexdigest() == manifest.get(i):
+            same_glb += 1
+        else:
+            bad.append('mesh %s: through our .glb it differs from its reference' % i)
+    shutil.rmtree(work, ignore_errors=True)
+    if baseline:
+        with open(manifest_p, 'w') as f:
+            for k in sorted(new):
+                f.write('%s  %s\n' % (new[k], k))
+        say('    %d meshes: references taken' % len(ids))
+        return True
+    gone = sorted(set(manifest) - set(new))
+    for g in gone:
+        bad.append('mesh %s: in the manifest, no longer exported' % g)
+    say('    %d meshes: %d sources and %d .glb round trips identical to the references' % (len(ids), same_src, same_glb))
+    return bool(ids) and same_src == same_glb == len(ids) == len(manifest)
 
 
 # ---- 4 dependencies --------------------------------------------------------------------------------------
