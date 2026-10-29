@@ -35,7 +35,8 @@ in `build/check/<date>-<commit>.txt`).
 | 10-20 | our own desktop platform layer; SDL3 deleted | planned | |
 | 23-24 | the last downloaded library gone; final audit | planned | |
 | 30-32 | iOS | later | |
-| W1-W3 | mobile mode in the browser game, published as a web page | planned | |
+| W1-W2 | mobile mode in the browser game (web v28) | done in the web build; repo copy to refresh | |
+| W3 | the browser game published as a web page | planned, after the push and Pages | |
 
 Outside code still in the build: SDL3 (until brick 20) and Monocypher (until
 brick 22), both downloaded at build time with checksums (docs/THIRD_PARTY.md).
@@ -246,20 +247,19 @@ web page from the repository, so anyone can open the link on a phone or
 tablet and play. It is a separate track from the C bricks and can run beside
 them.
 
-- **W1. A "Controls" choice on the home menu:** Touch / Keyboard & mouse /
-  Gamepad. Touch is picked automatically on a touch screen, and can be chosen
-  on any device, so the link works on an iPad, an iPhone, an Android tablet,
-  or a PC with the mouse playing the finger.
-  Gate: the menu choice switches the controls live and is remembered.
-- **W2. The brick 25 touch design in the browser:**
-  - a floating stick on the left half;
-  - hold the right half for guns; one big missile button with automatic lock;
-  - swipe the right edge for afterburner or airbrake, otherwise auto-throttle;
-  - a two-finger tap for flares, and a pause button;
-  - aim assist, haptics (`navigator.vibrate` where the browser has it), a
-    left-handed mirror, and the three-step first flight.
-  Gate: a scripted pointer test wins a dogfight against an easy CPU, and the
-  buttons measure at least 9 mm on a phone-sized viewport.
+- **W1-W2: done in the web version.** The browser build (Tailon Lock web
+  v28) has a "Play on: Computer / Mobile" choice on the home menu, picked by
+  the pointer type and remembered, plus:
+  - a floating stick, a throttle slider, and GUN, MSL, FLR, VIEW and pause
+    buttons;
+  - a slim see-through panel at the lower left;
+  - the recorded sound and DMX10 score, the version 7 intro, and the CIC
+    control-room scene.
+  It is built by re-appliable patch scripts on top of the browser source.
+  `reference/ace4combat.html` in the repository is the older copy from
+  before the mobile mode. It is to be refreshed with the built
+  `tailonlock.html` and its `sfx/` and `music/` folders. There must be no
+  second touch implementation in the old copy.
 - **W3. The published page:** the page served from the repository as a site,
   with a short link in the README. Gate: it opens and plays on the owner's
   tablet and phone from the link.
