@@ -753,6 +753,8 @@ int fig_build(const FigSpec *fig, FigTri *outp, int max) {
 /* ---- the look ---- */
 static const uint8_t PAL_COVERALLS[FR_COUNT][3] = { [FR_SHIRT] = { 44, 58, 86 }, [FR_SLEEVE] = { 44, 58, 86 }, [FR_TROUSERS] = { 40, 53, 80 },
   [FR_BELT] = { 36, 46, 70 }, [FR_COLLAR] = { 44, 58, 86 }, [FR_POCKET] = { 38, 50, 76 }, [FR_TAPE] = { 24, 30, 44 }, [FR_TEE] = { 44, 58, 86 } };
+static const uint8_t PAL_DUNGAREES[FR_COUNT][3] = { [FR_SHIRT] = { 118, 146, 184 }, [FR_SLEEVE] = { 118, 146, 184 }, [FR_TROUSERS] = { 38, 48, 76 },
+  [FR_BELT] = { 30, 28, 26 }, [FR_COLLAR] = { 118, 146, 184 }, [FR_POCKET] = { 108, 136, 174 }, [FR_TAPE] = { 30, 36, 52 }, [FR_TEE] = { 228, 226, 218 } };
 static const uint8_t PAL_KHAKI[FR_COUNT][3] = { [FR_SHIRT] = { 176, 150, 104 }, [FR_SLEEVE] = { 176, 150, 104 }, [FR_TROUSERS] = { 166, 140, 96 },
   [FR_BELT] = { 40, 32, 24 }, [FR_COLLAR] = { 176, 150, 104 }, [FR_POCKET] = { 160, 136, 94 }, [FR_TAPE] = { 140, 118, 82 }, [FR_TEE] = { 232, 230, 222 } };
 static const uint8_t PAL_SHARED[FR_COUNT][3] = { [FR_BOOT] = { 22, 22, 24 }, [FR_CAP] = { 22, 30, 50 }, [FR_GOLD] = { 214, 172, 72 },
@@ -770,7 +772,7 @@ void fig_colour(const FigSpec *f, int role, float c[3]) {
     case FR_LID: c[i] = (float)(s * 0.7); break;
     case FR_LIP: c[i] = (float)(s * (i == 0 ? 0.86 : i == 1 ? 0.68 : 0.66)); break;
     default: {
-      const uint8_t *u = (f->kit.uniform == FU_KHAKI ? PAL_KHAKI : PAL_COVERALLS)[role];
+      const uint8_t *u = (f->kit.uniform == FU_KHAKI ? PAL_KHAKI : f->kit.uniform == FU_DUNGAREES ? PAL_DUNGAREES : PAL_COVERALLS)[role];
       if (role == FR_SHIRT || role == FR_SLEEVE || role == FR_TROUSERS || role == FR_BELT || role == FR_COLLAR || role == FR_POCKET ||
           role == FR_TAPE || role == FR_TEE)
         c[i] = u[i];
@@ -925,8 +927,8 @@ static void spec_default(FigSpec *f, float H) {
 void fig_crew(int who, float H, float raise, FigSpec *f) {
   spec_default(f, H);
   FigPose *p = &f->pose;
-  if (who == FC_OPERATOR) { /* the ship's flame-resistant coveralls and a headset, seated, leaning in to his scope */
-    f->kit = (FigKit){ FU_COVERALLS, FD_NONE, false, false, true, true, false, false };
+  if (who == FC_OPERATOR) { /* chambray and dungarees and a sound-powered phone headset, seated, leaning in to his scope */
+    f->kit = (FigKit){ FU_DUNGAREES, FD_NONE, false, false, true, true, false, false };
     memcpy(f->skin, (uint8_t[]){ 205, 160, 128 }, 3);
     memcpy(f->hair, (uint8_t[]){ 34, 26, 20 }, 3);
     memcpy(f->iris, (uint8_t[]){ 86, 62, 40 }, 3);

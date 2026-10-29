@@ -21,7 +21,7 @@ enum {
   FR_OAK, FR_COUNT
 };
 enum { FP_NONE, FP_TRUNK, FP_HEAD, FP_FACE, FP_HAND_L, FP_HAND_R, FP_LIMB, FP_EYE };
-enum { FU_COVERALLS, FU_KHAKI };
+enum { FU_COVERALLS, FU_KHAKI, FU_DUNGAREES };
 enum { FD_NONE, FD_ANCHOR, FD_OAK };
 
 /* a pose: per bone [bend about x, twist, spread about z] in degrees; the fingers' curl per hand; the whole figure

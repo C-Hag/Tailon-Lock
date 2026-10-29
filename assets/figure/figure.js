@@ -494,6 +494,9 @@ const Figure = (() => {
   const PALETTES = {
     // shipboard flame-resistant coveralls: dark navy, the ball cap, black boots
     coveralls: { shirt: [44, 58, 86], sleeve: [44, 58, 86], trousers: [40, 53, 80], belt: [36, 46, 70], collar: [44, 58, 86], pocket: [38, 50, 76], tape: [24, 30, 44], tee: [44, 58, 86] },
+    // the enlisted working uniform of the early 1990s: a light-blue chambray shirt, dark-blue denim dungarees, a black
+    // belt, the white T-shirt at the open collar, the name stencilled over the pocket
+    dungarees: { shirt: [118, 146, 184], sleeve: [118, 146, 184], trousers: [38, 48, 76], belt: [30, 28, 26], collar: [118, 146, 184], pocket: [108, 136, 174], tape: [30, 36, 52], tee: [228, 226, 218] },
     // service khaki: shirt and trousers, a dark belt, the white T-shirt at the open collar
     khaki: { shirt: [176, 150, 104], sleeve: [176, 150, 104], trousers: [166, 140, 96], belt: [40, 32, 24], collar: [176, 150, 104], pocket: [160, 136, 94], tape: [140, 118, 82], tee: [232, 230, 222] },
     shared: { boot: [22, 22, 24], cap: [22, 30, 50], gold: [214, 172, 72], kit: [20, 22, 24], eyeWhite: [214, 208, 200], iris: [52, 40, 30], mouth: [70, 30, 30], paper: [228, 226, 214], anchor: [214, 172, 72], oak: [200, 204, 210] }
@@ -545,7 +548,8 @@ const Figure = (() => {
           const k = Math.max(0, dot(nn, light.dir)), rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
           return base.map((b, i) => Math.min(255, b * (0.24 + 0.85 * k * light.key[i] / 255) + 255 * rim * 0.2 * light.rim[i] / 255));
         };
-        if (t.ns) {
+        if (t.lit) all.push({ z, pts, col: t.col, tag: t.tag });   // the room, already lit (lightRoom)
+        else if (t.ns) {
           // a smooth part (the face): each corner lit by its own normal; the colour across the facet is then an affine
           // field, drawn as a linear gradient along its steepest direction (the same as shading the corners and
           // blending between them)
@@ -555,7 +559,7 @@ const Figure = (() => {
       }
     }
     all.sort((a, b) => b.z - a.z);
-    for (const t of all) fill(t.pts, t.col, t.grad);
+    for (const t of all) fill(t.pts, t.col, t.grad, t.tag || 0);
   }
 
   // ---- measuring a figure against the canon (the checker's test, and the viewer's table) ----
@@ -604,10 +608,10 @@ const Figure = (() => {
 
   // the control room's crew: the kit, the look and the pose of each
   const CREW = {
-    // the air detector in the ship's flame-resistant coveralls and a headset, seated, leaning in to his scope,
+    // the air detector in chambray and dungarees and a sound-powered phone headset, seated, leaning in to his scope,
     // both hands forward on the keyboard
     // twenty-four: a smooth face, a short nose, full lips, shallow sockets, a clean shave
-    operator: { kit: { uniform: 'coveralls', headset: true, nametape: true }, skin: [205, 160, 128], hair: [34, 26, 20], iris: [86, 62, 40],
+    operator: { kit: { uniform: 'dungarees', headset: true, nametape: true }, skin: [205, 160, 128], hair: [34, 26, 20], iris: [86, 62, 40],
       faceShape: { brow: 0.3, cheek: 0.45, jaw: 0.45, chin: 0.45, bridge: 0.35, tip: 0.55, lips: 0.65, socket: 0.3, age: 0.05, stubble: 0.08 },
       pose: H => SEAT(H, { hips: [14, 0, 0], chest: [8, 0, 0], neck: [-12, 0, 0], head: [-8, 0, 0],
         upperL: [0, -62, -58], upperR: [0, 62, 58], foreL: [0, -48, 6], foreR: [0, 48, -6], handL: [0, -10, -8], handR: [0, 10, 8], curlL: 30, curlR: 34 }) },
@@ -720,6 +724,263 @@ const Figure = (() => {
     return text;
   }
 
-  return { VITRUVIAN, PALM, skeleton, solve, build, draw, measureMesh, vitruvianPose, POSES, SEAT, CREW, colour, speechTrack, mouthAt, wordsShown, spokenUpTo, words, toPhonemes, FACE_DEFAULT, landmarks };
+  // ---- the control room: steel, pipes and consoles, made in code like the people ----
+  // A combat centre the way the big gun ships had them after their 1980s refits, here on our fictional carrier:
+  // welded and riveted bulkhead plating with its frames, the deckhead crowded with pipes, a fire main, cable trays and
+  // ducting, a row of grey consoles with round radar repeaters and green alphanumeric CRTs, two strike-weapon consoles,
+  // edge-lit plexiglass status boards with a plotter writing on their far side, sound-powered phone boxes and their
+  // headsets, a clock, the general-quarters light, rubber mats on the deck, and the operator's console close by. Every
+  // big surface is cut into tiles, so the room's lamps (lightRoom) light it in pools and the painter's sort can place
+  // people among it.
+  // Each triangle: v, col (its paint), two (seen from either side), part ('far' or 'near'), emit (0 lit by the lamps;
+  // 1 shines by itself; 2 and 3 the red and blue lamps, their brightness set when lit), tag (1 + the screen drawn on it,
+  // or 0). A screen: kind (SCREEN), o its top-left corner, ex across and ey down, w x h its content's own units, and
+  // bay (the console it sits in).
+  const SCREEN = { scope: 1, ppi: 2, alpha: 3, strike: 4, harpoon: 5, boardL: 6, boardR: 7, clock: 8, gq: 9, label: 10, steam: 11, keys: 12, guards: 13, keyboard: 14 };
+  const PAINT = {
+    plate: [150, 154, 150], rivet: [176, 180, 174], weld: [70, 72, 70], frame: [132, 136, 132], deck: [70, 72, 74], deckhead: [120, 124, 122],
+    mat: [26, 26, 28], rib: [40, 40, 42], pipe: [184, 184, 178], pipeGrey: [110, 116, 120], fire: [150, 34, 28], cable: [32, 32, 34],
+    tray: [96, 100, 100], duct: [140, 144, 142], console: [120, 126, 130], consoleDark: [74, 80, 84], bezel: [26, 28, 30], glass: [6, 12, 9],
+    key: [150, 158, 158], label: [30, 32, 34], phone: [104, 108, 104], black: [22, 22, 24], alu: [170, 176, 182], edge: [255, 214, 140],
+    lensBlue: [130, 160, 230], lensRed: [235, 50, 36], amber: [255, 170, 60], green: [90, 255, 140], redLit: [255, 60, 50], mug: [200, 200, 192],
+    coffee: [40, 24, 14], vinyl: [60, 70, 96], steel: [92, 96, 100]
+  };
+  function roomBuilder() {
+    const tris = [], screens = [], S = { part: 'far', two: false, emit: 0, tag: 0 };
+    const tri = (a, b, c, col) => tris.push({ v: [a, b, c], col, two: S.two, part: S.part, emit: S.emit, tag: S.tag });
+    // a quad o, o+a, o+a+b, o+b, facing along a x b
+    const quad = (o, a, b, col) => { const p1 = add(o, a), p2 = add(p1, b), p3 = add(o, b); tri(o, p1, p2, col); tri(o, p2, p3, col); };
+    const tile = (o, a, b, na, nb, col) => {
+      for (let i = 0; i < na; i++) for (let j = 0; j < nb; j++) quad(add(o, add(mul(a, i / na), mul(b, j / nb))), mul(a, 1 / na), mul(b, 1 / nb), col);
+    };
+    // a box from corner o along X, Y and Z (X x Y = Z); faces: 1 front (-Z), 2 back, 4 left (-X), 8 right, 16 top, 32 bottom
+    const box = (o, X, Y, Z, col, faces = 63) => {
+      if (faces & 1) quad(o, Y, X, col);
+      if (faces & 2) quad(add(o, Z), X, Y, col);
+      if (faces & 4) quad(o, Z, Y, col);
+      if (faces & 8) quad(add(o, X), Y, Z, col);
+      if (faces & 16) quad(add(o, Y), Z, X, col);
+      if (faces & 32) quad(o, X, Z, col);
+    };
+    const abox = (x0, y0, z0, x1, y1, z1, col, faces = 63) => box([x0, y0, z0], [x1 - x0, 0, 0], [0, y1 - y0, 0], [0, 0, z1 - z0], col, faces);
+    // a cylinder from a to b, n sides, capped at both ends if caps
+    const cyl = (a, b, r, n, col, caps) => {
+      const u = norm(sub(b, a)), h = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], p1 = norm(cross(h, u)), p2 = cross(u, p1), L = sub(b, a);
+      const at = (c, i) => add(c, add(mul(p1, r * Math.cos(2 * Math.PI * i / n)), mul(p2, r * Math.sin(2 * Math.PI * i / n))));
+      for (let i = 0; i < n; i++) { const A = at(a, i); quad(A, sub(at(a, i + 1), A), L, col); }
+      if (caps) for (let i = 0; i < n; i++) { tri(b, at(b, i), at(b, i + 1), col); tri(a, at(a, i + 1), at(a, i), col); }
+    };
+    // a panel o + ex u + ey v (u, v 0-1) with a hole (u0, v0)-(u1, v1) for what sits in it, so nothing lies on
+    // top of anything else and the painter's sort has nothing to get wrong
+    const frame = (o, ex, ey, u0, v0, u1, v1, col) => {
+      const at = (uu, vv) => add(o, add(mul(ex, uu), mul(ey, vv)));
+      const q = (ua, va, ub, vb) => quad(at(ua, va), mul(ex, ub - ua), mul(ey, vb - va), col);
+      q(0, 0, 1, v0); q(0, v1, 1, 1); q(0, v0, u0, v1); q(u1, v0, 1, v1);
+    };
+    const screen = (kind, o, ex, ey, w, h, bay, col) => {
+      screens.push({ kind, o, ex, ey, w, h, bay });
+      const e = S.emit, g = S.tag;
+      S.emit = 1; S.tag = screens.length;
+      if (col) quad(o, ex, ey, col);
+      S.emit = e; S.tag = g;
+    };
+    return { tris, screens, S, tri, quad, tile, box, abox, cyl, frame, screen };
+  }
+
+  function room() {
+    const B = roomBuilder(), { S, quad, tile, abox, cyl, frame, screen } = B, P = PAINT;
+    const ZW = 4.4, X0 = -4.2, X1 = 5.4, YC = 2.55;
+    const shift = (c, k) => c.map(v => v + k);
+    // the after bulkhead: three strakes of plates, rivet rows along their butts and seams, the welds, the frames
+    for (let r = 0; r < 3; r++)
+      for (let k = 0; k < 8; k++) {
+        const x = X0 + k * 1.2, y = r * 0.85;
+        tile([x, y + 0.85, ZW], [1.2, 0, 0], [0, -0.85, 0], 2, 2, shift(P.plate, ((k * 7 + r * 3) % 5 - 2) * 3));
+        for (let i = 0; i < 6; i++) quad([x + 0.03, y + 0.1 + i * 0.13 + 0.012, ZW - 0.004], [0.024, 0, 0], [0, -0.024, 0], P.rivet);
+        for (let i = 0; i < 8; i++) quad([x + 0.1 + i * 0.14, y + 0.85 - 0.028, ZW - 0.004], [0.024, 0, 0], [0, -0.024, 0], P.rivet);
+      }
+    for (const y of [0.85, 1.7]) for (let k = 0; k < 8; k++) quad([X0 + k * 1.2, y + 0.007, ZW - 0.002], [1.2, 0, 0], [0, -0.014, 0], P.weld);
+    for (let k = 0; k <= 4; k++) for (let j = 0; j < 3; j++) abox(X0 + 0.6 + k * 2.4 - 0.04, j * 0.85, ZW - 0.14, X0 + 0.6 + k * 2.4 + 0.04, (j + 1) * 0.85, ZW, P.frame, 1 | 4 | 8);
+    // the deck, and the ribbed rubber mats in front of the consoles
+    tile([X0, 0, 0.2], [0, 0, ZW - 0.2], [X1 - X0, 0, 0], 7, 12, P.deck);
+    for (const [m0, m1] of [[-3.9, -0.3], [0.5, 4.6]]) {
+      tile([m0, 0.006, 3.0], [0, 0, 0.64], [m1 - m0, 0, 0], 1, 4, P.mat);
+      for (let i = 0; i < 7; i++) quad([m0 + 0.04, 0.01, 3.04 + i * 0.09], [0, 0, 0.022], [m1 - m0 - 0.08, 0, 0], P.rib);
+    }
+    // the deckhead: its beams, the pipe runs with their flanges and hangers, the fire main and its valve, a cable tray,
+    // the trunk of ducting, and the pipes coming down the bulkhead
+    tile([X0, YC, 2.2], [X1 - X0, 0, 0], [0, 0, ZW - 2.2], 12, 3, P.deckhead);
+    for (const z of [2.75, 3.6]) for (let k = 0; k < 8; k++) abox(X0 + k * 1.2, YC - 0.15, z - 0.03, X0 + (k + 1) * 1.2, YC, z + 0.03, P.frame, 1 | 2 | 32);
+    const PIPES = [[2.4, 2.95, 0.06, P.pipe], [2.29, 3.2, 0.035, P.pipeGrey], [2.42, 3.4, 0.05, P.fire], [2.36, 3.85, 0.075, P.pipe], [2.28, 4.08, 0.04, P.pipeGrey]];
+    for (const [y, z, r, col] of PIPES)
+      for (let k = 0; k < 6; k++) {
+        const x = X0 + k * 1.6;
+        cyl([x, y, z], [x + 1.6, y, z], r, 8, col, false);
+        cyl([x + 1.585, y, z], [x + 1.615, y, z], r * 1.4, 8, col, true);
+        abox(x + 0.8 - 0.012, y + r, z - 0.012, x + 0.8 + 0.012, YC, z + 0.012, P.steel, 1 | 4 | 8);
+      }
+    cyl([1.2, 2.42, 3.33], [1.2, 2.42, 3.29], 0.1, 10, P.fire, true);
+    cyl([1.2, 2.42, 3.4], [1.2, 2.42, 3.33], 0.012, 5, P.steel, false);
+    for (let k = 0; k < 6; k++) {
+      const x = X0 + k * 1.6;
+      abox(x, 2.15, 3.55, x + 1.6, 2.17, 3.86, P.tray, 1 | 16 | 32);
+      abox(x, 2.17, 3.55, x + 1.6, 2.22, 3.56, P.tray, 1 | 2 | 16);
+      for (let i = 0; i < 4; i++) cyl([x, 2.19 + (i & 1) * 0.012, 3.6 + i * 0.065], [x + 1.6, 2.19 + (i & 1) * 0.012, 3.6 + i * 0.065], 0.016, 5, i === 2 ? P.pipeGrey : P.cable, false);
+      abox(x, 2.08, 4.12, x + 1.6, 2.4, 4.38, P.duct, 1 | 16 | 32);
+      abox(x + 1.56, 2.06, 4.1, x + 1.6, 2.42, 4.38, P.frame, 1 | 4 | 8 | 32);
+    }
+    for (const x of [-3.05, 0.75, 4.0]) for (let j = 0; j < 3; j++) cyl([x, j * 0.7, ZW - 0.06], [x, (j + 1) * 0.7, ZW - 0.06], 0.035, 8, P.pipeGrey, false);
+    // the lamps: dimmed blue fixtures overhead, red battle lanterns on the bulkhead
+    for (const x of [-2.4, 0.4, 3.0]) {
+      abox(x - 0.35, YC - 0.07, 3.0, x + 0.35, YC, 3.16, P.frame, 1 | 2 | 4 | 8);
+      S.emit = 3; quad([x - 0.33, YC - 0.071, 3.02], [0.66, 0, 0], [0, 0, 0.12], P.lensBlue); S.emit = 0;
+    }
+    for (const x of [-1.6, 1.95, 4.6]) {
+      abox(x - 0.07, 2.02, ZW - 0.1, x + 0.07, 2.18, ZW, P.black, 1 | 4 | 8 | 16);
+      S.emit = 2; quad([x - 0.05, 2.16, ZW - 0.102], [0.1, 0, 0], [0, -0.12, 0], P.lensRed); S.emit = 0;
+    }
+    // the console row: eleven bays, each a cabinet, a writing shelf, a sloped key panel, the display unit with its
+    // CRT under a hood and its name plate; two of them are the strike-weapon consoles
+    const KINDS = ['ppi', 'alpha', 'alpha', 'ppi', 'alpha', 'ppi', 'strike', 'harpoon', 'alpha', 'ppi', 'alpha'];
+    KINDS.forEach((kind, i) => {
+      const x = -3.9 + i * 0.8, cx = x + 0.39, weapon = kind === 'strike' || kind === 'harpoon';
+      abox(x, 0, 3.82, x + 0.78, 0.76, 4.3, P.console, 4 | 8);
+      tile([x, 0.76, 3.82], [0.78, 0, 0], [0, -0.76, 0], 1, 2, P.console);
+      abox(x, 0.76, 3.6, x + 0.78, 0.8, 4.3, P.consoleDark, 1 | 4 | 8 | 16);
+      screen(weapon ? SCREEN.guards : SCREEN.keys, [x + 0.04, 0.92, 3.88], [0.7, 0, 0], [0, -0.12, -0.24], 700, 270, i, P.consoleDark);
+      abox(x, 0.8, 3.9, x + 0.78, 1.46, 4.3, P.console, 4 | 8 | 16);
+      frame([x, 1.46, 3.9], [0.78, 0, 0], [0, -0.66, 0], 0.11 / 0.78, 0.01 / 0.66, 0.67 / 0.78, 0.51 / 0.66, P.console);
+      frame([x + 0.11, 1.37, 3.9], [0.56, 0, 0], [0, -0.42, 0], 0.08 / 0.56, 0.04 / 0.42, 0.48 / 0.56, 0.36 / 0.42, P.bezel);
+      abox(cx - 0.27, 1.33, 3.8, cx + 0.27, 1.355, 3.9, P.consoleDark, 1 | 16 | 32);
+      screen(SCREEN[kind], [cx - 0.2, 1.33, 3.9], [0.4, 0, 0], [0, -0.32, 0], 400, 320, i, P.glass);
+      screen(SCREEN.label, [x + 0.11, 1.45, 3.9], [0.56, 0, 0], [0, -0.08, 0], 560, 80, i, P.label);
+    });
+    // on the bulkhead above them: the sound-powered phone boxes with a handset on its hook and a headset hung beside,
+    // the clock and the general-quarters light
+    for (const i of [1, 4, 7, 10]) {
+      const cx = -3.9 + i * 0.8 + 0.39;
+      abox(cx - 0.08, 1.6, ZW - 0.07, cx + 0.08, 1.8, ZW, P.phone, 1 | 4 | 8 | 16);
+      abox(cx + 0.09, 1.6, ZW - 0.06, cx + 0.13, 1.8, ZW - 0.02, P.black, 1 | 4 | 8 | 16);
+      for (const s of [-1, 1]) cyl([cx - 0.24 + s * 0.065, 1.58, ZW - 0.05], [cx - 0.24 + s * 0.065, 1.58, ZW - 0.02], 0.035, 8, P.black, true);
+      abox(cx - 0.31, 1.64, ZW - 0.04, cx - 0.17, 1.66, ZW - 0.02, P.black, 1 | 16);
+    }
+    cyl([0.3, 1.95, ZW - 0.05], [0.3, 1.95, ZW], 0.14, 14, P.black, false);
+    S.two = false;
+    screen(SCREEN.clock, [0.18, 2.07, ZW - 0.052], [0.24, 0, 0], [0, -0.24, 0], 240, 240, -1, null);
+    abox(2.0, 2.14, 3.92, 2.7, 2.3, 4.0, P.black, 1 | 4 | 8 | 32);
+    abox(2.33, 2.3, 3.95, 2.37, 2.4, 3.97, P.steel, 1 | 4 | 8);
+    screen(SCREEN.gq, [2.02, 2.28, 3.918], [0.66, 0, 0], [0, -0.12, 0], 660, 120, -1, [30, 8, 6]);
+    // the plexiglass status boards on their posts, lit from their top edge
+    for (const [x0, kind] of [[0.15, SCREEN.boardL], [2.25, SCREEN.boardR]]) {
+      for (const x of [x0 - 0.03, x0 + 1.95 + 0.03]) for (let j = 0; j < 3; j++) abox(x - 0.02, j * 0.85, 3.13, x + 0.02, (j + 1) * 0.85, 3.17, P.alu, 1 | 4 | 8);
+      abox(x0, 1.95, 3.13, x0 + 1.95, 1.99, 3.17, P.alu, 1 | 32);
+      abox(x0, 0.97, 3.13, x0 + 1.95, 1.0, 3.17, P.alu, 1 | 16);
+      S.emit = 1; quad([x0, 1.95, 3.128], [1.95, 0, 0], [0, -0.008, 0], P.edge); S.emit = 0;
+      S.two = true;
+      screen(kind, [x0, 1.95, 3.15], [1.95, 0, 0], [0, -0.95, 0], 1950, 950, -1, [20, 26, 30]);
+      S.two = false;
+    }
+    // ---- near: the radar operator's console, turned toward his chair ----
+    S.part = 'near';
+    const th = -25 * D, X = [Math.cos(th), 0, -Math.sin(th)], Y = [0, 1, 0], Z = [Math.sin(th), 0, Math.cos(th)];
+    const sw = 0.57, sh = 0.376, c = [-0.557, 1.25, 1.25], L = 0.42 * sw;
+    const at = (u, v, w) => add(add(add(c, mul(X, u - L - 0.13)), mul(Y, v - 1.25)), mul(Z, w));
+    const lbox = (u0, v0, w0, u1, v1, w1, col, faces) => B.box(at(u0, v0, w0), mul(X, u1 - u0), mul(Y, v1 - v0), mul(Z, w1 - w0), col, faces);
+    const W = sw + 0.26;
+    lbox(0, 0, 0, W, 0.9, 0.55, P.console, 1 | 4 | 8);
+    lbox(0, 0.9, -0.32, W, 0.94, 0.55, P.consoleDark, 1 | 4 | 8 | 16);
+    lbox(0.1, 0.94, -0.28, 0.58, 0.968, -0.05, P.black, 1 | 4 | 8);
+    screen(SCREEN.keyboard, at(0.1, 0.968, -0.05), mul(X, 0.48), mul(Z, -0.23), 480, 230, -1, P.black);
+    lbox(0.61, 0.94, -0.25, 0.71, 0.965, -0.1, P.black, 1 | 4 | 8 | 16);
+    cyl(at(0.66, 0.965, -0.175), at(0.66, 0.985, -0.175), 0.032, 10, [120, 132, 138], true);
+    lbox(0, 0.94, 0.04, W, 1.0, 0.55, P.consoleDark, 1 | 4 | 8);
+    lbox(0, 1.0, 0, W, 1.62, 0.55, P.console, 4 | 8 | 16);
+    const bt = 1.25 + sh / 2 + 0.035, bh = sh + 0.07, bw = sw + 0.06;
+    frame(at(0, 1.62, 0), mul(X, W), mul(Y, -0.62), 0.1 / W, (1.62 - bt) / 0.62, (0.1 + bw) / W, (1.62 - bt + bh) / 0.62, P.console);
+    frame(at(0.1, bt, 0), mul(X, bw), mul(Y, -bh), 0.03 / bw, 0.035 / bh, (0.03 + sw) / bw, (0.035 + sh) / bh, P.bezel);
+    lbox(0.08, bt + 0.01, -0.12, W - 0.08, bt + 0.035, 0, P.consoleDark, 1 | 16 | 32);
+    screen(SCREEN.scope, at(0.13, 1.25 + sh / 2, 0), mul(X, sw), mul(Y, -sh), 500, 330, -1, P.glass);
+    // the sound-powered phone's handset hung on the console's side, its cord's jack box, and a mug of coffee
+    lbox(-0.05, 0.98, 0.08, -0.005, 1.2, 0.14, P.black, 1 | 4 | 16 | 32);
+    cyl(at(-0.03, 1.2, 0.11), at(-0.03, 1.23, 0.11), 0.03, 8, P.black, true);
+    cyl(at(-0.03, 0.95, 0.11), at(-0.03, 0.98, 0.11), 0.028, 8, P.black, true);
+    const m = at(0.78, 0.94, -0.17);
+    cyl(m, add(m, [0, 0.095, 0]), 0.04, 10, P.mug, false);
+    for (let i = 0; i < 10; i++) {
+      const a0 = 2 * Math.PI * i / 10, a1 = 2 * Math.PI * (i + 1) / 10, top = add(m, [0, 0.088, 0]);
+      B.tri(top, add(top, [0.036 * Math.cos(a0), 0, -0.036 * Math.sin(a0)]), add(top, [0.036 * Math.cos(a1), 0, -0.036 * Math.sin(a1)]), P.coffee);
+    }
+    screen(SCREEN.steam, add(m, [0, 0.1, 0]), [0.04, 0, 0], [0, -0.04, 0], 40, 40, -1, null);
+    return { tris: B.tris, screens: B.screens };
+  }
+
+  // a bolted swivel chair: its seat's centre at seat, turned by yaw (degrees, as a figure's); 'swivel' a low back on a
+  // pedestal bolted to the deck, 'high' the watch officer's tall chair with arms and a foot ring
+  function chair(kind, seat, yaw) {
+    const B = roomBuilder(), P = PAINT, R = ry(yaw * D), high = kind === 'high';
+    B.S.part = 'near';
+    const at = p => add(mv(R, p), seat), Xv = mv(R, [1, 0, 0]), Yv = [0, 1, 0], Zv = mv(R, [0, 0, 1]);
+    const lbox = (x0, y0, z0, x1, y1, z1, col) => B.box(at([x0, y0, z0]), mul(Xv, x1 - x0), mul(Yv, y1 - y0), mul(Zv, z1 - z0), col, 63);
+    const foot = [seat[0], 0, seat[2]];
+    B.cyl(foot, [seat[0], 0.02, seat[2]], 0.17, 12, P.steel, true);
+    for (let i = 0; i < 4; i++) { const a = (45 + 90 * i) * D, b = add(foot, [0.13 * Math.cos(a), 0, 0.13 * Math.sin(a)]); B.cyl(b, add(b, [0, 0.032, 0]), 0.014, 6, P.rivet, true); }
+    B.cyl([seat[0], 0.02, seat[2]], [seat[0], seat[1] - 0.07, seat[2]], 0.035, 8, P.steel, false);
+    lbox(-0.24, -0.07, -0.22, 0.24, 0, 0.24, P.vinyl);
+    lbox(-0.03, -0.05, -0.28, 0.03, high ? 0.3 : 0.2, -0.24, P.steel);
+    lbox(high ? -0.22 : -0.17, high ? 0.12 : 0.12, -0.31, high ? 0.22 : 0.17, high ? 0.62 : 0.4, -0.25, P.vinyl);
+    if (high) {
+      for (const s of [-1, 1]) { lbox(s * 0.25 - 0.025, 0.17, -0.2, s * 0.25 + 0.025, 0.2, 0.16, P.vinyl); lbox(s * 0.25 - 0.012, 0, -0.08, s * 0.25 + 0.012, 0.17, -0.05, P.steel); }
+      const ry0 = 0.38 - seat[1];
+      for (let i = 0; i < 8; i++) {
+        const a0 = 2 * Math.PI * i / 8, a1 = 2 * Math.PI * (i + 1) / 8;
+        B.cyl(at([0.2 * Math.cos(a0), ry0, 0.2 * Math.sin(a0)]), at([0.2 * Math.cos(a1), ry0, 0.2 * Math.sin(a1)]), 0.01, 5, P.steel, false);
+      }
+    }
+    return B.tris;
+  }
+
+  // the room lit: each triangle's paint times the ambient light plus every lamp's (a half-wrapped diffuse light that
+  // falls off with distance); the lamps' own lenses at the brightness given. L: { amb: [r, g, b], red, blue,
+  // lamps: [{ p, c: [r, g, b], r }] }
+  function lightRoom(tris, L) {
+    return tris.map(t => {
+      let col;
+      if (t.emit === 1) col = t.col;
+      else if (t.emit) col = mul(t.col, t.emit === 2 ? L.red : L.blue);
+      else {
+        const n = norm(cross(sub(t.v[1], t.v[0]), sub(t.v[2], t.v[0])));
+        const c = mul(add(add(t.v[0], t.v[1]), t.v[2]), 1 / 3), k = L.amb.slice();
+        for (const lp of L.lamps) {
+          const d = sub(lp.p, c), dl = len(d), w = 1 / (1 + (dl / lp.r) * (dl / lp.r));
+          let nd = dot(n, d) / (dl || 1);
+          if (t.two) nd = Math.abs(nd);
+          const f = (0.3 + 0.7 * Math.max(0, nd)) * w;
+          for (let i = 0; i < 3; i++) k[i] += lp.c[i] * f;
+        }
+        col = t.col.map((v, i) => v * k[i]);
+      }
+      return { v: t.v, col: col.map(v => Math.min(255, v)), two: t.two, part: t.part, tag: t.tag, lit: true };
+    });
+  }
+
+  // the room's lamps: the dimmed blue overheads, the red battle lanterns (brighter and pulsing at general quarters,
+  // gq 0-1), the glow of every screen and the status boards' edge light
+  const GLOW = { 1: [[0.08, 0.4, 0.22], 0.8], 2: [[0.05, 0.35, 0.16], 0.7], 3: [[0.06, 0.32, 0.18], 0.7], 4: [[0.4, 0.25, 0.05], 0.7], 5: [[0.4, 0.25, 0.05], 0.7],
+    6: [[0.35, 0.28, 0.12], 1.2], 7: [[0.35, 0.28, 0.12], 1.2] };
+  function roomLamps(screens, alert, gq) {
+    const red = alert ? 0.55 + 0.45 * gq : 0.22, blue = alert ? 0.7 : 1;
+    const L = { amb: alert ? [0.07 + 0.06 * gq, 0.045, 0.07] : [0.045, 0.065, 0.11], red, blue, lamps: [] };
+    for (const x of [-2.4, 0.4, 3.0]) L.lamps.push({ p: [x, 2.4, 3.08], c: [0.2 * blue, 0.3 * blue, 0.6 * blue], r: 1.4 });
+    for (const x of [-1.6, 1.95, 4.6]) L.lamps.push({ p: [x, 2.1, 4.2], c: [0.8 * red, 0.1 * red, 0.07 * red], r: 1.0 });
+    for (const s of screens) {
+      const g = GLOW[s.kind];
+      if (!g) continue;
+      const n = norm(cross(s.ex, s.ey));
+      L.lamps.push({ p: add(add(s.o, mul(add(s.ex, s.ey), 0.5)), mul(n, 0.25)), c: g[0], r: g[1] });
+    }
+    return L;
+  }
+
+  return { VITRUVIAN, PALM, skeleton, solve, build, draw, measureMesh, vitruvianPose, POSES, SEAT, CREW, colour, speechTrack, mouthAt, wordsShown, spokenUpTo, words, toPhonemes, FACE_DEFAULT, landmarks, SCREEN, room, chair, lightRoom, roomLamps };
 })();
 if (typeof module !== 'undefined') module.exports = Figure;

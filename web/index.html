@@ -3806,6 +3806,9 @@ const Figure = (() => {
   const PALETTES = {
     // shipboard flame-resistant coveralls: dark navy, the ball cap, black boots
     coveralls: { shirt: [44, 58, 86], sleeve: [44, 58, 86], trousers: [40, 53, 80], belt: [36, 46, 70], collar: [44, 58, 86], pocket: [38, 50, 76], tape: [24, 30, 44], tee: [44, 58, 86] },
+    // the enlisted working uniform of the early 1990s: a light-blue chambray shirt, dark-blue denim dungarees, a black
+    // belt, the white T-shirt at the open collar, the name stencilled over the pocket
+    dungarees: { shirt: [118, 146, 184], sleeve: [118, 146, 184], trousers: [38, 48, 76], belt: [30, 28, 26], collar: [118, 146, 184], pocket: [108, 136, 174], tape: [30, 36, 52], tee: [228, 226, 218] },
     // service khaki: shirt and trousers, a dark belt, the white T-shirt at the open collar
     khaki: { shirt: [176, 150, 104], sleeve: [176, 150, 104], trousers: [166, 140, 96], belt: [40, 32, 24], collar: [176, 150, 104], pocket: [160, 136, 94], tape: [140, 118, 82], tee: [232, 230, 222] },
     shared: { boot: [22, 22, 24], cap: [22, 30, 50], gold: [214, 172, 72], kit: [20, 22, 24], eyeWhite: [214, 208, 200], iris: [52, 40, 30], mouth: [70, 30, 30], paper: [228, 226, 214], anchor: [214, 172, 72], oak: [200, 204, 210] }
@@ -3857,7 +3860,8 @@ const Figure = (() => {
           const k = Math.max(0, dot(nn, light.dir)), rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
           return base.map((b, i) => Math.min(255, b * (0.24 + 0.85 * k * light.key[i] / 255) + 255 * rim * 0.2 * light.rim[i] / 255));
         };
-        if (t.ns) {
+        if (t.lit) all.push({ z, pts, col: t.col, tag: t.tag });   // the room, already lit (lightRoom)
+        else if (t.ns) {
           // a smooth part (the face): each corner lit by its own normal; the colour across the facet is then an affine
           // field, drawn as a linear gradient along its steepest direction (the same as shading the corners and
           // blending between them)
@@ -3867,7 +3871,7 @@ const Figure = (() => {
       }
     }
     all.sort((a, b) => b.z - a.z);
-    for (const t of all) fill(t.pts, t.col, t.grad);
+    for (const t of all) fill(t.pts, t.col, t.grad, t.tag || 0);
   }
 
   // ---- measuring a figure against the canon (the checker's test, and the viewer's table) ----
@@ -3916,10 +3920,10 @@ const Figure = (() => {
 
   // the control room's crew: the kit, the look and the pose of each
   const CREW = {
-    // the air detector in the ship's flame-resistant coveralls and a headset, seated, leaning in to his scope,
+    // the air detector in chambray and dungarees and a sound-powered phone headset, seated, leaning in to his scope,
     // both hands forward on the keyboard
     // twenty-four: a smooth face, a short nose, full lips, shallow sockets, a clean shave
-    operator: { kit: { uniform: 'coveralls', headset: true, nametape: true }, skin: [205, 160, 128], hair: [34, 26, 20], iris: [86, 62, 40],
+    operator: { kit: { uniform: 'dungarees', headset: true, nametape: true }, skin: [205, 160, 128], hair: [34, 26, 20], iris: [86, 62, 40],
       faceShape: { brow: 0.3, cheek: 0.45, jaw: 0.45, chin: 0.45, bridge: 0.35, tip: 0.55, lips: 0.65, socket: 0.3, age: 0.05, stubble: 0.08 },
       pose: H => SEAT(H, { hips: [14, 0, 0], chest: [8, 0, 0], neck: [-12, 0, 0], head: [-8, 0, 0],
         upperL: [0, -62, -58], upperR: [0, 62, 58], foreL: [0, -48, 6], foreR: [0, 48, -6], handL: [0, -10, -8], handR: [0, 10, 8], curlL: 30, curlR: 34 }) },
@@ -4032,7 +4036,264 @@ const Figure = (() => {
     return text;
   }
 
-  return { VITRUVIAN, PALM, skeleton, solve, build, draw, measureMesh, vitruvianPose, POSES, SEAT, CREW, colour, speechTrack, mouthAt, wordsShown, spokenUpTo, words, toPhonemes, FACE_DEFAULT, landmarks };
+  // ---- the control room: steel, pipes and consoles, made in code like the people ----
+  // A combat centre the way the big gun ships had them after their 1980s refits, here on our fictional carrier:
+  // welded and riveted bulkhead plating with its frames, the deckhead crowded with pipes, a fire main, cable trays and
+  // ducting, a row of grey consoles with round radar repeaters and green alphanumeric CRTs, two strike-weapon consoles,
+  // edge-lit plexiglass status boards with a plotter writing on their far side, sound-powered phone boxes and their
+  // headsets, a clock, the general-quarters light, rubber mats on the deck, and the operator's console close by. Every
+  // big surface is cut into tiles, so the room's lamps (lightRoom) light it in pools and the painter's sort can place
+  // people among it.
+  // Each triangle: v, col (its paint), two (seen from either side), part ('far' or 'near'), emit (0 lit by the lamps;
+  // 1 shines by itself; 2 and 3 the red and blue lamps, their brightness set when lit), tag (1 + the screen drawn on it,
+  // or 0). A screen: kind (SCREEN), o its top-left corner, ex across and ey down, w x h its content's own units, and
+  // bay (the console it sits in).
+  const SCREEN = { scope: 1, ppi: 2, alpha: 3, strike: 4, harpoon: 5, boardL: 6, boardR: 7, clock: 8, gq: 9, label: 10, steam: 11, keys: 12, guards: 13, keyboard: 14 };
+  const PAINT = {
+    plate: [150, 154, 150], rivet: [176, 180, 174], weld: [70, 72, 70], frame: [132, 136, 132], deck: [70, 72, 74], deckhead: [120, 124, 122],
+    mat: [26, 26, 28], rib: [40, 40, 42], pipe: [184, 184, 178], pipeGrey: [110, 116, 120], fire: [150, 34, 28], cable: [32, 32, 34],
+    tray: [96, 100, 100], duct: [140, 144, 142], console: [120, 126, 130], consoleDark: [74, 80, 84], bezel: [26, 28, 30], glass: [6, 12, 9],
+    key: [150, 158, 158], label: [30, 32, 34], phone: [104, 108, 104], black: [22, 22, 24], alu: [170, 176, 182], edge: [255, 214, 140],
+    lensBlue: [130, 160, 230], lensRed: [235, 50, 36], amber: [255, 170, 60], green: [90, 255, 140], redLit: [255, 60, 50], mug: [200, 200, 192],
+    coffee: [40, 24, 14], vinyl: [60, 70, 96], steel: [92, 96, 100]
+  };
+  function roomBuilder() {
+    const tris = [], screens = [], S = { part: 'far', two: false, emit: 0, tag: 0 };
+    const tri = (a, b, c, col) => tris.push({ v: [a, b, c], col, two: S.two, part: S.part, emit: S.emit, tag: S.tag });
+    // a quad o, o+a, o+a+b, o+b, facing along a x b
+    const quad = (o, a, b, col) => { const p1 = add(o, a), p2 = add(p1, b), p3 = add(o, b); tri(o, p1, p2, col); tri(o, p2, p3, col); };
+    const tile = (o, a, b, na, nb, col) => {
+      for (let i = 0; i < na; i++) for (let j = 0; j < nb; j++) quad(add(o, add(mul(a, i / na), mul(b, j / nb))), mul(a, 1 / na), mul(b, 1 / nb), col);
+    };
+    // a box from corner o along X, Y and Z (X x Y = Z); faces: 1 front (-Z), 2 back, 4 left (-X), 8 right, 16 top, 32 bottom
+    const box = (o, X, Y, Z, col, faces = 63) => {
+      if (faces & 1) quad(o, Y, X, col);
+      if (faces & 2) quad(add(o, Z), X, Y, col);
+      if (faces & 4) quad(o, Z, Y, col);
+      if (faces & 8) quad(add(o, X), Y, Z, col);
+      if (faces & 16) quad(add(o, Y), Z, X, col);
+      if (faces & 32) quad(o, X, Z, col);
+    };
+    const abox = (x0, y0, z0, x1, y1, z1, col, faces = 63) => box([x0, y0, z0], [x1 - x0, 0, 0], [0, y1 - y0, 0], [0, 0, z1 - z0], col, faces);
+    // a cylinder from a to b, n sides, capped at both ends if caps
+    const cyl = (a, b, r, n, col, caps) => {
+      const u = norm(sub(b, a)), h = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], p1 = norm(cross(h, u)), p2 = cross(u, p1), L = sub(b, a);
+      const at = (c, i) => add(c, add(mul(p1, r * Math.cos(2 * Math.PI * i / n)), mul(p2, r * Math.sin(2 * Math.PI * i / n))));
+      for (let i = 0; i < n; i++) { const A = at(a, i); quad(A, sub(at(a, i + 1), A), L, col); }
+      if (caps) for (let i = 0; i < n; i++) { tri(b, at(b, i), at(b, i + 1), col); tri(a, at(a, i + 1), at(a, i), col); }
+    };
+    // a panel o + ex u + ey v (u, v 0-1) with a hole (u0, v0)-(u1, v1) for what sits in it, so nothing lies on
+    // top of anything else and the painter's sort has nothing to get wrong
+    const frame = (o, ex, ey, u0, v0, u1, v1, col) => {
+      const at = (uu, vv) => add(o, add(mul(ex, uu), mul(ey, vv)));
+      const q = (ua, va, ub, vb) => quad(at(ua, va), mul(ex, ub - ua), mul(ey, vb - va), col);
+      q(0, 0, 1, v0); q(0, v1, 1, 1); q(0, v0, u0, v1); q(u1, v0, 1, v1);
+    };
+    const screen = (kind, o, ex, ey, w, h, bay, col) => {
+      screens.push({ kind, o, ex, ey, w, h, bay });
+      const e = S.emit, g = S.tag;
+      S.emit = 1; S.tag = screens.length;
+      if (col) quad(o, ex, ey, col);
+      S.emit = e; S.tag = g;
+    };
+    return { tris, screens, S, tri, quad, tile, box, abox, cyl, frame, screen };
+  }
+
+  function room() {
+    const B = roomBuilder(), { S, quad, tile, abox, cyl, frame, screen } = B, P = PAINT;
+    const ZW = 4.4, X0 = -4.2, X1 = 5.4, YC = 2.55;
+    const shift = (c, k) => c.map(v => v + k);
+    // the after bulkhead: three strakes of plates, rivet rows along their butts and seams, the welds, the frames
+    for (let r = 0; r < 3; r++)
+      for (let k = 0; k < 8; k++) {
+        const x = X0 + k * 1.2, y = r * 0.85;
+        tile([x, y + 0.85, ZW], [1.2, 0, 0], [0, -0.85, 0], 2, 2, shift(P.plate, ((k * 7 + r * 3) % 5 - 2) * 3));
+        for (let i = 0; i < 6; i++) quad([x + 0.03, y + 0.1 + i * 0.13 + 0.012, ZW - 0.004], [0.024, 0, 0], [0, -0.024, 0], P.rivet);
+        for (let i = 0; i < 8; i++) quad([x + 0.1 + i * 0.14, y + 0.85 - 0.028, ZW - 0.004], [0.024, 0, 0], [0, -0.024, 0], P.rivet);
+      }
+    for (const y of [0.85, 1.7]) for (let k = 0; k < 8; k++) quad([X0 + k * 1.2, y + 0.007, ZW - 0.002], [1.2, 0, 0], [0, -0.014, 0], P.weld);
+    for (let k = 0; k <= 4; k++) for (let j = 0; j < 3; j++) abox(X0 + 0.6 + k * 2.4 - 0.04, j * 0.85, ZW - 0.14, X0 + 0.6 + k * 2.4 + 0.04, (j + 1) * 0.85, ZW, P.frame, 1 | 4 | 8);
+    // the deck, and the ribbed rubber mats in front of the consoles
+    tile([X0, 0, 0.2], [0, 0, ZW - 0.2], [X1 - X0, 0, 0], 7, 12, P.deck);
+    for (const [m0, m1] of [[-3.9, -0.3], [0.5, 4.6]]) {
+      tile([m0, 0.006, 3.0], [0, 0, 0.64], [m1 - m0, 0, 0], 1, 4, P.mat);
+      for (let i = 0; i < 7; i++) quad([m0 + 0.04, 0.01, 3.04 + i * 0.09], [0, 0, 0.022], [m1 - m0 - 0.08, 0, 0], P.rib);
+    }
+    // the deckhead: its beams, the pipe runs with their flanges and hangers, the fire main and its valve, a cable tray,
+    // the trunk of ducting, and the pipes coming down the bulkhead
+    tile([X0, YC, 2.2], [X1 - X0, 0, 0], [0, 0, ZW - 2.2], 12, 3, P.deckhead);
+    for (const z of [2.75, 3.6]) for (let k = 0; k < 8; k++) abox(X0 + k * 1.2, YC - 0.15, z - 0.03, X0 + (k + 1) * 1.2, YC, z + 0.03, P.frame, 1 | 2 | 32);
+    const PIPES = [[2.4, 2.95, 0.06, P.pipe], [2.29, 3.2, 0.035, P.pipeGrey], [2.42, 3.4, 0.05, P.fire], [2.36, 3.85, 0.075, P.pipe], [2.28, 4.08, 0.04, P.pipeGrey]];
+    for (const [y, z, r, col] of PIPES)
+      for (let k = 0; k < 6; k++) {
+        const x = X0 + k * 1.6;
+        cyl([x, y, z], [x + 1.6, y, z], r, 8, col, false);
+        cyl([x + 1.585, y, z], [x + 1.615, y, z], r * 1.4, 8, col, true);
+        abox(x + 0.8 - 0.012, y + r, z - 0.012, x + 0.8 + 0.012, YC, z + 0.012, P.steel, 1 | 4 | 8);
+      }
+    cyl([1.2, 2.42, 3.33], [1.2, 2.42, 3.29], 0.1, 10, P.fire, true);
+    cyl([1.2, 2.42, 3.4], [1.2, 2.42, 3.33], 0.012, 5, P.steel, false);
+    for (let k = 0; k < 6; k++) {
+      const x = X0 + k * 1.6;
+      abox(x, 2.15, 3.55, x + 1.6, 2.17, 3.86, P.tray, 1 | 16 | 32);
+      abox(x, 2.17, 3.55, x + 1.6, 2.22, 3.56, P.tray, 1 | 2 | 16);
+      for (let i = 0; i < 4; i++) cyl([x, 2.19 + (i & 1) * 0.012, 3.6 + i * 0.065], [x + 1.6, 2.19 + (i & 1) * 0.012, 3.6 + i * 0.065], 0.016, 5, i === 2 ? P.pipeGrey : P.cable, false);
+      abox(x, 2.08, 4.12, x + 1.6, 2.4, 4.38, P.duct, 1 | 16 | 32);
+      abox(x + 1.56, 2.06, 4.1, x + 1.6, 2.42, 4.38, P.frame, 1 | 4 | 8 | 32);
+    }
+    for (const x of [-3.05, 0.75, 4.0]) for (let j = 0; j < 3; j++) cyl([x, j * 0.7, ZW - 0.06], [x, (j + 1) * 0.7, ZW - 0.06], 0.035, 8, P.pipeGrey, false);
+    // the lamps: dimmed blue fixtures overhead, red battle lanterns on the bulkhead
+    for (const x of [-2.4, 0.4, 3.0]) {
+      abox(x - 0.35, YC - 0.07, 3.0, x + 0.35, YC, 3.16, P.frame, 1 | 2 | 4 | 8);
+      S.emit = 3; quad([x - 0.33, YC - 0.071, 3.02], [0.66, 0, 0], [0, 0, 0.12], P.lensBlue); S.emit = 0;
+    }
+    for (const x of [-1.6, 1.95, 4.6]) {
+      abox(x - 0.07, 2.02, ZW - 0.1, x + 0.07, 2.18, ZW, P.black, 1 | 4 | 8 | 16);
+      S.emit = 2; quad([x - 0.05, 2.16, ZW - 0.102], [0.1, 0, 0], [0, -0.12, 0], P.lensRed); S.emit = 0;
+    }
+    // the console row: eleven bays, each a cabinet, a writing shelf, a sloped key panel, the display unit with its
+    // CRT under a hood and its name plate; two of them are the strike-weapon consoles
+    const KINDS = ['ppi', 'alpha', 'alpha', 'ppi', 'alpha', 'ppi', 'strike', 'harpoon', 'alpha', 'ppi', 'alpha'];
+    KINDS.forEach((kind, i) => {
+      const x = -3.9 + i * 0.8, cx = x + 0.39, weapon = kind === 'strike' || kind === 'harpoon';
+      abox(x, 0, 3.82, x + 0.78, 0.76, 4.3, P.console, 4 | 8);
+      tile([x, 0.76, 3.82], [0.78, 0, 0], [0, -0.76, 0], 1, 2, P.console);
+      abox(x, 0.76, 3.6, x + 0.78, 0.8, 4.3, P.consoleDark, 1 | 4 | 8 | 16);
+      screen(weapon ? SCREEN.guards : SCREEN.keys, [x + 0.04, 0.92, 3.88], [0.7, 0, 0], [0, -0.12, -0.24], 700, 270, i, P.consoleDark);
+      abox(x, 0.8, 3.9, x + 0.78, 1.46, 4.3, P.console, 4 | 8 | 16);
+      frame([x, 1.46, 3.9], [0.78, 0, 0], [0, -0.66, 0], 0.11 / 0.78, 0.01 / 0.66, 0.67 / 0.78, 0.51 / 0.66, P.console);
+      frame([x + 0.11, 1.37, 3.9], [0.56, 0, 0], [0, -0.42, 0], 0.08 / 0.56, 0.04 / 0.42, 0.48 / 0.56, 0.36 / 0.42, P.bezel);
+      abox(cx - 0.27, 1.33, 3.8, cx + 0.27, 1.355, 3.9, P.consoleDark, 1 | 16 | 32);
+      screen(SCREEN[kind], [cx - 0.2, 1.33, 3.9], [0.4, 0, 0], [0, -0.32, 0], 400, 320, i, P.glass);
+      screen(SCREEN.label, [x + 0.11, 1.45, 3.9], [0.56, 0, 0], [0, -0.08, 0], 560, 80, i, P.label);
+    });
+    // on the bulkhead above them: the sound-powered phone boxes with a handset on its hook and a headset hung beside,
+    // the clock and the general-quarters light
+    for (const i of [1, 4, 7, 10]) {
+      const cx = -3.9 + i * 0.8 + 0.39;
+      abox(cx - 0.08, 1.6, ZW - 0.07, cx + 0.08, 1.8, ZW, P.phone, 1 | 4 | 8 | 16);
+      abox(cx + 0.09, 1.6, ZW - 0.06, cx + 0.13, 1.8, ZW - 0.02, P.black, 1 | 4 | 8 | 16);
+      for (const s of [-1, 1]) cyl([cx - 0.24 + s * 0.065, 1.58, ZW - 0.05], [cx - 0.24 + s * 0.065, 1.58, ZW - 0.02], 0.035, 8, P.black, true);
+      abox(cx - 0.31, 1.64, ZW - 0.04, cx - 0.17, 1.66, ZW - 0.02, P.black, 1 | 16);
+    }
+    cyl([0.3, 1.95, ZW - 0.05], [0.3, 1.95, ZW], 0.14, 14, P.black, false);
+    S.two = false;
+    screen(SCREEN.clock, [0.18, 2.07, ZW - 0.052], [0.24, 0, 0], [0, -0.24, 0], 240, 240, -1, null);
+    abox(2.0, 2.14, 3.92, 2.7, 2.3, 4.0, P.black, 1 | 4 | 8 | 32);
+    abox(2.33, 2.3, 3.95, 2.37, 2.4, 3.97, P.steel, 1 | 4 | 8);
+    screen(SCREEN.gq, [2.02, 2.28, 3.918], [0.66, 0, 0], [0, -0.12, 0], 660, 120, -1, [30, 8, 6]);
+    // the plexiglass status boards on their posts, lit from their top edge
+    for (const [x0, kind] of [[0.15, SCREEN.boardL], [2.25, SCREEN.boardR]]) {
+      for (const x of [x0 - 0.03, x0 + 1.95 + 0.03]) for (let j = 0; j < 3; j++) abox(x - 0.02, j * 0.85, 3.13, x + 0.02, (j + 1) * 0.85, 3.17, P.alu, 1 | 4 | 8);
+      abox(x0, 1.95, 3.13, x0 + 1.95, 1.99, 3.17, P.alu, 1 | 32);
+      abox(x0, 0.97, 3.13, x0 + 1.95, 1.0, 3.17, P.alu, 1 | 16);
+      S.emit = 1; quad([x0, 1.95, 3.128], [1.95, 0, 0], [0, -0.008, 0], P.edge); S.emit = 0;
+      S.two = true;
+      screen(kind, [x0, 1.95, 3.15], [1.95, 0, 0], [0, -0.95, 0], 1950, 950, -1, [20, 26, 30]);
+      S.two = false;
+    }
+    // ---- near: the radar operator's console, turned toward his chair ----
+    S.part = 'near';
+    const th = -25 * D, X = [Math.cos(th), 0, -Math.sin(th)], Y = [0, 1, 0], Z = [Math.sin(th), 0, Math.cos(th)];
+    const sw = 0.57, sh = 0.376, c = [-0.557, 1.25, 1.25], L = 0.42 * sw;
+    const at = (u, v, w) => add(add(add(c, mul(X, u - L - 0.13)), mul(Y, v - 1.25)), mul(Z, w));
+    const lbox = (u0, v0, w0, u1, v1, w1, col, faces) => B.box(at(u0, v0, w0), mul(X, u1 - u0), mul(Y, v1 - v0), mul(Z, w1 - w0), col, faces);
+    const W = sw + 0.26;
+    lbox(0, 0, 0, W, 0.9, 0.55, P.console, 1 | 4 | 8);
+    lbox(0, 0.9, -0.32, W, 0.94, 0.55, P.consoleDark, 1 | 4 | 8 | 16);
+    lbox(0.1, 0.94, -0.28, 0.58, 0.968, -0.05, P.black, 1 | 4 | 8);
+    screen(SCREEN.keyboard, at(0.1, 0.968, -0.05), mul(X, 0.48), mul(Z, -0.23), 480, 230, -1, P.black);
+    lbox(0.61, 0.94, -0.25, 0.71, 0.965, -0.1, P.black, 1 | 4 | 8 | 16);
+    cyl(at(0.66, 0.965, -0.175), at(0.66, 0.985, -0.175), 0.032, 10, [120, 132, 138], true);
+    lbox(0, 0.94, 0.04, W, 1.0, 0.55, P.consoleDark, 1 | 4 | 8);
+    lbox(0, 1.0, 0, W, 1.62, 0.55, P.console, 4 | 8 | 16);
+    const bt = 1.25 + sh / 2 + 0.035, bh = sh + 0.07, bw = sw + 0.06;
+    frame(at(0, 1.62, 0), mul(X, W), mul(Y, -0.62), 0.1 / W, (1.62 - bt) / 0.62, (0.1 + bw) / W, (1.62 - bt + bh) / 0.62, P.console);
+    frame(at(0.1, bt, 0), mul(X, bw), mul(Y, -bh), 0.03 / bw, 0.035 / bh, (0.03 + sw) / bw, (0.035 + sh) / bh, P.bezel);
+    lbox(0.08, bt + 0.01, -0.12, W - 0.08, bt + 0.035, 0, P.consoleDark, 1 | 16 | 32);
+    screen(SCREEN.scope, at(0.13, 1.25 + sh / 2, 0), mul(X, sw), mul(Y, -sh), 500, 330, -1, P.glass);
+    // the sound-powered phone's handset hung on the console's side, its cord's jack box, and a mug of coffee
+    lbox(-0.05, 0.98, 0.08, -0.005, 1.2, 0.14, P.black, 1 | 4 | 16 | 32);
+    cyl(at(-0.03, 1.2, 0.11), at(-0.03, 1.23, 0.11), 0.03, 8, P.black, true);
+    cyl(at(-0.03, 0.95, 0.11), at(-0.03, 0.98, 0.11), 0.028, 8, P.black, true);
+    const m = at(0.78, 0.94, -0.17);
+    cyl(m, add(m, [0, 0.095, 0]), 0.04, 10, P.mug, false);
+    for (let i = 0; i < 10; i++) {
+      const a0 = 2 * Math.PI * i / 10, a1 = 2 * Math.PI * (i + 1) / 10, top = add(m, [0, 0.088, 0]);
+      B.tri(top, add(top, [0.036 * Math.cos(a0), 0, -0.036 * Math.sin(a0)]), add(top, [0.036 * Math.cos(a1), 0, -0.036 * Math.sin(a1)]), P.coffee);
+    }
+    screen(SCREEN.steam, add(m, [0, 0.1, 0]), [0.04, 0, 0], [0, -0.04, 0], 40, 40, -1, null);
+    return { tris: B.tris, screens: B.screens };
+  }
+
+  // a bolted swivel chair: its seat's centre at seat, turned by yaw (degrees, as a figure's); 'swivel' a low back on a
+  // pedestal bolted to the deck, 'high' the watch officer's tall chair with arms and a foot ring
+  function chair(kind, seat, yaw) {
+    const B = roomBuilder(), P = PAINT, R = ry(yaw * D), high = kind === 'high';
+    B.S.part = 'near';
+    const at = p => add(mv(R, p), seat), Xv = mv(R, [1, 0, 0]), Yv = [0, 1, 0], Zv = mv(R, [0, 0, 1]);
+    const lbox = (x0, y0, z0, x1, y1, z1, col) => B.box(at([x0, y0, z0]), mul(Xv, x1 - x0), mul(Yv, y1 - y0), mul(Zv, z1 - z0), col, 63);
+    const foot = [seat[0], 0, seat[2]];
+    B.cyl(foot, [seat[0], 0.02, seat[2]], 0.17, 12, P.steel, true);
+    for (let i = 0; i < 4; i++) { const a = (45 + 90 * i) * D, b = add(foot, [0.13 * Math.cos(a), 0, 0.13 * Math.sin(a)]); B.cyl(b, add(b, [0, 0.032, 0]), 0.014, 6, P.rivet, true); }
+    B.cyl([seat[0], 0.02, seat[2]], [seat[0], seat[1] - 0.07, seat[2]], 0.035, 8, P.steel, false);
+    lbox(-0.24, -0.07, -0.22, 0.24, 0, 0.24, P.vinyl);
+    lbox(-0.03, -0.05, -0.28, 0.03, high ? 0.3 : 0.2, -0.24, P.steel);
+    lbox(high ? -0.22 : -0.17, high ? 0.12 : 0.12, -0.31, high ? 0.22 : 0.17, high ? 0.62 : 0.4, -0.25, P.vinyl);
+    if (high) {
+      for (const s of [-1, 1]) { lbox(s * 0.25 - 0.025, 0.17, -0.2, s * 0.25 + 0.025, 0.2, 0.16, P.vinyl); lbox(s * 0.25 - 0.012, 0, -0.08, s * 0.25 + 0.012, 0.17, -0.05, P.steel); }
+      const ry0 = 0.38 - seat[1];
+      for (let i = 0; i < 8; i++) {
+        const a0 = 2 * Math.PI * i / 8, a1 = 2 * Math.PI * (i + 1) / 8;
+        B.cyl(at([0.2 * Math.cos(a0), ry0, 0.2 * Math.sin(a0)]), at([0.2 * Math.cos(a1), ry0, 0.2 * Math.sin(a1)]), 0.01, 5, P.steel, false);
+      }
+    }
+    return B.tris;
+  }
+
+  // the room lit: each triangle's paint times the ambient light plus every lamp's (a half-wrapped diffuse light that
+  // falls off with distance); the lamps' own lenses at the brightness given. L: { amb: [r, g, b], red, blue,
+  // lamps: [{ p, c: [r, g, b], r }] }
+  function lightRoom(tris, L) {
+    return tris.map(t => {
+      let col;
+      if (t.emit === 1) col = t.col;
+      else if (t.emit) col = mul(t.col, t.emit === 2 ? L.red : L.blue);
+      else {
+        const n = norm(cross(sub(t.v[1], t.v[0]), sub(t.v[2], t.v[0])));
+        const c = mul(add(add(t.v[0], t.v[1]), t.v[2]), 1 / 3), k = L.amb.slice();
+        for (const lp of L.lamps) {
+          const d = sub(lp.p, c), dl = len(d), w = 1 / (1 + (dl / lp.r) * (dl / lp.r));
+          let nd = dot(n, d) / (dl || 1);
+          if (t.two) nd = Math.abs(nd);
+          const f = (0.3 + 0.7 * Math.max(0, nd)) * w;
+          for (let i = 0; i < 3; i++) k[i] += lp.c[i] * f;
+        }
+        col = t.col.map((v, i) => v * k[i]);
+      }
+      return { v: t.v, col: col.map(v => Math.min(255, v)), two: t.two, part: t.part, tag: t.tag, lit: true };
+    });
+  }
+
+  // the room's lamps: the dimmed blue overheads, the red battle lanterns (brighter and pulsing at general quarters,
+  // gq 0-1), the glow of every screen and the status boards' edge light
+  const GLOW = { 1: [[0.08, 0.4, 0.22], 0.8], 2: [[0.05, 0.35, 0.16], 0.7], 3: [[0.06, 0.32, 0.18], 0.7], 4: [[0.4, 0.25, 0.05], 0.7], 5: [[0.4, 0.25, 0.05], 0.7],
+    6: [[0.35, 0.28, 0.12], 1.2], 7: [[0.35, 0.28, 0.12], 1.2] };
+  function roomLamps(screens, alert, gq) {
+    const red = alert ? 0.55 + 0.45 * gq : 0.22, blue = alert ? 0.7 : 1;
+    const L = { amb: alert ? [0.07 + 0.06 * gq, 0.045, 0.07] : [0.045, 0.065, 0.11], red, blue, lamps: [] };
+    for (const x of [-2.4, 0.4, 3.0]) L.lamps.push({ p: [x, 2.4, 3.08], c: [0.2 * blue, 0.3 * blue, 0.6 * blue], r: 1.4 });
+    for (const x of [-1.6, 1.95, 4.6]) L.lamps.push({ p: [x, 2.1, 4.2], c: [0.8 * red, 0.1 * red, 0.07 * red], r: 1.0 });
+    for (const s of screens) {
+      const g = GLOW[s.kind];
+      if (!g) continue;
+      const n = norm(cross(s.ex, s.ey));
+      L.lamps.push({ p: add(add(s.o, mul(add(s.ex, s.ey), 0.5)), mul(n, 0.25)), c: g[0], r: g[1] });
+    }
+    return L;
+  }
+
+  return { VITRUVIAN, PALM, skeleton, solve, build, draw, measureMesh, vitruvianPose, POSES, SEAT, CREW, colour, speechTrack, mouthAt, wordsShown, spokenUpTo, words, toPhonemes, FACE_DEFAULT, landmarks, SCREEN, room, chair, lightRoom, roomLamps };
 })();
 // ---- the figure engine ends ----
 const Intro = (() => {
@@ -5040,230 +5301,206 @@ const Intro = (() => {
     c = BGc.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = '#030507'; c.fillRect(0, 0, W, H); view(c);
     const rgb = (r, g, b, a = 1) => `rgba(${r | 0},${g | 0},${b | 0},${a})`;
     const mix = (p, q, k) => [p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k];
-    const lg = (x0, y0, x1, y1, stops) => { const g = c.createLinearGradient(x0, y0, x1, y1); stops.forEach(([k, s]) => g.addColorStop(k, s)); return g; };
     const rg = (x, y, r0, r1, stops) => { const g = c.createRadialGradient(x, y, r0, x, y, r1); stops.forEach(([k, s]) => g.addColorStop(k, s)); return g; };
     const glow = (x, y, r, col, a) => { c.fillStyle = rg(x, y, 0, r, [[0, rgb(...col, a)], [1, rgb(...col, 0)]]); c.fillRect(x - r, y - r, r * 2, r * 2); };
-    // a smooth closed or open curve through points (Catmull-Rom as Beziers)
-    const curve = (P, closed = true) => {
-      const n = P.length, g = i => P[closed ? (i + n) % n : clamp(i, 0, n - 1)];
-      c.moveTo(P[0][0], P[0][1]);
-      for (let i = 0; i < (closed ? n : n - 1); i++) {
-        const p0 = g(i - 1), p1 = g(i), p2 = g(i + 1), p3 = g(i + 2);
-        c.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6, p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]);
-      }
-      if (closed) c.closePath();
-    };
     const mono = (s, x, y, sz, col, al = 'left') => { c.font = `${sz}px ${FONT}`; c.textAlign = al; c.textBaseline = 'middle'; c.fillStyle = col; c.fillText(s, x, y); };
-    // a line being spoken: jaw opening per syllable, closed in pauses
-    const speak = (L, txtLen) => {
-      if (t < L[0] || t > L[1] - 0.15) return 0;
-      const k = (t - L[0]) / (L[1] - 0.15 - L[0]), syl = Math.sin(k * txtLen * 0.55 * Math.PI);
-      return Math.max(0, syl) * (0.55 + 0.45 * Math.abs(Math.sin(t * 9.3)));
-    };
     const blinkAt = (seed) => { const p = 2.8 + seed * 1.7, ph = ((t + seed * 5) % p) / p; return ph > 0.965 ? 1 - Math.abs(ph - 0.9825) / 0.0175 : 0; };
+    const rangeAt = (d0, tt) => d0 + 0.08 - 0.42 * clamp((tt - S0) / (S1 - S0), 0, 1);
 
-    // ---- the room ----
-    c.fillStyle = lg(0, 0, 0, 900, [[0, '#05080c'], [0.25, '#0a1119'], [0.68, '#0b1219'], [0.7, '#06090c'], [1, '#020304']]);
-    c.fillRect(-400, -200, 2400, 1300);
-    // deckhead: pipe runs, a cable tray and the blue overhead lights
-    for (const [y, r, col] of [[34, 15, [28, 34, 42]], [66, 10, [44, 40, 34]], [92, 7, [30, 38, 46]], [112, 5, [52, 24, 22]]]) {
-      c.fillStyle = lg(0, y - r, 0, y + r, [[0, rgb(...col.map(v => v * 0.5))], [0.35, rgb(...col.map(v => v * 1.8))], [1, rgb(...col.map(v => v * 0.25))]]);
-      c.fillRect(-400, y - r, 2400, r * 2);
-      for (let x = -360; x < 2000; x += 230) { c.fillStyle = '#0c1014'; c.fillRect(x, y - r - 2, 12, r * 2 + 4); }
+    // ---- the room in 3D (Figure.room), lit by its lamps, each screen drawn on its own face ----
+    // a camera at eye height looking into the room; the same camera places the people
+    const CAM = { pos: [0, 1.25, 0], f: [0, 0, 1], u: [0, 1, 0], r: [1, 0, 0], F: 1100, cx: 800, cy: 450 };
+    const proj = v => [CAM.cx + v[0] / v[2] * CAM.F, CAM.cy - (v[1] - CAM.pos[1]) / v[2] * CAM.F];
+    const ROOM = drawCIC.room || (drawCIC.room = Object.assign(Figure.room(), { far: null }));
+    if (!ROOM.far) {
+      ROOM.far = ROOM.tris.filter(q => q.part === 'far'); ROOM.near = ROOM.tris.filter(q => q.part === 'near');
+      // each screen's corners on the film, for the affine map from its content onto its face
+      ROOM.screens.forEach(s => { s.p0 = proj(s.o); s.p1 = proj(s.o.map((v, i) => v + s.ex[i])); s.p3 = proj(s.o.map((v, i) => v + s.ey[i])); });
     }
-    c.fillStyle = '#0a0d10'; c.fillRect(-400, 122, 2400, 16);
-    for (let x = -390; x < 2000; x += 9) { c.fillStyle = rgb(14 + R() * 10, 16 + R() * 10, 20 + R() * 12); c.fillRect(x, 124, 7, 10); }
-    for (const x of [-120, 340, 800, 1260, 1720]) {
-      c.fillStyle = '#16314f'; c.fillRect(x - 70, 140, 140, 9); glow(x, 150, 230, [40, 90, 170], 0.22);
-    }
-    // bulkhead panels with seams and rivets
-    c.strokeStyle = 'rgba(0,0,0,0.55)'; c.lineWidth = 2;
-    for (let x = -390; x < 2000; x += 140) { c.beginPath(); c.moveTo(x, 160); c.lineTo(x, 610); c.stroke(); }
-    c.fillStyle = 'rgba(90,120,150,0.12)';
-    for (let x = -385; x < 2000; x += 140) for (let y = 170; y < 610; y += 48) c.fillRect(x, y, 2, 2);
-    // wall displays: the tactical plot, the track list, the air plan
-    const screen = (x, y, w, h) => {
-      c.fillStyle = '#0d1116'; c.fillRect(x - 10, y - 10, w + 20, h + 20);
-      c.fillStyle = '#01060c'; c.fillRect(x, y, w, h);
-      glow(x + w / 2, y + h / 2, w * 0.9, [30, 80, 140], 0.1);
+    const LAMPS = Figure.roomLamps(ROOM.screens, alert, gq);
+    const lw = 1.2 / (sc * z);   // a hairline round each facet, so no seams show between them
+    const fillTri = (pts, col, gr, tag) => {
+      if (tag) return screenAt(ROOM.screens[tag - 1], pts, col);
+      c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(pts[2][0], pts[2][1]); c.closePath();
+      const css = q => `rgb(${q[0] | 0},${q[1] | 0},${q[2] | 0})`;
+      let k = css(col);
+      if (gr) { k = c.createLinearGradient(gr.x0, gr.y0, gr.x1, gr.y1); k.addColorStop(0, css(gr.c0)); k.addColorStop(1, css(gr.c1)); }
+      c.fillStyle = k; c.strokeStyle = k; c.lineWidth = lw; c.fill(); c.stroke();
     };
-    // tactical plot: sea, a coast, the grid, own ship, CAP station and the two hostile tracks with speed leaders
-    const px = 300, py = 190, pw = 470, ph = 300;
-    screen(px, py, pw, ph);
-    c.save(); c.beginPath(); c.rect(px, py, pw, ph); c.clip();
-    c.fillStyle = '#031426'; c.fillRect(px, py, pw, ph);
-    c.fillStyle = '#0c2414'; c.beginPath(); curve([[px - 20, py + 40], [px + 90, py + 20], [px + 160, py + 55], [px + 230, py + 30], [px + 300, py - 10], [px - 20, py - 20]]); c.fill();
-    c.strokeStyle = 'rgba(70,200,120,0.6)'; c.lineWidth = 1.5; c.beginPath(); curve([[px - 20, py + 40], [px + 90, py + 20], [px + 160, py + 55], [px + 230, py + 30], [px + 300, py - 10]], false); c.stroke();
-    c.strokeStyle = 'rgba(90,150,220,0.16)'; c.lineWidth = 1;
-    for (let i = 1; i < 8; i++) { c.beginPath(); c.moveTo(px + pw * i / 8, py); c.lineTo(px + pw * i / 8, py + ph); c.stroke(); }
-    for (let i = 1; i < 5; i++) { c.beginPath(); c.moveTo(px, py + ph * i / 5); c.lineTo(px + pw, py + ph * i / 5); c.stroke(); }
-    const ox = px + pw * 0.56, oy = py + ph * 0.7;
-    c.strokeStyle = 'rgba(110,170,255,0.9)'; c.lineWidth = 2;
-    c.beginPath(); c.arc(ox, oy, 7, 0, Math.PI * 2); c.stroke(); c.beginPath(); c.arc(ox, oy, 1.5, 0, Math.PI * 2); c.stroke();
-    c.setLineDash([4, 5]); c.beginPath(); c.arc(ox, oy, 120, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
-    c.beginPath(); c.arc(ox + 90, oy - 120, 8, Math.PI, 0); c.stroke(); mono('CAP 1', ox + 104, oy - 124, 11, 'rgba(110,170,255,0.9)');
-    for (const [dx, d0] of [[-0.11, 0], [-0.06, 0.03]]) {
-      const hx = ox + pw * dx - 4, hy = py + ph * (0.14 + d0) + u * ph * 0.3, on = !alert || gq > 0.25;
-      for (let j = 1; j <= 4; j++) { /* the track's history: where it was plotted before */
-        c.fillStyle = `rgba(255,70,60,${(0.35 * (1 - j / 5)).toFixed(3)})`;
-        c.fillRect(hx - 1.5, py + ph * (0.14 + d0) + clamp((t - j * 0.5 - S0) / (S1 - S0), 0, 1) * ph * 0.3 - 1.5, 3, 3);
+    // a screen's half: clipped to the triangle, its content drawn in its own units (s.w x s.h) mapped onto the face
+    function screenAt(s, pts, col) {
+      c.save();
+      c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(pts[2][0], pts[2][1]); c.closePath();
+      const board = s.kind === Figure.SCREEN.boardL || s.kind === Figure.SCREEN.boardR;
+      c.fillStyle = board ? 'rgba(120,170,210,0.06)' : rgb(...col); c.fill(); c.clip();
+      c.transform((s.p1[0] - s.p0[0]) / s.w, (s.p1[1] - s.p0[1]) / s.w, (s.p3[0] - s.p0[0]) / s.h, (s.p3[1] - s.p0[1]) / s.h, s.p0[0], s.p0[1]);
+      SCREENS[s.kind](s);
+      c.restore();
+    }
+    // ---- what each screen shows ----
+    const LABELS = ['AIR SEARCH', 'TRACK SUP', 'AIR CONTROL', 'SURFACE', 'EW', 'NAV PLOT', 'STRIKE   TOMAHAWK', 'ASCM   HARPOON', 'DATA LINK', 'AIR SEARCH 2', 'COMMS'];
+    const ALPHA = [['TRK  BRG RNG', '1101 045  28', '0212 180  41', '0214 210  55', '3307 095  88'], ['LINK 11  NET', 'PU 04  ACTIVE', 'PU 07  ACTIVE', 'R/C   4.2 S'],
+      ['CAP 1  ON STA', 'VIPER 1  A5', 'VIPER 2  A5', 'TANKER  T1'], ['SFC  BRG RNG', '0212 180  41', '0214 210  55'], ['ESM  BRG', 'J-BAND 352', 'I-BAND 349'],
+      ['POSN 24-31N', '     052-12E', 'CSE 090  SPD 18'], ['UHF 1  GUARD', 'UHF 2  AIC', 'HF  FLT BCST']];
+    const SCREENS = {
+      [Figure.SCREEN.ppi](s) {
+        const cx = 200, cy = 160, r = 140, sw = t * Math.PI * 2 / 4 + s.bay;
+        c.strokeStyle = 'rgba(60,220,120,0.35)'; c.lineWidth = 3;
+        for (const k of [0.33, 0.66, 1]) { c.beginPath(); c.arc(cx, cy, r * k, 0, Math.PI * 2); c.stroke(); }
+        for (let i = 0; i < 24; i++) { const a = sw - i * 0.04; c.strokeStyle = `rgba(80,255,150,${(0.5 * (1 - i / 24)).toFixed(3)})`; c.lineWidth = 8; c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.sin(a) * r, cy - Math.cos(a) * r); c.stroke(); }
+        const Rb = rng(17 + s.bay);
+        for (let i = 0; i < 9; i++) { const a = Rb() * Math.PI * 2, d = 0.2 + Rb() * 0.75; c.fillStyle = 'rgba(120,255,170,0.8)'; c.fillRect(cx + Math.sin(a) * r * d - 4, cy - Math.cos(a) * r * d - 4, 8, 8); }
+      },
+      [Figure.SCREEN.alpha](s) {
+        const rows = ALPHA[s.bay % ALPHA.length];
+        rows.forEach((q, i) => mono(q, 24, 40 + i * 52, 34, i ? 'rgba(110,255,160,0.85)' : 'rgba(160,255,200,0.95)'));
+        if ((t * 2 | 0) % 2) { c.fillStyle = 'rgba(110,255,160,0.85)'; c.fillRect(24, 40 + rows.length * 52 - 16, 22, 32); }
+      },
+      [Figure.SCREEN.strike]() { ['TOMAHAWK  WCS', 'ENGAGE PLAN  --', 'CELL  A1  RDY', 'CELL  A2  RDY', 'MODE  STBY'].forEach((q, i) => mono(q, 24, 40 + i * 54, 34, i ? 'rgba(255,180,70,0.85)' : 'rgba(255,210,120,0.95)')); },
+      [Figure.SCREEN.harpoon]() { ['HARPOON  SWC', 'TGT  NONE', 'CANISTERS  8', alert ? 'ALERT  ARMED' : 'SAFE', 'MODE  BOL'].forEach((q, i) => mono(q, 24, 40 + i * 54, 34, i === 3 && alert ? '#ff6a50' : i ? 'rgba(255,180,70,0.85)' : 'rgba(255,210,120,0.95)')); },
+      [Figure.SCREEN.label](s) { mono(LABELS[s.bay] || '', s.w / 2, s.h / 2, 40, 'rgba(225,225,215,0.9)', 'center'); },
+      // the key panels: rows of square push-buttons, some lit; the weapon consoles' top row red under hinged guards
+      [Figure.SCREEN.keys](s) { keys(s, false); },
+      [Figure.SCREEN.guards](s) { keys(s, true); },
+      [Figure.SCREEN.keyboard]() {
+        c.fillStyle = 'rgb(66,72,74)';
+        for (let r = 0; r < 4; r++) for (let j = 0; j < 12; j++) c.fillRect(14 + j * 38 + r * 4, 14 + r * 52, 31, 42);
+      },
+      [Figure.SCREEN.clock](s) {
+        const cx = s.w / 2, cy = s.h / 2, r = s.w * 0.46, sec = 47 * 60 + 5 * 3600 + 12 + t;
+        c.fillStyle = '#d8d8cc'; c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fill();
+        c.strokeStyle = '#202020';
+        for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; c.lineWidth = 6; c.beginPath(); c.moveTo(cx + Math.sin(a) * r * 0.8, cy - Math.cos(a) * r * 0.8); c.lineTo(cx + Math.sin(a) * r * 0.95, cy - Math.cos(a) * r * 0.95); c.stroke(); }
+        for (const [a, l, w] of [[sec / 43200 * Math.PI * 2, 0.5, 10], [sec / 3600 * Math.PI * 2, 0.75, 7], [sec / 60 * Math.PI * 2, 0.85, 3]]) {
+          c.lineWidth = w; c.strokeStyle = w === 3 ? '#a02018' : '#151515'; c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.sin(a) * r * l, cy - Math.cos(a) * r * l); c.stroke();
+        }
+      },
+      [Figure.SCREEN.gq](s) {
+        if (alert) { c.fillStyle = `rgba(230,40,30,${0.45 + 0.5 * gq})`; c.fillRect(0, 0, s.w, s.h); }
+        mono(t >= L3[0] ? 'LAUNCH THE ALERT' : 'GENERAL QUARTERS', s.w / 2, s.h / 2, 64, alert ? '#fff2e8' : 'rgba(120,40,34,0.8)', 'center');
+      },
+      // the status boards: grease pencil on edge-lit plexiglass, ruled in white; the plotter writes from the far side,
+      // backwards, so the watch reads it the right way round
+      [Figure.SCREEN.boardL](s) { board(s, 'AIR CONTACTS', ['TN', 'ID', 'BRG', 'RNG', 'SPD', 'ALT'],
+        [['1101', 'FRD', '045', '28', '310', '180'], ['0212', 'NEU', '180', '41', '12', '0'], ['0214', 'NEU', '210', '55', '18', '0'], ['3307', 'UNK', '095', '88', '420', '310']]
+          .concat(t > 6.0 ? [['7402', 'HOS', '350', '62', '540', '20']] : []).concat(t > 6.6 ? [['7403', 'HOS', '349', '64', '540', '20']] : [])); },
+      [Figure.SCREEN.boardR](s) { board(s, 'AIR PLAN   05:47', ['STA', 'A/C', 'SIDE', 'STATUS'],
+        [['ALERT 5', 'VIPER 1', '24', alert ? 'LAUNCH' : 'MANNED'], ['ALERT 5', 'VIPER 2', '25', alert ? 'LAUNCH' : 'MANNED'], ['ALERT 30', 'VIPER 3', '27', 'READY'],
+          ['CAP 1', 'VIPER 7', '21', 'ON STA'], ['WIND', '18 KT', '', 'DECK GREEN']]); },
+      [Figure.SCREEN.scope]: scope
+    };
+    function keys(s, weapon) {
+      for (let r = 0; r < 3; r++) for (let j = 0; j < 8; j++) {
+        const lit = (s.bay * 3 + r * 5 + j * 7) % 6, red = weapon && r === 0 && j > 4;
+        c.fillStyle = red ? '#ff4a3a' : lit === 0 ? '#ffaa3c' : lit === 1 ? '#5aff8c' : 'rgb(70,76,78)';
+        c.fillRect(35 + j * 85, 30 + r * 80, 60, 55);
+        if (red) { c.strokeStyle = 'rgba(255,90,70,0.9)'; c.lineWidth = 6; c.strokeRect(28 + j * 85, 23 + r * 80, 74, 69); }
       }
-      c.strokeStyle = on ? 'rgba(255,70,60,0.95)' : 'rgba(255,70,60,0.4)'; c.lineWidth = 2;
-      c.beginPath(); c.moveTo(hx - 8, hy + 3); c.lineTo(hx, hy - 7); c.lineTo(hx + 8, hy + 3); c.stroke();
-      c.beginPath(); c.moveTo(hx, hy); c.lineTo(hx + 7, hy + 38); c.stroke();
     }
-    if (t > 6.0) mono('7402  HOSTILE', ox - pw * 0.06, py + ph * 0.08, 11, 'rgba(255,110,90,0.95)');
-    c.restore();
-    mono('TACTICAL PLOT   SCALE 64', px, py - 22, 12, 'rgba(120,170,220,0.7)');
-    // track list, its top row going red once the tracks are classified
-    const tx = 820, ty = 190, tw = 330, th = 300;
-    screen(tx, ty, tw, th);
-    const rows = [['TN', 'ID', 'BRG', 'RNG', 'SPD', 'ALT'], ['7402', 'HOS', '350', '62', '540', '2000'], ['7403', 'HOS', '349', '64', '540', '2000'],
-      ['1101', 'FRD', '045', '28', '310', '18000'], ['0212', 'NEU', '180', '41', '12', '0'], ['0214', 'NEU', '210', '55', '18', '0'], ['3307', 'UNK', '095', '88', '420', '31000']];
-    rows.forEach((r, i) => {
-      const y = ty + 24 + i * 34, hot = i === 1 || i === 2;
-      if (hot && t > 6.0) { c.fillStyle = `rgba(200,30,30,${alert ? 0.25 + 0.3 * gq : 0.25})`; c.fillRect(tx + 6, y - 13, tw - 12, 26); }
-      r.forEach((s, j) => mono(s, tx + 16 + j * 52, y, 12, i === 0 ? 'rgba(120,170,220,0.8)' : hot && t > 6.0 ? '#ff8a72' : 'rgba(170,200,220,0.75)'));
-    });
-    mono('AIR TRACKS', tx, ty - 22, 12, 'rgba(120,170,220,0.7)');
-    // air plan / status board
-    const ax = 1200, ay = 190, aw = 300, ah = 300;
-    screen(ax, ay, aw, ah);
-    mono('AIR PLAN     05:47', ax + 16, ay + 26, 13, 'rgba(120,170,220,0.85)');
-    mono('ALERT 5   VIPER 1  NF-24', ax + 16, ay + 66, 12, alert ? '#ffd25a' : 'rgba(170,200,220,0.7)');
-    mono('ALERT 5   VIPER 2  NF-24', ax + 16, ay + 94, 12, alert ? '#ffd25a' : 'rgba(170,200,220,0.7)');
-    mono('ALERT 30  VIPER 3  NF-24', ax + 16, ay + 122, 12, 'rgba(170,200,220,0.5)');
-    mono('WIND 18 KT   DECK GREEN', ax + 16, ay + 162, 12, 'rgba(120,220,150,0.7)');
-    if (alert) { c.fillStyle = `rgba(210,30,25,${0.35 + 0.5 * gq})`; c.fillRect(ax + 8, ay + 196, aw - 16, 40); mono(t >= L3[0] ? 'LAUNCH THE ALERT' : 'GENERAL QUARTERS', ax + aw / 2, ay + 216, 15, '#fff2e8', 'center'); }
-    else mono('CONDITION III', ax + 16, ay + 216, 13, 'rgba(170,200,220,0.6)');
-    // the far row of consoles and two crew at work, backs to us
-    c.fillStyle = '#080b0e'; c.fillRect(-400, 560, 2400, 90);
-    for (let x = -300; x < 1900; x += 190) {
-      c.fillStyle = '#10161c'; c.fillRect(x, 540, 160, 30);
-      c.fillStyle = rgb(20, 60 + R() * 40, 90 + R() * 50); c.fillRect(x + 14, 546, 132, 18);
-      glow(x + 80, 556, 110, [40, 110, 170], 0.12);
+    function board(s, title, head, rows) {
+      const col = head.length, cw = (s.w - 80) / col, ink = 'rgba(255,224,90,0.7)', hot = 'rgba(255,120,70,0.85)';
+      c.strokeStyle = 'rgba(230,240,255,0.35)'; c.lineWidth = 5;
+      c.beginPath(); c.moveTo(40, 150); c.lineTo(s.w - 40, 150); for (let j = 1; j < col; j++) { c.moveTo(40 + j * cw, 110); c.lineTo(40 + j * cw, s.h - 40); } c.stroke();
+      mono(title, 40, 60, 56, 'rgba(235,245,255,0.6)');
+      head.forEach((q, j) => mono(q, 60 + j * cw, 128, 40, 'rgba(235,245,255,0.5)'));
+      rows.forEach((r, i) => r.forEach((q, j) => mono(q, 60 + j * cw, 200 + i * 100, 52, r[1] === 'HOS' || q === 'LAUNCH' ? hot : ink)));
     }
-    for (const x of [560, 1140]) {
-      c.fillStyle = '#05070a'; c.beginPath(); c.ellipse(x, 548, 22, 26, 0, 0, Math.PI * 2); c.fill();
-      c.beginPath(); c.ellipse(x, 600, 46, 32, 0, Math.PI, 0); c.fill(); c.fillRect(x - 46, 600, 92, 60);
-      c.strokeStyle = 'rgba(80,150,220,0.35)'; c.lineWidth = 2; c.beginPath(); c.ellipse(x, 548, 22, 26, 0, Math.PI * 1.1, Math.PI * 1.7); c.stroke();
+    // the operator's radar repeater: range rings and bearings, the sweep, sea clutter, own ship and the CAP station,
+    // the two contacts closing with the echoes each sweep leaves, then the hook and its readout
+    function scope() {
+      const dw = 500, dh = 330, rx = dw * 0.42, ry = dh * 0.5, rr = dh * 0.44;
+      c.strokeStyle = 'rgba(60,255,140,0.25)'; c.lineWidth = 1.2;
+      for (const k of [0.25, 0.5, 0.75, 1]) { c.beginPath(); c.arc(rx, ry, rr * k, 0, Math.PI * 2); c.stroke(); }
+      for (let i = 0; i < 72; i++) { const a = i * Math.PI / 36, k = i % 6 ? 0.96 : 0.92; c.beginPath(); c.moveTo(rx + Math.sin(a) * rr * k, ry - Math.cos(a) * rr * k); c.lineTo(rx + Math.sin(a) * rr, ry - Math.cos(a) * rr); c.stroke(); }
+      for (const [b, l] of [[0, '000'], [90, '090'], [180, '180'], [270, '270']]) { const a = b * Math.PI / 180; mono(l, rx + Math.sin(a) * rr * 1.1, ry - Math.cos(a) * rr * 1.1, 11, 'rgba(80,220,140,0.7)', 'center'); }
+      const sw = ((t - 2.2) / 2.6) * Math.PI * 2;
+      for (let i = 0; i < 30; i++) { const a = sw - i * 0.03; c.strokeStyle = `rgba(80,255,150,${(0.4 * (1 - i / 30)).toFixed(3)})`; c.lineWidth = 3; c.beginPath(); c.moveTo(rx, ry); c.lineTo(rx + Math.sin(a) * rr, ry - Math.cos(a) * rr); c.stroke(); }
+      const Rs = rng(4711);
+      for (let i = 0; i < 40; i++) { const a = Rs() * Math.PI * 2, d = 0.3 + Rs() * 0.6; c.fillStyle = 'rgba(60,200,110,0.18)'; c.fillRect(rx + Math.sin(a) * rr * d, ry - Math.cos(a) * rr * d, 2, 2); }   // sea clutter
+      c.strokeStyle = 'rgba(110,170,255,0.95)'; c.lineWidth = 2; c.beginPath(); c.arc(rx, ry, 6, 0, Math.PI * 2); c.stroke();
+      c.beginPath(); c.arc(rx + rr * 0.3, ry - rr * 0.42, 7, Math.PI, 0); c.stroke();
+      for (const [b, d0] of [[-10, 0.84], [-7, 0.9]]) {
+        const a = b * Math.PI / 180, d = rangeAt(d0, t), hx = rx + Math.sin(a) * rr * d, hy = ry - Math.cos(a) * rr * d;
+        for (let j = 5; j >= 1; j--) {
+          const dj = rangeAt(d0, t - j * 0.45);
+          c.fillStyle = `rgba(255,96,72,${(0.4 * (1 - j / 6)).toFixed(3)})`;
+          c.beginPath(); c.arc(rx + Math.sin(a) * rr * dj, ry - Math.cos(a) * rr * dj, 3, 0, Math.PI * 2); c.fill();
+        }
+        const since = ((sw - a) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2) * 2.6, k = Math.exp(-since * 1.2);
+        c.strokeStyle = `rgba(255,80,64,${(0.55 + 0.45 * k).toFixed(3)})`; c.lineWidth = 2.5;
+        c.beginPath(); c.moveTo(hx - 8, hy + 4); c.lineTo(hx, hy - 7); c.lineTo(hx + 8, hy + 4); c.stroke();
+        c.beginPath(); c.moveTo(hx, hy); c.lineTo(hx + 3, hy + 30); c.stroke();
+      }
+      if (t > 5.9) {
+        const a = -8.5 * Math.PI / 180, d = rangeAt(0.87, t), hx = rx + Math.sin(a) * rr * d, hy = ry - Math.cos(a) * rr * d;
+        c.strokeStyle = 'rgba(255,220,90,0.9)'; c.lineWidth = 1.5; const hs = 20; c.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
+        const bx = dw * 0.79, by = 26;
+        c.fillStyle = 'rgba(0,30,15,0.85)'; c.fillRect(bx - 8, by - 14, 112, 128);
+        ['HOOK 7402', 'HOSTILE AIR', 'BRG  350', 'RNG  62', 'SPD  540', 'ALT  2000', 'CPA  4 MIN'].forEach((q, i) => mono(q, bx, by + i * 17, 11, i < 2 ? '#ff8a72' : 'rgba(120,255,170,0.9)'));
+      }
+      c.fillStyle = 'rgba(160,255,200,0.03)'; c.fillRect(0, 0, dw, dh * 0.4);   // the glass
     }
-    c.fillStyle = lg(0, 640, 0, 900, [[0, '#07090b'], [1, '#010203']]); c.fillRect(-400, 640, 2400, 300);
-    c = ctx; c.save();
-    if ('filter' in c) { c.filter = `blur(${(1.3 * sc).toFixed(2)}px) brightness(0.6)`; c.drawImage(BGc, 0, 0, W, H); c.filter = 'none'; }
-    else { c.drawImage(BGc, 0, 0, W, H); c.fillStyle = 'rgba(0,0,0,0.4)'; c.fillRect(0, 0, W, H); }
-    c.restore(); c.save(); c.translate(W / 2, H / 2); c.scale(sc * z, sc * z); c.translate(-camx, -camy);
+    SCREENS[Figure.SCREEN.steam] = () => {};
 
     const blueRim = alert ? mix([90, 150, 230], [255, 70, 60], gq * 0.5) : [90, 150, 230];
     const redK = alert ? gq * 0.25 : 0;
-    // ---- the crew in 3D, from the figure engine: a camera at eye height looking into the room; each person placed
-    // so the crown of his head lands where the scene wants it, the head s units tall ----
-    const CAM = { pos: [0, 1.25, 0], f: [0, 0, 1], u: [0, 1, 0], r: [1, 0, 0], F: 1100, cx: 800, cy: 450 };
-    const crew3d = (name, crownX, crownY, s, yaw, key, raise, face, extra) => {
-      const H = 1.75, c0 = Figure.CREW[name], pose = Object.assign({}, c0.pose(H, raise || 0), extra || {}, { yaw });
-      const dz = H / 8 * CAM.F / s, target = [(crownX - CAM.cx) * dz / CAM.F, CAM.pos[1] - (crownY - CAM.cy) * dz / CAM.F, dz];
-      const W = Figure.solve(Figure.skeleton(H), pose), cr = W.head.end, r0 = pose.root || [0, 0, 0];
+    // ---- the people: each placed so the crown of his head lands where the scene wants it, the head s units tall,
+    // his chair (if any) under him; drawn with the room's near parts given in more ----
+    const crewFig = (name, crownX, crownY, s, yaw, raise, face, extra) => {
+      const Hh = 1.75, c0 = Figure.CREW[name], pose = Object.assign({}, c0.pose(Hh, raise || 0), extra || {}, { yaw });
+      const dz = Hh / 8 * CAM.F / s, target = [(crownX - CAM.cx) * dz / CAM.F, CAM.pos[1] - (crownY - CAM.cy) * dz / CAM.F, dz];
+      const Wj = Figure.solve(Figure.skeleton(Hh), pose), cr = Wj.head.end, r0 = pose.root || [0, 0, 0];
       pose.root = [r0[0] + target[0] - cr[0], r0[1] + target[1] - cr[1], r0[2] + target[2] - cr[2]];
-      const lw = 1.2 / (sc * z);   // a hairline round each facet, so no seams show between them
-      Figure.draw([{ height: H, kit: c0.kit, skin: c0.skin, hair: c0.hair, iris: c0.iris, faceShape: c0.faceShape, pose, face }], CAM,
-        { dir: [-0.62, 0.36, -0.7], key, rim: blueRim }, (pts, col, gr) => {
-          c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(pts[2][0], pts[2][1]); c.closePath();
-          const css = q => `rgb(${q[0] | 0},${q[1] | 0},${q[2] | 0})`;
-          let k = css(col);
-          if (gr) { k = c.createLinearGradient(gr.x0, gr.y0, gr.x1, gr.y1); k.addColorStop(0, css(gr.c0)); k.addColorStop(1, css(gr.c1)); }
-          c.fillStyle = k; c.strokeStyle = k; c.lineWidth = lw; c.fill(); c.stroke();
-        });
+      const hips = Wj.hips.at.map((v, i) => v + pose.root[i] - r0[i]);
+      return { fig: { height: Hh, kit: c0.kit, skin: c0.skin, hair: c0.hair, iris: c0.iris, faceShape: c0.faceShape, pose, face }, hips };
     };
-    // where a point of the scene lies in the room, at a depth (for where the crew look)
-    const roomAt = (x, y, dz) => [(x - CAM.cx) * dz / CAM.F, CAM.pos[1] - (y - CAM.cy) * dz / CAM.F, dz];
+    const seatUnder = (hips, yaw, kind) => {
+      const back = [-Math.sin(yaw * Math.PI / 180) * 0.06, 0, -Math.cos(yaw * Math.PI / 180) * 0.06];
+      return { mesh: { tris: Figure.lightRoom(Figure.chair(kind, [hips[0] + back[0], hips[1] - 0.06, hips[2] + back[2]], yaw), LAMPS) } };
+    };
+    const drawFigs = (figs, key) => Figure.draw(figs, CAM, { dir: [-0.62, 0.36, -0.7], key, rim: blueRim }, fillTri);
     // a man speaking his line: the mouth from the words, a blink as he finishes, his eyes on gaze
+    const roomAt = (x, y, dz) => [(x - CAM.cx) * dz / CAM.F, CAM.pos[1] - (y - CAM.cy) * dz / CAM.F, dz];
     const LINES3 = { radar: 'BOGEYS! TWO CONTACTS, BEARING 3-5-0, CLOSING FAST.', supervisor: 'ALERT, ALERT! WE HAVE INBOUND.', commander: 'SEND THE BIRDS.' };
     const voice = (text, L, blinkSeed, gaze, more) => {
       const m = Figure.mouthAt(Figure.speechTrack(text, L[0], L[1]), t), after = t - L[1];
       return Object.assign({ open: m.open, wide: m.wide, round: m.round, blink: Math.max(blinkAt(blinkSeed), after > 0.02 && after < 0.2 ? 1 - Math.abs(after - 0.11) / 0.09 : 0), gaze }, more || {});
     };
 
+    // the far room, and the plotter behind the air board writing up the new contacts
+    const write = t > 5.9 && t < 7.4 ? Math.sin((t - 5.9) * 9) : 0;
+    const plotter = { height: 1.72, kit: Figure.CREW.operator.kit, skin: [150, 104, 78], hair: [20, 16, 14], iris: [50, 36, 26], faceShape: Figure.CREW.supervisor.faceShape,
+      pose: Object.assign({}, Figure.POSES.stand, { root: [1.25, 0, 3.42], yaw: 180, upperR: [0, 45 + 8 * write, -50], foreR: [0, 50, 0], curlR: 50, head: [-6, -8, 0] }), face: { blink: blinkAt(0.5) } };
+    drawFigs([{ mesh: { tris: Figure.lightRoom(ROOM.far, LAMPS) } }, plotter], mix([200, 180, 120], [255, 80, 60], redK));
+    c = ctx; c.save();
+    if ('filter' in c) { c.filter = `blur(${(1.3 * sc).toFixed(2)}px) brightness(0.85)`; c.drawImage(BGc, 0, 0, W, H); c.filter = 'none'; }
+    else c.drawImage(BGc, 0, 0, W, H);
+    c.restore(); c.save(); c.translate(W / 2, H / 2); c.scale(sc * z, sc * z); c.translate(-camx, -camy);
+
     // ---- the supervisor: a chief in khaki, standing behind the operator, turned toward the commander, clipboard in hand ----
-    const s2 = 118, step = ease(clamp((t - L2[0]) / 0.4, 0, 1)), sx = 1010 + 8 * step, sy = 262 + 4 * Math.sin(t * 1.5) - 3 * step;
-    const sOpen = speak(L2, 22);
-    void sOpen;
-    crew3d('supervisor', sx, sy, s2, 100, mix([140, 190, 255], [255, 80, 60], redK).map(v => v * 0.9), 0,
-      voice(LINES3.supervisor, L2, 0.3, roomAt(1395, 330, H / 8 * CAM.F / 178), { browUp: alert ? 0.7 : 0 }), { head: [alert ? -4 : 0, -6, 0] });
-
-    // ---- the operator's console: radar repeater angled toward him, keyboard, trackball, the sound-powered phone ----
-    c.fillStyle = lg(0, 600, 0, 900, [[0, '#1a2128'], [0.08, '#0c1014'], [1, '#040506']]); c.beginPath(); c.moveTo(-200, 600); c.lineTo(820, 620); c.lineTo(900, 900); c.lineTo(-200, 900); c.fill();
-    c.fillStyle = '#11161b'; c.beginPath(); c.moveTo(60, 250); c.lineTo(640, 290); c.lineTo(660, 640); c.lineTo(40, 640); c.closePath(); c.fill();
-    c.strokeStyle = 'rgba(120,150,180,0.15)'; c.lineWidth = 2; c.stroke();
-    // the display, sheared so it faces him
-    c.save(); c.transform(1, 0.065, -0.03, 1, 0, 0);
-    const dx = 100, dy = 285, dw = 500, dh = 330, rx = dx + dw * 0.42, ry = dy + dh * 0.5, rr = dh * 0.44;
-    c.fillStyle = '#010805'; c.fillRect(dx, dy, dw, dh);
-    c.save(); c.beginPath(); c.rect(dx, dy, dw, dh); c.clip();
-    c.strokeStyle = 'rgba(60,255,140,0.25)'; c.lineWidth = 1.2;
-    for (const k of [0.25, 0.5, 0.75, 1]) { c.beginPath(); c.arc(rx, ry, rr * k, 0, Math.PI * 2); c.stroke(); }
-    for (let i = 0; i < 72; i++) { const a = i * Math.PI / 36, k = i % 6 ? 0.96 : 0.92; c.beginPath(); c.moveTo(rx + Math.sin(a) * rr * k, ry - Math.cos(a) * rr * k); c.lineTo(rx + Math.sin(a) * rr, ry - Math.cos(a) * rr); c.stroke(); }
-    for (const [b, l] of [[0, '000'], [90, '090'], [180, '180'], [270, '270']]) { const a = b * Math.PI / 180; mono(l, rx + Math.sin(a) * rr * 1.1, ry - Math.cos(a) * rr * 1.1, 11, 'rgba(80,220,140,0.7)', 'center'); }
-    const sw = ((t - 2.2) / 2.6) * Math.PI * 2;
-    for (let i = 0; i < 30; i++) { const a = sw - i * 0.03; c.strokeStyle = `rgba(80,255,150,${(0.4 * (1 - i / 30)).toFixed(3)})`; c.lineWidth = 3; c.beginPath(); c.moveTo(rx, ry); c.lineTo(rx + Math.sin(a) * rr, ry - Math.cos(a) * rr); c.stroke(); }
-    for (let i = 0; i < 40; i++) { const a = R() * Math.PI * 2, d = 0.3 + R() * 0.6; c.fillStyle = 'rgba(60,200,110,0.18)'; c.fillRect(rx + Math.sin(a) * rr * d, ry - Math.cos(a) * rr * d, 2, 2); }   // sea clutter
-    c.strokeStyle = 'rgba(110,170,255,0.95)'; c.lineWidth = 2; c.beginPath(); c.arc(rx, ry, 6, 0, Math.PI * 2); c.stroke();
-    c.beginPath(); c.arc(rx + rr * 0.3, ry - rr * 0.42, 7, Math.PI, 0); c.stroke();
-    // the two contacts close from the rim toward the ship over the shot; each sweep leaves an echo where they were
-    const rangeAt = (d0, tt) => d0 + 0.08 - 0.42 * clamp((tt - S0) / (S1 - S0), 0, 1);
-    for (const [b, d0] of [[-10, 0.84], [-7, 0.9]]) {
-      const a = b * Math.PI / 180, d = rangeAt(d0, t), hx = rx + Math.sin(a) * rr * d, hy = ry - Math.cos(a) * rr * d;
-      for (let j = 5; j >= 1; j--) {
-        const dj = rangeAt(d0, t - j * 0.45);
-        c.fillStyle = `rgba(255,96,72,${(0.4 * (1 - j / 6)).toFixed(3)})`;
-        c.beginPath(); c.arc(rx + Math.sin(a) * rr * dj, ry - Math.cos(a) * rr * dj, 3, 0, Math.PI * 2); c.fill();
-      }
-      const since = ((sw - a) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2) * 2.6, k = Math.exp(-since * 1.2);
-      c.strokeStyle = `rgba(255,80,64,${(0.55 + 0.45 * k).toFixed(3)})`; c.lineWidth = 2.5;
-      c.beginPath(); c.moveTo(hx - 8, hy + 4); c.lineTo(hx, hy - 7); c.lineTo(hx + 8, hy + 4); c.stroke();
-      c.beginPath(); c.moveTo(hx, hy); c.lineTo(hx + 3, hy + 30); c.stroke();
-    }
-    if (t > 5.9) {
-      const a = -8.5 * Math.PI / 180, d = rangeAt(0.87, t), hx = rx + Math.sin(a) * rr * d, hy = ry - Math.cos(a) * rr * d;
-      c.strokeStyle = 'rgba(255,220,90,0.9)'; c.lineWidth = 1.5; const hs = 20; c.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
-      const bx = dx + dw * 0.79, by = dy + 26;
-      c.fillStyle = 'rgba(0,30,15,0.85)'; c.fillRect(bx - 8, by - 14, 112, 128);
-      ['HOOK 7402', 'HOSTILE AIR', 'BRG  350', 'RNG  62', 'SPD  540', 'ALT  2000', 'CPA  4 MIN'].forEach((s, i) => mono(s, bx, by + i * 17, 11, i < 2 ? '#ff8a72' : 'rgba(120,255,170,0.9)'));
-    }
-    c.restore();
-    c.fillStyle = 'rgba(160,255,200,0.03)'; c.fillRect(dx, dy, dw, dh * 0.4);   // glass
-    c.restore();
+    const step = ease(clamp((t - L2[0]) / 0.4, 0, 1));
+    const sup = crewFig('supervisor', 1010 + 8 * step, 262 + 4 * Math.sin(t * 1.5) - 3 * step, 118, 100, 0,
+      voice(LINES3.supervisor, L2, 0.3, roomAt(1395, 330, 1.75 / 8 * CAM.F / 178), { browUp: alert ? 0.7 : 0 }), { head: [alert ? -4 : 0, -6, 0] });
+    drawFigs([sup.fig], mix([140, 190, 255], [255, 80, 60], redK).map(v => v * 0.9));
+    // ---- the operator's console: the radar repeater turned toward him, keyboard, trackball, the phone, his coffee ----
+    drawFigs([{ mesh: { tris: Figure.lightRoom(ROOM.near, LAMPS) } }], [255, 255, 255]);
     glow(360, 470, 520, [50, 220, 140], 0.18);
-    // keyboard, trackball, the phone handset in its cradle and a coffee cup
-    c.fillStyle = '#1a2026'; c.beginPath(); c.moveTo(120, 648); c.lineTo(560, 652); c.lineTo(580, 700); c.lineTo(100, 696); c.fill();
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 16; j++) { c.fillStyle = 'rgba(140,200,180,0.12)'; c.fillRect(126 + j * 27 + i * 3, 655 + i * 10, 22, 7); }
-    c.fillStyle = rg(632, 668, 2, 26, [[0, '#7a8e96'], [0.4, '#2c3a40'], [1, '#0b1013']]); c.beginPath(); c.ellipse(632, 670, 24, 14, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = '#0e1215'; c.beginPath(); c.ellipse(30, 640, 26, 70, 0.4, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = 'rgba(120,200,170,0.25)'; c.lineWidth = 2; c.beginPath(); c.ellipse(30, 640, 26, 70, 0.4, Math.PI * 1.2, Math.PI * 1.8); c.stroke();
-    c.fillStyle = lg(70, 0, 104, 0, [[0, '#2a2f33'], [0.5, '#4a5258'], [1, '#15191c']]); c.fillRect(70, 600, 34, 46);
-    c.fillStyle = '#0d0f10'; c.beginPath(); c.ellipse(87, 600, 17, 4, 0, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = 'rgba(180,190,200,0.15)'; c.lineWidth = 1.5;
-    for (let i = 0; i < 3; i++) { const k = (t * 0.25 + i / 3) % 1; c.beginPath(); c.moveTo(85 + i * 4, 595 - k * 50); c.quadraticCurveTo(80 + Math.sin(t * 2 + i) * 8, 575 - k * 50, 88, 555 - k * 50); c.stroke(); }
-
-    // ---- the air detector: young, headset on, seated, leaning in to his scope ----
-    const s1 = 150, lean = ease(clamp((t - 5.3) / 0.6, 0, 1)) * 10 - ease(clamp((t - L2[0]) / 0.5, 0, 1)) * 6;
-    const o1 = speak(L1, 46);
-    void o1;
-    crew3d('operator', 760 - lean, 318 + lean * 0.3 + 2 * Math.sin(t * 1.7), s1, -108, mix([110, 255, 180], [255, 80, 60], redK), 0,
+    const mug = ROOM.screens.find(s => s.kind === Figure.SCREEN.steam), mp = mug && proj(mug.o);
+    if (mp) {
+      c.strokeStyle = 'rgba(180,190,200,0.15)'; c.lineWidth = 1.5;
+      for (let i = 0; i < 3; i++) { const k = (t * 0.25 + i / 3) % 1; c.beginPath(); c.moveTo(mp[0] - 2 + i * 4, mp[1] - k * 50); c.quadraticCurveTo(mp[0] - 7 + Math.sin(t * 2 + i) * 8, mp[1] - 20 - k * 50, mp[0] + 1, mp[1] - 40 - k * 50); c.stroke(); }
+    }
+    // ---- the air detector: young, headset on, seated on his swivel chair, leaning in to his scope ----
+    const lean = ease(clamp((t - 5.3) / 0.6, 0, 1)) * 10 - ease(clamp((t - L2[0]) / 0.5, 0, 1)) * 6;
+    const op = crewFig('operator', 760 - lean, 318 + lean * 0.3 + 2 * Math.sin(t * 1.7), 150, -108, 0,
       voice(LINES3.radar, L1, 0.7, roomAt(310, 450, 1.25), { browUp: t > 5.5 && t < 7 ? 0.5 : 0 }), { hips: [14 + lean * 0.8, 0, 0] });
-    // his chair back, between us and him
-    c.fillStyle = lg(905, 0, 995, 0, [[0, '#0a0c0e'], [0.75, '#171b20'], [1, '#060708']]);
-    c.beginPath(); curve([[915, 900], [905, 600], [918, 545], [950, 528], [985, 545], [995, 610], [992, 900]]); c.fill();
-    c.strokeStyle = rgb(...blueRim, 0.35); c.lineWidth = 3; c.beginPath(); curve([[950, 528], [985, 545], [995, 610], [992, 900]], false); c.stroke();
-
-    // ---- the commander: senior officer in khaki and the ship's ball cap, in his chair close to us, listening, then giving the order ----
-    const s3 = 178, o3 = speak(L3, 14), turn = ease(clamp((t - 7.3) / 0.7, 0, 1)), nod = t > L3[0] + 0.55 ? Math.sin(clamp((t - L3[0] - 0.55) / 0.35, 0, 1) * Math.PI) * 4 : 0;
-    // his chair: a high leather back beside and behind him
-    c.fillStyle = lg(1450, 0, 1640, 0, [[0, '#08090b'], [0.5, '#15181c'], [1, '#050607']]);
-    c.beginPath(); curve([[1460, 430], [1560, 410], [1650, 450], [1660, 900], [1450, 900]]); c.fill();
-    c.strokeStyle = rgb(...blueRim, 0.3); c.lineWidth = 3; c.beginPath(); curve([[1460, 430], [1560, 410], [1650, 450], [1660, 900]], false); c.stroke();
-    void o3;
-    crew3d('commander', 1395 - turn * 10, 246 + 3 * Math.sin(t * 1.3) - turn * 4 + nod, s3, -100 - 14 * turn, mix([130, 180, 240], [255, 80, 60], redK).map(v => v * (0.95 - 0.1 * turn)), ease(clamp((t - L3[0]) / 0.4, 0, 1)),
-      voice(LINES3.commander, L3, 0.1, roomAt(turn > 0.5 ? 1050 : 760, 300, H / 8 * CAM.F / 130), { frown: t < L3[0] ? 0.35 : 0 }), { head: [nod * 2, 0, 0] });
+    drawFigs([op.fig, seatUnder(op.hips, -108, 'swivel')], mix([110, 255, 180], [255, 80, 60], redK));
+    // ---- the commander: a senior officer in khaki and the ship's ball cap, in his high chair close to us, listening, then giving the order ----
+    const turn = ease(clamp((t - 7.3) / 0.7, 0, 1)), nod = t > L3[0] + 0.55 ? Math.sin(clamp((t - L3[0] - 0.55) / 0.35, 0, 1) * Math.PI) * 4 : 0;
+    const cmd = crewFig('commander', 1395 - turn * 10, 246 + 3 * Math.sin(t * 1.3) - turn * 4 + nod, 178, -100 - 14 * turn, ease(clamp((t - L3[0]) / 0.4, 0, 1)),
+      voice(LINES3.commander, L3, 0.1, roomAt(turn > 0.5 ? 1050 : 760, 300, 1.75 / 8 * CAM.F / 130), { frown: t < L3[0] ? 0.35 : 0 }), { head: [nod * 2, 0, 0] });
+    drawFigs([cmd.fig, seatUnder(cmd.hips, -100, 'high')], mix([130, 180, 240], [255, 80, 60], redK).map(v => v * (0.95 - 0.1 * turn)));
+    void R;
     // ---- light: bloom from the screens, the room's falloff, and the alarm's pulse ----
     c.globalCompositeOperation = 'lighter';
     glow(535, 340, 420, [40, 90, 170], 0.06); glow(985, 340, 300, [40, 90, 170], 0.05); glow(1350, 340, 300, [40, 90, 170], 0.05);
