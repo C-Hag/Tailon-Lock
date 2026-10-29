@@ -73,6 +73,14 @@ flies Viper 2's own track shifted in time, starting 1.9 s behind it (it fires) a
 outside the break as it overshoots, so Viper 2 ends up behind it for the guns. The drone's run for the sunrise and the
 last kill on bar 19 are unchanged. The skim pass is cut.
 
+Framing (2026-10-29): every shot lists its `subjects`, actor ids or `[id, from, to]`. The builder's `frameSubjects`
+keeps them inside the letterboxed 2.35:1 frame (74 % of its half-width and half-height): it moves the aim just enough,
+and widens the lens when they do not fit, both eased over about a second. A ship counts by its bow and stern, so the
+whole ship stays in. `tools/frame_check.js --strict` checks every shot, and the checker runs it in stage 3. The flyby
+is now wide: water, the whole carrier and the horizon stay in the frame from a kilometre out until we pass the bow.
+On the control room's scope the two contacts close from the rim toward the ship over the shot, each sweep leaving an
+echo of where they were.
+
 The opening (2026-10-29, the same in the browser game and the C port) starts with a fast flyby: in from high off
 the carrier's stern, down her port side, turning to hold the whole ship as we pass the bow (`sunrise`, 0 - 5.2 s).
 Then a 0.5 s dissolve into the carrier's control room (`cic`, 5.2 - 9.0 s, `scene: "cic"`): a take that opens tight

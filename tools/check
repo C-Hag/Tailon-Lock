@@ -18,7 +18,8 @@ The stages:
    2 tests       the unit tests (ctest) in the GCC release and the Clang ASan builds
    3 golden      every JSON the game reads, dumped by our own reader and compared byte for byte with the
                  reference dumps (taken with the old reader in brick 0); every game mesh, and the same mesh
-                 written to and read back from our own .glb, against its reference dump
+                 written to and read back from our own .glb, against its reference dump; the opening film
+                 keeps every shot's subjects in frame (assets/intro/tools/frame_check.js --strict)
    4 deps        what the binaries link and load, what CMake fetches, what the sources include
    5 cleanroom   no third-party names past the allow-list, no licence headers, no personal or machine
                  terms, the homage line the only reference to the original game
@@ -327,6 +328,13 @@ def stage_golden(baseline):
     say('    %d .glb/.gltf files tracked' % len(glb))
     for b in bad[:10]:
         say('      ' + b)
+    # the opening film's framing: every shot keeps its subjects in the letterboxed frame (assets/intro/tools)
+    rc, out = run(['node', os.path.join(ROOT, 'assets', 'intro', 'tools', 'frame_check.js'), '--strict'])
+    lines = [l for l in out.splitlines() if 'OUT from' in l or 'leave the frame' in l]
+    say('    intro framing: %s' % ('every shot keeps its subjects in frame' if rc == 0 else 'subjects leave the frame'))
+    for l in lines[:6]:
+        say('      ' + l.strip()[:150])
+    ok_all = ok_all and rc == 0
     return ok_all
 
 

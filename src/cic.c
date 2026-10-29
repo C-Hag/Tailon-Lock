@@ -19,10 +19,13 @@ static Painter *P;
 static Framebuffer bg; /* the room, drawn on its own and blurred, behind the people */
 static Rng R;
 static float T;        /* the film's clock */
+static float S0, S1;   /* the shot's start and end */
 
 static float rnd(void) { return (float)rng_f(&R); }
 static float clampf_(float x, float a, float b) { return x < a ? a : x > b ? b : x; }
 static float ease(float t) { return t * t * (3 - 2 * t); }
+/* a contact's range on the scope, from the rim toward the ship over the shot */
+static float range_at(float d0, float t) { return d0 + 0.08f - 0.42f * clampf_((t - S0) / (S1 - S0), 0, 1); }
 
 typedef struct { float v[3]; } V3;
 static V3 v3c(float r, float g, float b) { return (V3){ { r, g, b } }; }
@@ -618,7 +621,10 @@ static void room(float u, bool alert, float gq) {
   mono("CAP 1", ox + 104, oy - 124, 11, own, ALIGN_LEFT);
   static const float TR[2][2] = { { -0.11f, 0 }, { -0.06f, 0.03f } };
   for (int i = 0; i < 2; i++) {
-    float hx = ox + pw * TR[i][0] - 4, hy = py + ph * (0.14f + TR[i][1]) + u * ph * 0.1f;
+    float hx = ox + pw * TR[i][0] - 4, hy = py + ph * (0.14f + TR[i][1]) + u * ph * 0.3f;
+    for (int j = 1; j <= 4; j++) /* the track's history: where it was plotted before */
+      rect_c(hx - 1.5f, py + ph * (0.14f + TR[i][1]) + clampf_((T - j * 0.5f - S0) / (S1 - S0), 0, 1) * ph * 0.3f - 1.5f, 3, 3,
+             RGBA(255, 70, 60, 0.35f * (1 - j / 5.0f)));
     bool on = !alert || gq > 0.25f;
     PColor hc = RGBA(255, 70, 60, on ? 0.95f : 0.4f);
     p_begin(P);
@@ -725,16 +731,23 @@ static void console(float u) {
   PColor own = RGBA(110, 170, 255, 0.95f);
   p_begin(P), p_ellipse(P, rx, ry, 6, 6, 0, 0, 2 * PI_F), stroke_c(own, 2);
   p_begin(P), p_ellipse(P, rx + rr * 0.3f, ry - rr * 0.42f, 7, 7, 0, PI_F, 0), stroke_c(own, 2);
+  /* the two contacts close from the rim toward the ship over the shot; each sweep leaves an echo where they were */
   static const float CT[2][2] = { { -10, 0.84f }, { -7, 0.9f } };
   for (int i = 0; i < 2; i++) {
-    float a = CT[i][0] * PI_F / 180, d = CT[i][1] - 0.12f * u, hx = rx + sinf(a) * rr * d, hy = ry - cosf(a) * rr * d;
+    float a = CT[i][0] * PI_F / 180, d = range_at(CT[i][1], T), hx = rx + sinf(a) * rr * d, hy = ry - cosf(a) * rr * d;
+    for (int j = 5; j >= 1; j--) {
+      float dj = range_at(CT[i][1], T - j * 0.45f);
+      p_begin(P);
+      p_ellipse(P, rx + sinf(a) * rr * dj, ry - cosf(a) * rr * dj, 3, 3, 0, 0, 2 * PI_F);
+      fill_c(RGBA(255, 96, 72, 0.4f * (1 - j / 6.0f)));
+    }
     float since = fmodf(fmodf(sw - a, PI_F * 2) + PI_F * 2, PI_F * 2) / (PI_F * 2) * 2.6f, k = expf(-since * 1.2f);
     PColor hc = RGBA(255, 80, 64, 0.55f + 0.45f * k);
     p_begin(P), p_move(P, hx - 8, hy + 4), p_line(P, hx, hy - 7), p_line(P, hx + 8, hy + 4), stroke_c(hc, 2.5f);
     p_begin(P), p_move(P, hx, hy), p_line(P, hx + 3, hy + 30), stroke_c(hc, 2.5f);
   }
   if (T > 5.9f) {
-    float a = -8.5f * PI_F / 180, d = 0.87f - 0.12f * u, hx = rx + sinf(a) * rr * d, hy = ry - cosf(a) * rr * d, hs = 20;
+    float a = -8.5f * PI_F / 180, d = range_at(0.87f, T), hx = rx + sinf(a) * rr * d, hy = ry - cosf(a) * rr * d, hs = 20;
     stroke_rect(hx - hs, hy - hs, hs * 2, hs * 2, RGBA(255, 220, 90, 0.9f), 1.5f);
     float bx = dx + dw * 0.79f, by = dy + 26;
     rect_c(bx - 8, by - 14, 112, 128, RGBA(0, 30, 15, 0.85f));
@@ -769,6 +782,7 @@ static void console(float u) {
 
 void cic_draw(Framebuffer *out, float t, float t0, float t1) {
   T = t;
+  S0 = t0, S1 = t1;
   float u = clampf_((t - t0) / (t1 - t0), 0, 1);
   bool alert = t >= L2[0];
   float gq = alert ? 0.5f + 0.5f * sinf((t - L2[0]) * PI_F * 2 / 1.1f) : 0;

@@ -592,9 +592,67 @@ function shot(name, t0, t1, fn, desc, opt = {}) {
     prev = [yaw, roll];
     keys.push([r2(t), r2(c.pos[0]), r2(c.pos[1]), r2(c.pos[2]), r2(yaw), r2(pitch), r2(roll), r2(c.fov || fov0)]);
   }
+  if (opt.subjects) frameSubjects(keys, opt.subjects, t0, t1);
   const s = { name, t0: r2(t0), t1: r2(t1), desc, cam: keys };
+  if (opt.subjects) s.subjects = opt.subjects.map(x => (Array.isArray(x) ? [x[0], r2(x[1]), r2(Math.min(x[2], t1))] : x));
   for (const k of ['scene', 'lens', 'rig', 'attach', 'hud', 'vibe', 'in']) if (opt[k] != null) s[k] = opt[k];
   S.shots.push(s);
+}
+
+// A camera operator's framing: the shot's subjects (actor ids, or [id, from, to] for part of the shot) stay inside the
+// letterboxed 2.35:1 frame of a 16:9 screen, within FRAME_IN of its half-width and half-height. Where the camera the
+// shot asked for would lose one, the aim moves just enough to keep it in, and the lens widens when they do not fit;
+// both corrections are smoothed over about a second, so the camera eases instead of twitching. A ship counts by its
+// bow and stern, so the whole ship stays in the picture. tools/frame_check.js checks the result.
+const FRAME_IN = 0.74, ASPECT = 16 / 9, BOX = 2.35;
+function subjectPoints(id, t) {
+  if (id === 'carrier') return [C.shipLocal(CAR, t, [0, 20, 163]), C.shipLocal(CAR, t, [0, 20, -159])];
+  const a = S.actors.find(x => x.id === id);
+  if ((a.spawn != null && t < a.spawn) || (a.end != null && t > a.end)) return [];
+  const s = at(a, t);
+  return s ? [[s[1], s[2], s[3]]] : [];
+}
+function frameSubjects(keys, subjects, t0, t1) {
+  const fix = keys.map(k => {
+    const t = k[0], fr = C.frame(k[4], k[5], k[6]), th = Math.tan(k[7] * D2R / 2);
+    const pts = [];
+    for (const x of subjects) {
+      const [id, a, b] = Array.isArray(x) ? x : [x, -1e9, 1e9];
+      if (t < a || t > b || t > t1 + 0.6) continue;
+      for (const w of subjectPoints(id, t)) {
+        const d = sub(w, [k[1], k[2], k[3]]), z = dot(d, fr.f);
+        if (z > 0.5) pts.push([dot(d, fr.r) / z, dot(d, fr.u) / z]);
+      }
+    }
+    if (!pts.length) return [0, 0, th];
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    // the lens: wide enough for the subjects' spread, never narrower than asked for, at most 80 degrees
+    const thx = (x1 - x0) / 2 / (FRAME_IN * ASPECT), thy = (y1 - y0) / 2 / (FRAME_IN * ASPECT / BOX);
+    const tn = Math.min(Math.tan(40 * D2R), Math.max(th, thx * 1.05, thy * 1.05));
+    const W = FRAME_IN * tn * ASPECT, H = FRAME_IN * tn * ASPECT / BOX;
+    const sx = x1 > W ? x1 - W : x0 < -W ? x0 + W : 0, sy = y1 > H ? y1 - H : y0 < -H ? y0 + H : 0;
+    return [sx, sy, tn];
+  });
+  // ease the corrections: a gaussian over about +-0.6 s; the lens takes the widest nearby value first, so it opens
+  // before a subject needs the room rather than after
+  const n = fix.length, sm = (i, f) => {
+    let s = 0, w = 0;
+    for (let j = Math.max(0, i - 8); j <= Math.min(n - 1, i + 8); j++) { const g = Math.exp(-((j - i) ** 2) / 18); s += f(j) * g; w += g; }
+    return s / w;
+  };
+  const wide = fix.map((_, i) => Math.max(...fix.slice(Math.max(0, i - 4), i + 5).map(f => f[2])));
+  keys.forEach((k, i) => {
+    const sx = sm(i, j => fix[j][0]), sy = sm(i, j => fix[j][1]), tn = sm(i, j => wide[j]);
+    const fr = C.frame(k[4], k[5], k[6]);
+    const f = norm(add(add(fr.f, mul(fr.r, sx)), mul(fr.u, sy)));
+    let yaw = Math.atan2(f[0], f[2]) / D2R;
+    while (yaw - k[4] > 180) yaw -= 360;
+    while (yaw - k[4] < -180) yaw += 360;
+    k[4] = r2(yaw);
+    k[5] = r2(Math.asin(clamp(f[1], -1, 1)) / D2R);
+    k[7] = r2(2 * Math.atan(tn) / D2R);
+  });
 }
 // a camera bolted to an actor
 function rigShot(name, t0, t1, a, offset, dir, desc, opt = {}) {
@@ -636,13 +694,18 @@ function flatFrame(a, t, tau, tmin) {
   const v = smooth(tt => state(a, tt).vel, t, tau, tmin), f = norm([v[0], 0, v[2]]);
   return { f, side: norm(cross([0, 1, 0], f)) };
 }
-// 1 Flyby at dawn: in from high off the carrier's stern, down her port side over the deck edge, turning to hold the whole
-// ship as we pass the bow; the lens closes from 55 to 45 degrees as we come down
+// 1 Flyby at dawn, wide: in from high off the carrier's stern a kilometre out, closing and coming down along her port
+// side, then past the bow and turning to look back along the whole ship. Water, carrier and horizon stay in the frame
+// all the way: the camera looks no lower than the horizon allows, and the framing keeps bow and stern in.
+const FLY = C.track([[0, -260, 230, -1050], [1.8, -320, 170, -560], [3.6, -300, 105, -60], [5.2, -250, 70, 340], [6.4, -200, 60, 520]]);
 shot('sunrise', 0, 5.2, t => {
-  const u = clamp(t / 5.2, 0, 1), e = ease(u), c = carPos(t);
-  const pos = [c[0] - 75 - 25 * Math.sin(Math.PI * u), 210 - 165 * e, c[2] - 760 + 900 * (0.35 * u + 0.65 * e)];
-  return { pos, look: [c[0], 22, c[2] - 40 + 80 * e], roll: -5 * Math.sin(Math.PI * u), fov: 55 - 10 * e };
-}, 'A fast flyby along CVN-90 Stormhaven at dawn: in from high off the stern, down her port side over the deck edge, turning to hold the whole ship as we pass the bow.', { lens: 300, rig: 'long lens from a boat', vibe: { a: 0.006, f: 0.5 } });
+  const u = clamp(t / 5.2, 0, 1), e = ease(u), k = C.sample(FLY, t);
+  const pos = C.shipLocal(CAR, t, [k[1], k[2], k[3]]), look = C.shipLocal(CAR, t, [0, 22, lerp(40, -30, e)]);
+  // hold the horizon in the picture: look down at most two thirds of the frame's visible half-height
+  const fov = lerp(62, 52, e), vhalf = Math.atan(Math.tan(fov * D2R / 2) * ASPECT / BOX) / D2R;
+  const d = norm(sub(look, pos)), pitch = Math.max(Math.asin(d[1]) / D2R, -0.62 * vhalf);
+  return { pos, yaw: Math.atan2(d[0], d[2]) / D2R, pitch, roll: -4 * Math.sin(Math.PI * u), fov };
+}, 'A wide flyby of CVN-90 Stormhaven at dawn: in from high off the stern, closing down her port side and past the bow, the whole ship, the sea and the horizon in the frame.', { lens: 20, rig: 'camera helicopter', vibe: { a: 0.004, f: 0.5 }, subjects: ['carrier'] });
 // 2 The control room (combat information centre), drawn by the engine rather than rendered from the world: the radar
 // operator calls the contacts, the supervisor sounds the alert, the commander sends the alert fighters. The camera
 // keys only hold a pose for engines that need one.
@@ -657,7 +720,7 @@ shot('deck', 9.0, HIT, t => {
   const j = ease(clamp((t - 10.05) / 0.9, 0, 1)), jet = smooth(tt => add(P(blue1, tt), [0, 1.2, 0]), t, 0.12, 5.5);
   const fov = lerp(lerp(lensFov(18), lensFov(70), k), lensFov(26), ease(clamp((t - 10.0) / 1.1, 0, 1)));
   return { pos: lerp3(pos0, pos1, k), look: lerp3(lerp3(look0, look1, k), jet, j), fov };
-}, 'One take on the flight deck: knee height ahead of the jets in the steam, a crane move to the shooter as the klaxon goes, his run-up and launch signals, then a swing onto Viper 1 as the catapult fires and it roars past.', { lens: 18, rig: 'dolly on deck, crane to the shooter, panning with the launch', vibe: { a: 0.004, f: 1.2 }, in: { type: 'dissolve', dur: 0.3 } });
+}, 'One take on the flight deck: knee height ahead of the jets in the steam, a crane move to the shooter as the klaxon goes, his run-up and launch signals, then a swing onto Viper 1 as the catapult fires and it roars past.', { subjects: [['blue1', 10.4, 99]], lens: 18, rig: 'dolly on deck, crane to the shooter, panning with the launch', vibe: { a: 0.004, f: 1.2 }, in: { type: 'dissolve', dur: 0.3 } });
 // Version 6 cuts like a film: 8 shots, every take 5 to 8 seconds, each on one continuous piece of action.
 const T_CHASE = bar(3.5), T_SKIM = bar(6.5), T_LOCK = bar(21);
 // 3 Chase, 35 to 24 mm: on the band hit, close behind Viper 1 off the bow; the camera jet swings out and forward round
@@ -665,14 +728,14 @@ const T_CHASE = bar(3.5), T_SKIM = bar(6.5), T_LOCK = bar(21);
 shot('chase', HIT, T_CHASE, t => {
   const u = ease(clamp((t - HIT - 0.4) / 5.2, 0, 1));
   const s = state(blue1, t), fr = flatFrame(blue1, t, 0.4, HIT);
-  const th = lerp(180, 70, u) * D2R, R = lerp(30, 55, u);
-  const pos = add(s.pos, add(add(mul(fr.side, R * Math.sin(th)), mul(fr.f, R * Math.cos(th))), [0, lerp(3.5, 9, u), 0]));
+  const th = lerp(180, 70, u) * D2R, R = lerp(85, 70, u); /* far enough back that Viper 2, climbing out behind, stays in front of the lens */
+  const pos = add(s.pos, add(add(mul(fr.side, R * Math.sin(th)), mul(fr.f, R * Math.cos(th))), [0, lerp(16, 12, u), 0]));
   const pair = smooth(tt => lerp3(P(blue1, tt), P(blue2, tt), 0.3), t, 0.25, HIT);   // nearer Viper 1: it is close and big
   // mid-orbit, aim partly at Viper 1 itself, so the close jet stays well inside the frame as the camera swings round
   const onV1 = 0.7 * Math.sin(Math.PI * u);
   const look = lerp3(lerp3(add(s.pos, add(mul(fr.f, 120), [0, 1, 0])), pair, u), s.pos, onV1);
   return { pos, look, fov: lerp(lensFov(35), lensFov(28), u) };
-}, 'On the band hit: chasing Viper 1 off the bow, then the camera jet swings out and forward round the pair until it looks back at both NF-24s skimming the sea, the carrier behind them.', { lens: 35, rig: 'camera jet, orbiting the pair', vibe: { a: 0.005, f: 5 } });
+}, 'On the band hit: chasing Viper 1 off the bow, then the camera jet swings out and forward round the pair until it looks back at both NF-24s skimming the sea, the carrier behind them.', { subjects: ['blue1', 'blue2'], lens: 35, rig: 'camera jet, orbiting the pair', vibe: { a: 0.005, f: 5 } });
 // 4 Cockpit, 5.6 s: Viper 1 low over the sea, the pull-up, the KS-55 and the drone growing from dots, flashing past at
 // the merge, and the break
 const COCKPIT = [0, 1.75, 2.6], FWD = [0, -0.06, 1];
@@ -680,7 +743,7 @@ const COCKPIT = [0, 1.75, 2.6], FWD = [0, -0.06, 1];
 // the camera skims the sea 40 m/s slower than the pair, so they close from behind, pass overhead and pull away
 const SKIM = (() => { const s = state(blue1, tSkim); return { p: add(s.pos, [-40, -s.pos[1] + 1.6, 0]), v: Math.max(60, s.vel[2] - 40) }; })();
 shot('skim', T_CHASE, T_SKIM, t => ({ pos: add(SKIM.p, [0, 0, SKIM.v * (t - tSkim)]), look: add(smooth(tt => lerp3(P(blue1, tt), P(blue2, tt), 0.3), t, 0.2, T_CHASE), [0, 3, 0]), fov: lensFov(24) }),
-  'Skimming the waves: the pair close from behind, pass overhead in humid air with vapour cones on their backs, and climb away toward the bandits.', { lens: 24, rig: 'camera helicopter on the deck', vibe: { a: 0.006, f: 3 } });
+  'Skimming the waves: the pair close from behind, pass overhead in humid air with vapour cones on their backs, and climb away toward the bandits.', { subjects: ['blue1', 'blue2'], lens: 24, rig: 'camera helicopter on the deck', vibe: { a: 0.006, f: 3 } });
 rigShot('cockpit', T_SKIM, tS7, blue1, COCKPIT, FWD, 'In the cockpit of Viper 1, the head-up display and the NF-24 panel: low over the sea, the pull-up, the KS-55 and the drone grow from dots, flash past at the merge, and Viper 1 rolls into the break.', { lens: 21, rig: 'cockpit camera', hud: { actor: 'blue1', target: 'red1', panel: true }, vibe: { a: 0.003, f: 14 } });
 // 5 Viper 1 against the KS-55, one 6.8 s take: on the right wing as the first missile drops off the rail and lights;
 // the camera jet falls back and widens out to hold both jets through the turns, the second missile and splash one
@@ -692,7 +755,7 @@ shot('fight1', tS7, tS9, t => {
   const pos = add(s.pos, add(add(mul(fr.side, lerp(15, D * 0.6, k)), mul(fr.f, lerp(-30, -D, k))), [0, lerp(4, D * 0.3, k), 0]));
   const look = lerp3(add(s.pos, mul(fr.f, 300)), lerp3(s.pos, bandit, 0.7), ease(clamp((t - tS7 - 0.4) / 1.6, 0, 1)));
   return { pos, look, fov: lerp(lensFov(20), lensFov(28), k) };
-}, 'On Viper 1\'s wing: fox two, the KS-55 fans out flares and the missile takes them. The camera falls back and holds both jets as Viper 1 stays in the bandit\'s turn, cuts across its reversal and fires again. Splash one.', { lens: 20, rig: 'camera jet on the wing, falling back into a wide chase', vibe: { a: 0.004, f: 5 } });
+}, 'On Viper 1\'s wing: fox two, the KS-55 fans out flares and the missile takes them. The camera falls back and holds both jets as Viper 1 stays in the bandit\'s turn, cuts across its reversal and fires again. Splash one.', { subjects: ['blue1', 'red1'], lens: 20, rig: 'camera jet on the wing, falling back into a wide chase', vibe: { a: 0.004, f: 5 } });
 // 6 Viper 2 against the drone, one 6.8 s take: a camera jet off to the side keeps both in frame as the drone fires,
 // Viper 2 breaks into it, and the two fall into the scissors until Viper 2 gets the guns
 shot('fight2', tS9, tS11, t => {
@@ -700,7 +763,7 @@ shot('fight2', tS9, tS11, t => {
   const sep = smooth(tt => [dist(P(blue2, tt), P(red2, tt)), 0, 0], t, 0.6, tS9)[0];
   const fr = flatFrame(blue2, t, 1.0, tS9), D = clamp(sep * 1.1, 150, 520);
   return { pos: add(add(add(mid, mul(fr.side, -D)), mul(fr.f, -0.35 * D)), [0, 0.25 * D, 0]), look: mid, fov: lensFov(28) };
-}, 'From a camera jet alongside: the drone fires at Viper 2, flares and a hard break, the missile misses; the drone overshoots and the two reverse across each other in a flat scissors until Viper 2 is on the guns.', { lens: 28, rig: 'camera jet abeam, pacing the fight', vibe: { a: 0.004, f: 2 } });
+}, 'From a camera jet alongside: the drone fires at Viper 2, flares and a hard break, the missile misses; the drone overshoots and the two reverse across each other in a flat scissors until Viper 2 is on the guns.', { subjects: ['blue2', 'red2'], lens: 28, rig: 'camera jet abeam, pacing the fight', vibe: { a: 0.004, f: 2 } });
 
 // the last missile's launch decides where the finale cuts
 const L2 = S.actors.filter(a => a.kind === 'missile').pop().spawn;
@@ -714,7 +777,7 @@ shot('pursuit', tS11, T_LOCK, t => {
   const back = norm(smooth(tt => state(blue2, tt).vel, t, 0.6, tS11));   // along its climb, not just level
   const own = smooth(tt => P(blue2, tt), t, 0.3, tS11);
   return { pos: add(add(add(own, mul(back, -55)), mul(fr.side, 7)), [0, 5, 0]), look: lerp3(own, drone, 0.35), fov: lensFov(35) };
-}, 'Over Viper 2\'s shoulder: the drone runs for the sunrise, weaving; Viper 1 joins high on the right.', { lens: 35, rig: 'camera jet in trail', vibe: { a: 0.004, f: 4 } });
+}, 'Over Viper 2\'s shoulder: the drone runs for the sunrise, weaving; Viper 1 joins high on the right.', { subjects: ['blue2', 'red2'], lens: 35, rig: 'camera jet in trail', vibe: { a: 0.004, f: 4 } });
 rigShot('lock', T_LOCK, tFinale, blue2, COCKPIT, FWD, 'In Viper 2\'s cockpit: the drone runs for the sunrise, jinking, Viper 1 joins on the right, the lock closes and Viper 2 fires.', { lens: 21, rig: 'cockpit camera', hud: { actor: 'blue2', target: 'red2', panel: true, lock: [r2(L2 - 2.2), r2(L2 - 0.5)] }, vibe: { a: 0.003, f: 14 } });
 // 11 Finale, 40 mm: behind Viper 2 into the sun; the hit on bar 13, the Vipers split, and the fire and smoke
 // drift together into the title, a cloud in the dawn sky. The camera glides to a stop and holds under the menu.
@@ -730,7 +793,7 @@ shot('finale', tFinale, tEnd, t => {
   const k = ease(clamp((t - (sp.t - 3.8)) / 3.2, 0, 1));
   if (k > 0) look = lerp3(look, add(sp.pos, [0, 25, 0]), 0.85 * k);
   return { pos, look, fov: lerp(lensFov(40), lensFov(32), k) };
-}, 'Behind Viper 2, into the sun: the missile hits on bar 13 (34.24 s), the Vipers split, and the fire and smoke drift together into ' + GAME.logo + ', a cloud in the dawn sky; it vaporizes as the camera tilts down to the wreck splashing into the sea.', { lens: 40, rig: 'camera jet in trail, then hovering' });
+}, 'Behind Viper 2, into the sun: the missile hits on bar 13 (34.24 s), the Vipers split, and the fire and smoke drift together into ' + GAME.logo + ', a cloud in the dawn sky; it vaporizes as the camera tilts down to the wreck splashing into the sea.', { subjects: [['red2', tFinale, killT2]], lens: 40, rig: 'camera jet in trail, then hovering' });
 
 // ---------- cards, effects, sounds ----------
 // the title forms, holds a moment, then vaporizes into thin air (3.5 s), gone as the wreck splashes into the sea
