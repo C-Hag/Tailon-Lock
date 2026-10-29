@@ -1,0 +1,39 @@
+# radar-search: radar search: soft triangle sweep blips, four per 2.2 s (loop)
+a4c-sfx 1
+play loop 112
+volume f
+wave mutew
+  08 +0
+  00 +0
+  end
+instrument mute ad=00 sr=00 wave=mutew
+wave blipw
+  11 +0
+  11 +0
+  11 +2
+  11 +4
+  11 +5
+  11 +7
+  10 +7
+  end
+instrument blip ad=03 sr=00 wave=blipw
+instrument echo ad=03 sr=00 wave=blipw
+track 1
+  @loop E-5:blip + + + + + - - - - - - - - - -
+  - - - - - - - - - - - - B-4:blip + + +
+  + + - - - - - - - - - - - - - -
+  - - - - - - - - E-5:blip + + + + + - -
+  - - - - - - - - - - - - - - - -
+  - - - - B-4:blip + + + + + - - - - - -
+  - - - - - - - - - - - - - - - -
+track 2
+  @loop - - - - - - - E-5:echo + + + - - - - -
+  - - - - - - - - - - - - - - - -
+  - - - B-4:echo + + + - - - - - - - - -
+  - - - - - - - - - - - - - - - E-5:echo
+  + + + - - - - - - - - - - - - -
+  - - - - - - - - - - - B-4:echo + + + -
+  - - - - - - - - - - - - - - - -
+track 3
+  - - - - - - - - - - - - - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -

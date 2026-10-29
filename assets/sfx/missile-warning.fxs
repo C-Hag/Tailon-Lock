@@ -1,0 +1,27 @@
+# missile-warning: missile warning: urgent two-tone beeps, 6 per second (loop)
+a4c-sfx 1
+play loop 64
+volume f
+wave mutew
+  08 +0
+  00 +0
+  end
+instrument mute ad=00 sr=00 wave=mutew
+wave beepw
+  41 +0
+  end
+pulse p8
+  set 800 01
+  end
+instrument beep ad=00 sr=f0 wave=beepw pulse=p8
+track 1
+  @loop B-5:beep + + + + - - - E-5:beep + + + + - - -
+  B-5:beep + + + + - - - E-5:beep + + + + - - -
+  B-5:beep + + + + - - - E-5:beep + + + + - - -
+  B-5:beep + + + + - - - E-5:beep + + + + - - -
+track 2
+  - - - - - - - - - - - - - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -
+track 3
+  - - - - - - - - - - - - - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -

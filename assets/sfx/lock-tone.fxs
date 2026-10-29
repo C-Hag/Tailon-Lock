@@ -1,0 +1,27 @@
+# lock-tone: missile lock: steady warbling pulse tone (loop)
+a4c-sfx 1
+play loop 64
+volume f
+wave mutew
+  08 +0
+  00 +0
+  end
+instrument mute ad=00 sr=00 wave=mutew
+wave tonew
+  41 +0
+  end
+pulse p8
+  set 800 01
+  end
+instrument tone ad=00 sr=f0 wave=tonew pulse=p8
+instrument sub ad=00 sr=90 wave=tonew pulse=p8
+command warb vib 02 03
+track 1
+  A-5:tone:warb + + + + + + + + + + + + + + +
+  @loop + + + + + + + + + + + + + + + +
+track 2
+  A-4:sub + + + + + + + + + + + + + + +
+  @loop + + + + + + + + + + + + + + + +
+track 3
+  - - - - - - - - - - - - - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -

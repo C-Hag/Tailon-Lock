@@ -1,0 +1,60 @@
+# explosion-big: large explosion: noise boom through a closing low-pass, low thump, crackle
+a4c-sfx 1
+play once 7.6
+volume f
+wave mutew
+  08 +0
+  00 +0
+  end
+instrument mute ad=00 sr=00 wave=mutew
+wave boomw
+  81 =40
+  81 =38
+  81 =30
+  81 =22
+  81 =1e
+  loop 3
+wave thumpw
+  81 =48
+  41 =20
+  41 =18
+  41 =12
+  41 =0d
+  41 =0a
+  10 =0a
+  end
+wave crackw
+  81 =50
+  81 =4a
+  end
+pulse p8
+  set 800 01
+  end
+filter boomf
+  set lp 7f0 7 1
+  add -008 40
+  add -003 ff
+  add -001 ff
+  end
+instrument boom ad=09 sr=bd wave=boomw filter=boomf flags=filteron
+instrument thump ad=0a sr=00 wave=thumpw pulse=p8
+instrument crack ad=02 sr=00 wave=crackw
+track 1
+  C-4:boom + + + + + + + + + + + + + + +
+  + + + + + + + + + + + + + + + +
+  + + + + + + + + + + + + + + + +
+  + + - - - - - - - - - - - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -
+track 2
+  C-4:thump + + + + + + + + + - - - - - -
+  - - - - - - - - - - - - - - C-4:thump +
+  + + + + + + + + - - - - - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -
+track 3
+  - - - - - - C-4:crack + - - - - - C-4:crack + -
+  - C-4:crack + - - - - - - - C-4:crack + - - - C-4:crack
+  + - - - - - - - C-4:crack + - - - - - -
+  - - - - C-4:crack + - - - - C-4:crack + - - - -
+  - - - - - - - C-4:crack + - - - - - - -
+  - - - - - - - - - - C-4:crack + - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -

@@ -40,7 +40,7 @@ in `build/check/<date>-<commit>.txt`).
 | W1-W2 | mobile mode in the browser game (web v28) | done; in the repo as web/ | (this commit) |
 | W3 | the browser game published as a web page | planned, after the push and Pages | |
 | F0 | the floppy budget in the checker (stage 11, a report for now) | done | (this commit) |
-| F1 | sound effects made live by our synth, in both versions | planned, after brick 9 | |
+| F1 | sound effects made live by our synth, in both versions | in progress: the engine (browser) and the 14 songs; the C engine, the games and the owner's ear to come | (this commit) |
 | F2 | the DMX10 main theme played live from its song data | planned | |
 | F3 | the size pass: no SDL3 (bricks 10-20), stripped, data packed | planned | |
 | F4 | the floppy build made and the budget a hard fail | planned | |
