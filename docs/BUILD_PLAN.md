@@ -31,7 +31,8 @@ in `build/check/<date>-<commit>.txt`).
 | 5-8 | our own GLB loader (glTF 2.0); the game loads its meshes from .glb | done | 479daf4 ... 2f44c99 |
 | 21 | our own crypto: X25519, ChaCha20-Poly1305, BLAKE2b, Elligator 2 | done | 8233598 |
 | 22 | online play on our own crypto (network version 4); Monocypher deleted | done | (this commit) |
-| 9 | the `plat.h` interface (touch, callback-driven loop) | planned | |
+| 9 | the `plat.h` interface (touch, callback-driven loop) | next | |
+| R0 | the FreeDOS benchmark test: tools/p5bench built with DJGPP (test only), run in Bochs and DOSBox | after brick 9 | |
 | 25-29 | touch controls, scaling, Android | planned | |
 | 10-20 | our own desktop platform layer; SDL3 deleted | planned | |
 | 23-24 | the last downloaded library gone; final audit | planned | |
@@ -45,7 +46,7 @@ in `build/check/<date>-<commit>.txt`).
 | F4 | the floppy build made and the budget a hard fail | planned | |
 | R1 | speed work: 320x200 in 256 colours, 15-25 fps on a Pentium 120 | planned, after F4 | |
 | R2 | the DOS version, tested on FreeDOS | planned | |
-| R3 | the Windows 95 version | on hold until there is a Windows 95 disc | |
+| R3 | the Windows 95 version | on hold until the owner finds a Windows 95 copy | |
 
 Outside code still in the build: SDL3 (until brick 20), downloaded at build
 time with a checksum (docs/THIRD_PARTY.md).
@@ -316,19 +317,25 @@ F4. **The floppy build.** A `floppy` build variant that makes the disk image
     fail. The audit: the image boots and runs from a clean folder on Linux and
     on Windows, and the browser game runs from its packed copy.
 
-Order: brick 9 first, then F1, F2, and the rest of the platform bricks; F3 and
-F4 close the track once SDL3 is gone.
+Order: brick 9, then the FreeDOS benchmark test (R0), then F1 and F2 and the
+rest of the platform bricks; F3 and F4 close the track once SDL3 is gone.
 
 ## The retro track (bricks R1-R3)
 
-The game on a mid-90s PC: a Pentium 120 with 16-32 MB of memory and VGA or VESA graphics. It starts after
-brick 9 and the floppy bricks F1-F4. Where we start is in docs/PENTIUM.md: today a Pentium 120 would draw
+The game on a mid-90s PC: a Pentium 120 with 16-32 MB of memory and VGA or VESA graphics. The order is
+brick 9, then R0, then the floppy bricks F1-F4, then R1-R3. Where we start is in docs/PENTIUM.md: today a Pentium 120 would draw
 the dogfight at about 4 fps at 320x200, or 6 fps without clouds.
 
 The main test machine is FreeDOS running in DOSBox. Bochs, with its own free BIOS, gives a second check on
 speed because it runs at a fixed instruction rate. Emulators that need copies of real BIOS chips (86Box,
 PCem) are not used. FreeDOS, DOSBox and Bochs are test tools on the development machine only. They are
 never shipped.
+
+R0. **The FreeDOS benchmark test**, right after brick 9. tools/p5bench is built as a DOS program with the
+    DJGPP compiler and its CWSDPMI extender. Both are test tools only and never ship. It renders the
+    dogfight, deck and control room in FreeDOS under Bochs and DOSBox. It saves the pictures and times the
+    frames. The audit: the pictures match the Linux build's, and the Bochs times agree with tools/p5bench
+    to within the emulator's accuracy.
 
 R1. **Speed work for 320x200 in 256 colours.**
     - an 8-bit framebuffer with a palette and blend tables;
@@ -353,7 +360,7 @@ R2. **The DOS version.** A 32-bit protected-mode program with its own small DOS 
     stage checks this from a screenshot or a log line the game writes. The audit: the DOS build plays
     a match in DOSBox, and Bochs gives a speed in line with tools/p5bench.
 
-R3. **The Windows 95 version**, on hold until there is a Windows 95 disc to test with. Our own Win32 layer
+R3. **The Windows 95 version**, on hold until the owner finds a Windows 95 copy to test with. Our own Win32 layer
     (bricks 17-19), kept to what Windows 95 has: a GDI or DirectDraw window in 8-bit colour, waveOut
     sound and the WinMM joystick calls. It is built for a Pentium with no SSE. The audit: it starts and
     plays in a Windows 95 VM.
