@@ -29,3 +29,6 @@ vgcore.*
 # the checker's private term list (tools/check, stage 5): never committed
 /.check-private
 __pycache__/
+
+# the owner's own recordings stay on his computer (tools/check fails on one)
+*.m4a

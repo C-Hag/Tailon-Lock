@@ -85,7 +85,7 @@ SYSTEM_HEADERS = r'^(assert|ctype|errno|float|inttypes|limits|locale|math|setjmp
 #   homage TEXT        the one line of README.md that may name the original game
 # Without the file, stage 5 still runs every check below that needs no private term, and says so.
 PERSONAL_GENERIC = r'/home/[A-Za-z]|/Users/[A-Za-z]|@gmail\.com|@[A-Za-z0-9-]+\.lan\b'
-FORBIDDEN_FILES = r'(?i)\.(sid|sf2|prg|d64|t64|crt|ttf|otf|woff2?)$'
+FORBIDDEN_FILES = r'(?i)\.(sid|sf2|prg|d64|t64|crt|ttf|otf|woff2?|m4a)$'
 
 
 def private_terms():
@@ -481,9 +481,10 @@ def stage_cleanroom():
     for p, n, l in hits[:8]:
         say('      %s:%d %s' % (p, n, l.strip()[:120]))
     ok_all &= not hits
-    # files that must never be in the repository: SID tunes and their editor files, C64 images, fonts
+    # files that must never be in the repository: SID tunes and their editor files, C64 images, fonts, and the
+    # owner's own .m4a recordings (they stay on his computer)
     bad = [p for p in tracked() if re.search(FORBIDDEN_FILES, p)]
-    say('    forbidden file types (.sid .sf2 .prg .d64 .crt, fonts): %d' % len(bad))
+    say('    forbidden file types (.sid .sf2 .prg .d64 .crt, fonts, .m4a recordings): %d' % len(bad))
     for p in bad[:8]:
         say('      ' + p)
     ok_all &= not bad
