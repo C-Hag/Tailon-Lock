@@ -14,6 +14,11 @@ typedef enum { UI_NONE, UI_START, UI_RESUME, UI_TO_MENU, UI_QUIT, UI_CHANGED, UI
 void     ui_open(Screen s);
 UiAction ui_nav(Screen s, Settings *st, Nav n);
 void     ui_draw(Framebuffer *fb, Screen s, const Settings *st, const Game *g, float time);
+/* The mouse at (x, y) in framebuffer pixels: pointing selects what is under
+ * it (true if that changed the selection); a click (how 0, or -1 / +1 for the
+ * other button and the wheel) gives the step to run with ui_nav. */
+bool     ui_point(float x, float y);
+bool     ui_click(float x, float y, int how, Nav *n);
 /* The jet the hangar page shows, or -1 when the hangar is not open. */
 int      ui_hangar_jet(const Settings *st);
 void     ui_open_hangar(void);

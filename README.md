@@ -60,12 +60,21 @@ shows the g actually pulled.
 holds the wings level, the altitude and the heading; moving the stick
 takes the jet back.
 
-**Hangar** (in the menu): the chosen jet turns in the sky while you arm it
-the classic way: the cannon (3000 rounds) is fixed; up to 8 heat-seekers,
+**Hangar** (in the menu): the chosen jet turns on a dark backdrop with
+its name, role, five bars (speed, turn, climb, range, firepower) and top
+speed. Left and Right, or the arrows beside the name, change the jet; Enter
+takes it and goes to START MISSION. MORE FLIGHT INFO opens the jet's whole
+sheet: its story, all seven scores, performance, avionics and weapons. You
+arm the jet the classic way: the cannon (3000 rounds) is fixed; up to 8 heat-seekers,
 fewer with other stores; up to 6 radar-guided missiles, but none with
 air-to-ground; up to 2 air-to-ground missiles. Classic rules use the whole
 load; modern rules use the heat-seekers. SETTINGS holds the graphics,
 sound and other options.
+
+**Mouse**: the menus, pause and game over also work with the mouse.
+Pointing selects, a click presses a button or steps a value on, the right
+button or the wheel down steps it back, and the arrows around a value step
+it either way.
 
 **Classic** (CONTROLS in the menu, or `--classic`): classic 1987-style PC keys
 and rules.
@@ -364,6 +373,7 @@ Check gamepads and fullscreen on a real Windows PC before a release.
 - `--play defend` or `defend1`: the carrier defence with or without a commander.
 - `--play drone` or `drone2`: Beat the Drone!, the CPU or player 2 flying the drone. `--set net_drone=1|2` with `--host`: a network drone match (the guest or the host flies it).
 - `--pull`, `--vector`, `--cmd ACTIONS`: test hooks (full back stick; the drone's vector key held; commander key presses).
+- `--click F:X:Y` (or `R:F:X:Y` right button, `W:F:X:Y` wheel up): at frame F, point at window pixel (X, Y) and click; repeatable, for menu tests.
 - `--render-music KEY FILE.wav`: render one pass of a theme (horizon, pop,
   h2h, anthem, strike, cine, chip, overtone, neon, midnight, rocknroll, ghost) from the synth, to compare with
   the mp3 in `music/tracks/`.

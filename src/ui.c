@@ -23,17 +23,19 @@
 #define C_LAMP     0xB8C76F
 #define C_LAMP_INK 0x1b1640
 
-/* The menu has three pages: the match (with the buttons), the settings,
- * and the hangar where each seat picks its jet and arms it. */
+/* The menu has five pages: the match (with the buttons), the settings,
+ * the network, the hangar where each seat picks its jet and arms it, and
+ * the hangar's MORE FLIGHT INFO page with the jet's whole sheet. */
 enum {
   ROW_MODE, ROW_MATCH, ROW_SIZE, ROW_STARTAT, ROW_JET1, ROW_JET2, ROW_MAP, ROW_TOD, ROW_WX, ROW_DIFF, ROW_RULES, ROW_HANDLING,
   ROW_SCEN, ROW_LIVES, ROW_CRASH, ROW_HITS,
   ROW_GFORCE, ROW_RENDER, ROW_GFX, ROW_INVERT, ROW_SOUND, ROW_MUSIC, ROW_THEME, ROW_INTRO,
   ROW_HSEAT, ROW_HJET, ROW_HEAT, ROW_RADAR, ROW_AGM,
   ROW_NROLE, ROW_NMATCH, ROW_NVIA, ROW_NGAME, ROW_NADDR, ROW_NRELAY, ROW_NCODE, ROW_NNAME,
-  ROW_START, ROW_HANGAR, ROW_SETTINGS, ROW_NETWORK, ROW_WATCH, ROW_EDITOR, ROW_EXIT, ROW_BACK, ROW_DONE, ROW_NGO, ROW_NBACK, ROWS
+  ROW_START, ROW_HANGAR, ROW_SETTINGS, ROW_NETWORK, ROW_WATCH, ROW_EDITOR, ROW_EXIT, ROW_BACK, ROW_HINFO, ROW_HSTART, ROW_DONE, ROW_NGO, ROW_NBACK,
+  ROW_IJET, ROW_IBACK, ROWS
 };
-enum { PAGE_MAIN, PAGE_SETTINGS, PAGE_HANGAR, PAGE_NET };
+enum { PAGE_MAIN, PAGE_SETTINGS, PAGE_HANGAR, PAGE_NET, PAGE_INFO };
 static int sel = ROW_START;
 static int sel2;
 static int page, hseat, lan_sel;
@@ -54,7 +56,8 @@ static const char *const NET_KINDS[4] = { "VERSUS", "CO-OP", "DRONE: GUEST FLIES
 static int row_page(int r) {
   if ((r >= ROW_NROLE && r <= ROW_NNAME) || r == ROW_NGO || r == ROW_NBACK) return PAGE_NET;
   if (r >= ROW_GFORCE && r <= ROW_INTRO) return PAGE_SETTINGS;
-  if ((r >= ROW_HSEAT && r <= ROW_AGM) || r == ROW_DONE) return PAGE_HANGAR;
+  if ((r >= ROW_HSEAT && r <= ROW_AGM) || (r >= ROW_HINFO && r <= ROW_DONE)) return PAGE_HANGAR;
+  if (r == ROW_IJET || r == ROW_IBACK) return PAGE_INFO;
   if (r == ROW_BACK) return PAGE_SETTINGS;
   return PAGE_MAIN;
 }
@@ -144,7 +147,7 @@ void ui_text(Settings *st, const char *utf8) {
   }
 }
 
-int ui_hangar_jet(const Settings *st) { return page == PAGE_HANGAR ? st->jets[hseat] : -1; }
+int ui_hangar_jet(const Settings *st) { return page == PAGE_HANGAR || page == PAGE_INFO ? st->jets[hseat] : -1; }
 
 
 /* Changes one store of the seat's arming by d, if the result still fits. */
@@ -176,6 +179,10 @@ UiAction ui_nav(Screen s, Settings *st, Nav n) {
   if (n == NAV_BACK) {
     if (page == PAGE_MAIN) return UI_QUIT;
     if (page == PAGE_NET && net_active()) return UI_NET_CANCEL;
+    if (page == PAGE_INFO) {
+      go_page(PAGE_HANGAR, ROW_HINFO);
+      return UI_NONE;
+    }
     go_page(PAGE_MAIN, page == PAGE_HANGAR ? ROW_HANGAR : page == PAGE_NET ? ROW_NETWORK : ROW_SETTINGS);
     return UI_CHANGED;
   }
@@ -228,7 +235,13 @@ UiAction ui_nav(Screen s, Settings *st, Nav n) {
   case ROW_THEME:  if (change) st->track = (st->track + d + MUSIC_THEMES) % MUSIC_THEMES; return change ? UI_THEME : UI_NONE;
   case ROW_INTRO:  if (change) st->intro = !st->intro; break;
   case ROW_HSEAT:  if (change) hseat = 1 - hseat; return UI_NONE;
-  case ROW_HJET:   if (change) st->jets[hseat] = (st->jets[hseat] + d + NJETS) % NJETS; break;
+  case ROW_HJET:
+    if (n == NAV_OK) { /* the jet is picked: on to START MISSION */
+      sel = ROW_HSTART;
+      return UI_NONE;
+    }
+    /* fall through */
+  case ROW_IJET:   if (change) st->jets[hseat] = (st->jets[hseat] + d + NJETS) % NJETS; break;
   case ROW_HEAT:
   case ROW_RADAR:
   case ROW_AGM:
@@ -278,6 +291,13 @@ UiAction ui_nav(Screen s, Settings *st, Nav n) {
   case ROW_BACK:
     if (n == NAV_OK) go_page(PAGE_MAIN, ROW_SETTINGS);
     return UI_NONE;
+  case ROW_HINFO:
+    if (n == NAV_OK) go_page(PAGE_INFO, ROW_IJET);
+    return UI_NONE;
+  case ROW_HSTART: return n == NAV_OK ? UI_START : UI_NONE;
+  case ROW_IBACK:
+    if (n == NAV_OK) go_page(PAGE_HANGAR, ROW_HINFO);
+    return UI_NONE;
   case ROW_DONE:
     if (n == NAV_OK) go_page(PAGE_MAIN, ROW_START);
     return n == NAV_OK ? UI_CHANGED : UI_NONE;
@@ -287,6 +307,69 @@ UiAction ui_nav(Screen s, Settings *st, Nav n) {
 }
 
 typedef struct { Framebuffer *fb; int x, y, w, h, k; } Box;
+
+/* What the mouse can point at, gathered as each screen is drawn: a row of
+ * the menu (or HIT_SEL2 + n for the pause and game over buttons), as a
+ * button, a value to step, the arrows either side of a value, or a text
+ * field. Pointing selects; a click acts as Enter, or steps the value. */
+enum { HIT_SEL2 = 1000 };
+enum { HK_BUTTON, HK_VALUE, HK_PREV, HK_NEXT, HK_TEXT };
+typedef struct { int x, y, w, h, row, kind; } Hit;
+static Hit hits[64];
+static int nhits;
+
+static void hit(const Box *b, int x, int y, int w, int h, int row, int kind) {
+  if (nhits < (int)(sizeof hits / sizeof hits[0]))
+    hits[nhits++] = (Hit){ b->x + x * b->k, b->y + y * b->k, w * b->k, h * b->k, row, kind };
+}
+
+/* A value row from x to x + w around y, its value right-aligned at vx; when
+ * selected, the "<" and ">" around the value step it back and on. */
+static void value_hit(const Box *b, int row, int x, int y, int w, int vx, const char *shown, bool arrows, int scale) {
+  if (arrows) {
+    int tw = text_width(shown, scale * b->k) / b->k, aw = text_width("< ", scale * b->k) / b->k;
+    hit(b, vx - tw - 3, y - 6 * scale, aw + 4, 12 * scale, row, HK_PREV);
+    hit(b, vx - aw, y - 6 * scale, aw + 4, 12 * scale, row, HK_NEXT);
+  }
+  hit(b, x, y - 5 * scale, w, 10 * scale, row, HK_VALUE);
+}
+
+static const Hit *hit_at(float x, float y) {
+  for (int i = 0; i < nhits; i++)
+    if (x >= hits[i].x && x < hits[i].x + hits[i].w && y >= hits[i].y && y < hits[i].y + hits[i].h) return &hits[i];
+  return NULL;
+}
+
+static void point_to(int row) {
+  if (row >= HIT_SEL2) sel2 = row - HIT_SEL2;
+  else sel = row;
+}
+
+bool ui_point(float x, float y) {
+  const Hit *h = hit_at(x, y);
+  if (!h) return false;
+  bool moved = h->row >= HIT_SEL2 ? sel2 != h->row - HIT_SEL2 : sel != h->row;
+  point_to(h->row);
+  return moved;
+}
+
+bool ui_click(float x, float y, int how, Nav *n) {
+  const Hit *h = hit_at(x, y);
+  if (!h) return false;
+  point_to(h->row);
+  switch (h->kind) {
+  case HK_BUTTON: if (how != 0) return false; *n = NAV_OK; return true;
+  case HK_PREV:   *n = NAV_LEFT; return true;
+  case HK_NEXT:   *n = NAV_RIGHT; return true;
+  case HK_TEXT:   return false; /* selecting the field is enough: type */
+  default:
+    /* a click steps on (an arming row wraps back to none), the other button or the wheel down steps back */
+    if (how < 0) *n = NAV_LEFT;
+    else if (how > 0) *n = NAV_RIGHT;
+    else *n = h->row >= ROW_HEAT && h->row <= ROW_AGM ? NAV_OK : NAV_RIGHT;
+    return true;
+  }
+}
 
 /* A see-through glass panel over the scene, centred, scaled to fit. */
 static void glass(Framebuffer *fb, int x, int y, int w, int h, int k) {
@@ -314,7 +397,9 @@ static void title(const Box *b, const char *s, int x, int y, int scale, int alig
   btext(b, s, x, y, scale, 0xffffff, align);
 }
 
-static void button(const Box *b, const char *s, int x, int y, int w, bool on) {
+static void button(const Box *b, const char *s, int x, int y, int w, int row) {
+  bool on = row >= HIT_SEL2 ? sel2 == row - HIT_SEL2 : sel == row;
+  hit(b, x, y - 6, w, 12, row, HK_BUTTON);
   if (on) fb_rect(b->fb, b->x + x * b->k, b->y + (y - 6) * b->k, w * b->k, 12 * b->k, hexc(C_LAMP));
   else fb_rect_stroke(b->fb, (float)(b->x + x * b->k), (float)(b->y + (y - 6) * b->k), (float)(w * b->k), (float)(12 * b->k), hexc(C_EDGE), (float)b->k);
   btext(b, s, x + w / 2, y, 1, on ? C_LAMP_INK : C_INK, ALIGN_CENTER);
@@ -352,9 +437,11 @@ static void draw_jet_info(const Box *b, const JetType *j, int y) {
   }
 }
 
-/* The hangar, laid out like the hangar model preview: the jet turning on
- * a dark backdrop with its designation, role, story, stat bars, performance
- * and avionics around it, and the loadout on the right. */
+/* The hangar, in two pages over the jet turning on a dark backdrop, as on
+ * the hangar model preview. The first is for picking: the jet's name with
+ * arrows to change it, its role, a few bars that say what it is good at,
+ * the loadout and START MISSION. MORE FLIGHT INFO opens the second, the
+ * whole sheet: story, all seven scores, performance, avionics, weapons. */
 #define H_ACCENT 0xf0b429
 #define H_FG     0xdde4e8
 #define H_MUTED  0x8b9aa3
@@ -380,103 +467,107 @@ static int hwrap(const Box *b, const char *s, int x, int y, int w, int maxlines,
 }
 
 /* a label and its value, the value wrapping under itself */
-static int hrow(const Box *b, const char *label, const char *val, int x, int vx, int y, int w) {
+static int hrow(const Box *b, const char *label, const char *val, int x, int vx, int y, int w, int lines) {
   btext(b, label, x, y, 1, H_MUTED, ALIGN_LEFT);
-  return hwrap(b, val, vx, y, w, 2, H_FG);
+  return hwrap(b, val, vx, y, w, lines, H_FG);
+}
+
+static Box hangar_box(Framebuffer *fb) {
+  int k = 1;
+  while (640 * (k + 1) <= fb->w && 360 * (k + 1) <= fb->h) k++;
+  return (Box){ fb, (fb->w - 640 * k) / 2, (fb->h - 360 * k) / 2, 640 * k, 360 * k, k };
+}
+
+static void hheading(const Box *b, const char *s, int x, int y, int w) {
+  btext(b, s, x, y, 1, H_ACCENT, ALIGN_LEFT);
+  fb_rect(b->fb, b->x + x * b->k, b->y + (y + 5) * b->k, w * b->k, b->k, hexc(H_LINE));
+}
+
+/* Top left on both pages: where it comes from, then "< DES NAME >" big, the
+ * arrows (and Left/Right) changing the jet, then its role. */
+static void hname(const Box *b, const Settings *st, int row) {
+  const JetType *j = &JETS[st->jets[hseat]];
+  const JetSpec *sp = assets_jet_spec(st->jets[hseat]);
+  int k = b->k;
+  char v[200];
+  if (sp) {
+    snprintf(v, sizeof v, "%s  -  %s  -  %s", sp->bloc, sp->era, sp->inspired);
+    hwrap(b, v, 12, 12, 66, 1, H_MUTED);
+  }
+  bool on = sel == row;
+  int aw = text_width("<", 2 * k) / k, x = 12;
+  if (on) fb_rect_a(b->fb, b->x + 6 * k, b->y + 20 * k, 390 * k, 20 * k, hexc(0xffffff), 0.08f);
+  btext(b, "<", x, 30, 2, on ? H_ACCENT : H_MUTED, ALIGN_LEFT);
+  hit(b, x - 6, 20, aw + 12, 20, row, HK_PREV);
+  x += aw + 10;
+  int x1 = x;
+  btext(b, j->des, x, 30, 2, H_ACCENT, ALIGN_LEFT);
+  x += text_width(j->des, 2 * k) / k + 8;
+  btext(b, j->name, x, 30, 2, H_FG, ALIGN_LEFT);
+  x += text_width(j->name, 2 * k) / k + 10;
+  btext(b, ">", x, 30, 2, on ? H_ACCENT : H_MUTED, ALIGN_LEFT);
+  hit(b, x - 6, 20, aw + 12, 20, row, HK_NEXT);
+  hit(b, x1, 20, x - x1, 20, row, HK_VALUE);
+  snprintf(v, sizeof v, "%d / %d", st->jets[hseat] + 1, NJETS);
+  btext(b, v, x + aw + 12, 30, 1, H_MUTED, ALIGN_LEFT);
+  btext(b, sp ? sp->role : j->role, 12, 47, 1, H_FG, ALIGN_LEFT);
+}
+
+/* a score out of 10 as a bar, with its number */
+static int hbar(const Box *b, const char *label, float v, int x, int y) {
+  int k = b->k, bx = b->x + (x + 64) * k, by = b->y + (y - 3) * k, bw = 112 * k;
+  btext(b, label, x, y, 1, H_MUTED, ALIGN_LEFT);
+  fb_rect(b->fb, bx, by, bw, 5 * k, hexc(H_LINE));
+  fb_rect(b->fb, bx, by, (int)(bw * v / 10), 5 * k, hexc(H_ACCENT));
+  char t[8];
+  snprintf(t, sizeof t, "%.1f", v);
+  btext(b, t, x + 208, y, 1, H_FG, ALIGN_RIGHT);
+  return y + 11;
 }
 
 static void draw_hangar(Framebuffer *fb, const Settings *st) {
-  int k = 1;
-  while (640 * (k + 1) <= fb->w && 360 * (k + 1) <= fb->h) k++;
-  Box b = { fb, (fb->w - 640 * k) / 2, (fb->h - 360 * k) / 2, 640 * k, 360 * k, k };
+  Box b = hangar_box(fb);
+  int k = b.k;
   const JetType *j = &JETS[st->jets[hseat]];
   const JetSpec *sp = assets_jet_spec(st->jets[hseat]);
   char v[200];
+  hname(&b, st, ROW_HJET);
+  btext(&b, "LEFT / RIGHT OR THE ARROWS: ANOTHER JET.  ENTER: TAKE IT", 12, 346, 1, H_MUTED, ALIGN_LEFT);
 
-  /* top left: who it is */
+  /* right: what it is good at, in five bars and its top speed */
+  int x0 = 420, y = 16;
+  hheading(&b, "AT A GLANCE", x0, y, 208);
+  y += 14;
   if (sp) {
-    snprintf(v, sizeof v, "%s  -  %s  -  %s", sp->bloc, sp->era, sp->inspired);
-    hwrap(&b, v, 12, 12, 66, 1, H_MUTED);
-  }
-  btext(&b, j->des, 12, 30, 2, H_ACCENT, ALIGN_LEFT);
-  btext(&b, j->name, 12 + text_width(j->des, 2 * k) / k + 8, 30, 2, H_FG, ALIGN_LEFT);
-  btext(&b, sp ? sp->role : j->role, 12, 47, 1, H_FG, ALIGN_LEFT);
-
-  /* bottom left: performance and avionics */
-  if (sp) {
-    int y = 236;
-    btext(&b, "PERFORMANCE", 12, y, 1, H_ACCENT, ALIGN_LEFT);
-    fb_rect(fb, b.x + 12 * k, b.y + (y + 5) * k, 190 * k, k, hexc(H_LINE));
-    y += 12;
-    char a[64];
-    snprintf(a, sizeof a, "MACH %.2f", sp->mach_alt);
-    y = hrow(&b, "TOP SPEED 11 KM", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, sp->imperial ? "%.0f KT" : "%.0f KM/H", sp->imperial ? sp->vmax_sl / 1.852f : sp->vmax_sl);
-    y = hrow(&b, "SEA LEVEL", a, 12, 108, y, 16);
-    if (sp->supercruise > 0) snprintf(a, sizeof a, "MACH %.2f", sp->supercruise);
-    else snprintf(a, sizeof a, "NO");
-    y = hrow(&b, "SUPERCRUISE", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, "%.0f M/S", sp->climb);
-    y = hrow(&b, "CLIMB RATE", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, sp->imperial ? "%.0f FT" : "%.0f M", sp->imperial ? sp->ceiling * 3.281f : sp->ceiling);
-    y = hrow(&b, "CEILING", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, "%.1f DEG/S", sp->turn_inst);
-    y = hrow(&b, "TURN, BEST", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, "%.1f DEG/S", sp->turn_sus);
-    y = hrow(&b, "TURN, HELD", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, "%d DEG/S", sp->roll);
-    y = hrow(&b, "ROLL RATE", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, "+%.1f / %.0f G", sp->g_max, sp->g_min);
-    y = hrow(&b, "G LIMITS", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, "%.0f KM", sp->range);
-    y = hrow(&b, "FERRY RANGE", a, 12, 108, y, 16);
-    snprintf(a, sizeof a, "%.0f M", sp->takeoff);
-    hrow(&b, "TAKE-OFF ROLL", a, 12, 108, y, 16);
-
-    y = 236;
-    btext(&b, "AVIONICS", 214, y, 1, H_ACCENT, ALIGN_LEFT);
-    fb_rect(fb, b.x + 214 * k, b.y + (y + 5) * k, 190 * k, k, hexc(H_LINE));
-    y += 12;
-    y = hrow(&b, "RADAR", sp->radar, 214, 270, y, 22);
-    y = hrow(&b, "SENSORS", sp->sensors, 214, 270, y, 22);
-    y = hrow(&b, "RCS", sp->rcs, 214, 270, y, 22);
-    y = hrow(&b, "GUN", sp->gun, 214, 270, y, 22);
-    y = hrow(&b, "ENGINES", sp->engines, 214, 270, y, 22);
-    snprintf(a, sizeof a, "%d", sp->crew);
-    hrow(&b, "CREW", a, 214, 270, y, 22);
+    static const int pick[5] = { 0, 1, 2, 3, 5 };
+    static const char *const SN[5] = { "SPEED", "TURN", "CLIMB", "RANGE", "FIREPOWER" };
+    for (int i = 0; i < 5; i++) y = hbar(&b, SN[i], sp->stat[pick[i]], x0, y);
+    snprintf(v, sizeof v, "MACH %.2f", sp->mach_alt);
+    y = hrow(&b, "TOP SPEED", v, x0, x0 + 64, y + 2, 22, 1);
+  } else {
+    const float g[4] = { j->g_speed, j->g_turn, j->g_climb, j->g_range };
+    static const char *const SN[4] = { "SPEED", "TURN", "CLIMB", "RANGE" };
+    for (int i = 0; i < 4; i++) y = hbar(&b, SN[i], g[i], x0, y);
   }
 
-  /* right: the story, the stat bars, then the loadout */
-  int x0 = 420, y = 12;
-  if (sp) y = hwrap(&b, sp->blurb, x0, y, 34, 6, H_FG) + 4;
-  static const char *const SN[7] = { "SPEED", "TURN", "CLIMB", "RANGE", "FIELD", "FIREPOWER", "STEALTH" };
-  for (int i = 0; sp && i < 7; i++, y += 10) {
-    btext(&b, SN[i], x0, y, 1, H_MUTED, ALIGN_LEFT);
-    int bx = b.x + (x0 + 64) * k, by = b.y + (y - 3) * k, bw = 112 * k;
-    fb_rect(fb, bx, by, bw, 5 * k, hexc(H_LINE));
-    fb_rect(fb, bx, by, (int)(bw * sp->stat[i] / 10), 5 * k, hexc(H_ACCENT));
-    char t[8];
-    snprintf(t, sizeof t, "%.1f", sp->stat[i]);
-    btext(&b, t, 628, y, 1, H_FG, ALIGN_RIGHT);
-  }
-  y += 4;
-  btext(&b, "LOADOUT", x0, y, 1, H_ACCENT, ALIGN_LEFT);
-  fb_rect(fb, b.x + x0 * k, b.y + (y + 5) * k, 208 * k, k, hexc(H_LINE));
-  y += 12;
-  const int rows[] = { ROW_HSEAT, ROW_HJET, ROW_HEAT, ROW_RADAR, ROW_AGM };
-  const char *lab[] = { "SEAT", "JET", "HEAT-SEEKERS", "RADAR-GUIDED", "AIR-TO-GROUND" };
-  for (int i = 0; i < 5; i++) {
+  /* the loadout */
+  y += 10;
+  hheading(&b, "LOADOUT", x0, y, 208);
+  y += 14;
+  const int rows[] = { ROW_HSEAT, ROW_HEAT, ROW_RADAR, ROW_AGM };
+  const char *lab[] = { "SEAT", "HEAT-SEEKERS", "RADAR-GUIDED", "AIR-TO-GROUND" };
+  for (int i = 0; i < 4; i++) {
     int r = rows[i];
     if (!row_visible(st, r)) continue;
     bool on = sel == r;
     if (r == ROW_HSEAT) snprintf(v, sizeof v, "PLAYER %d", hseat + 1);
-    else if (r == ROW_HJET) snprintf(v, sizeof v, "%s %s", j->des, j->name);
     else snprintf(v, sizeof v, "%d", st->load[hseat][r - ROW_HEAT]);
     if (on) fb_rect_a(fb, b.x + (x0 - 4) * k, b.y + (y - 5) * k, 216 * k, 10 * k, hexc(0xffffff), 0.1f);
     btext(&b, lab[i], x0, y, 1, on ? H_FG : H_MUTED, ALIGN_LEFT);
     char vv[220];
     snprintf(vv, sizeof vv, on ? "< %s >" : "%s", v);
     btext(&b, vv, 628, y, 1, on ? H_ACCENT : H_FG, ALIGN_RIGHT);
+    value_hit(&b, r, x0 - 4, y, 216, 628, vv, on, 1);
     y += 11;
   }
   /* the load against the jet's stations (classic rules: 8, an air-to-ground missile takes 2) */
@@ -491,9 +582,69 @@ static void draw_hangar(Framebuffer *fb, const Settings *st) {
   y += 12;
   btext(&b, l[2] ? "NO RADAR MISSILES WITH AIR-TO-GROUND" : st->classic ? "CLASSIC: THE FULL LOAD" : "MODERN: HEAT-SEEKERS ONLY", x0, y, 1,
         H_MUTED, ALIGN_LEFT);
-  y += 11;
-  for (int i = 0; sp && i < sp->nweapons && y < 330; i++) y = hwrap(&b, sp->weapons[i], x0, y, 34, 1, H_FG);
-  button(&b, "DONE", 470, 344, 110, sel == ROW_DONE);
+
+  button(&b, "MORE FLIGHT INFO", 420, 304, 208, ROW_HINFO);
+  button(&b, "START MISSION", 420, 322, 136, ROW_HSTART);
+  button(&b, "DONE", 560, 322, 68, ROW_DONE);
+}
+
+/* MORE FLIGHT INFO: the whole sheet of the jet, as on the hangar model preview. */
+static void draw_info(Framebuffer *fb, const Settings *st) {
+  Box b = hangar_box(fb);
+  const JetSpec *sp = assets_jet_spec(st->jets[hseat]);
+  hname(&b, st, ROW_IJET);
+  button(&b, "BACK", 470, 344, 110, ROW_IBACK);
+  if (!sp) return;
+
+  /* bottom left: performance and avionics */
+  int y = 230;
+  hheading(&b, "PERFORMANCE", 12, y, 190);
+  y += 12;
+  char a[64];
+  snprintf(a, sizeof a, "MACH %.2f", sp->mach_alt);
+  y = hrow(&b, "TOP SPEED 11 KM", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, sp->imperial ? "%.0f KT" : "%.0f KM/H", sp->imperial ? sp->vmax_sl / 1.852f : sp->vmax_sl);
+  y = hrow(&b, "SEA LEVEL", a, 12, 108, y, 16, 1);
+  if (sp->supercruise > 0) snprintf(a, sizeof a, "MACH %.2f", sp->supercruise);
+  else snprintf(a, sizeof a, "NO");
+  y = hrow(&b, "SUPERCRUISE", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, "%.0f M/S", sp->climb);
+  y = hrow(&b, "CLIMB RATE", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, sp->imperial ? "%.0f FT" : "%.0f M", sp->imperial ? sp->ceiling * 3.281f : sp->ceiling);
+  y = hrow(&b, "CEILING", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, "%.1f DEG/S", sp->turn_inst);
+  y = hrow(&b, "TURN, BEST", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, "%.1f DEG/S", sp->turn_sus);
+  y = hrow(&b, "TURN, HELD", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, "%d DEG/S", sp->roll);
+  y = hrow(&b, "ROLL RATE", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, "+%.1f / %.0f G", sp->g_max, sp->g_min);
+  y = hrow(&b, "G LIMITS", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, "%.0f KM", sp->range);
+  y = hrow(&b, "FERRY RANGE", a, 12, 108, y, 16, 1);
+  snprintf(a, sizeof a, "%.0f M", sp->takeoff);
+  hrow(&b, "TAKE-OFF ROLL", a, 12, 108, y, 16, 1);
+
+  y = 230;
+  hheading(&b, "AVIONICS", 214, y, 194);
+  y += 12;
+  y = hrow(&b, "RADAR", sp->radar, 214, 270, y, 23, 2);
+  y = hrow(&b, "SENSORS", sp->sensors, 214, 270, y, 23, 3);
+  y = hrow(&b, "RCS", sp->rcs, 214, 270, y, 23, 2);
+  y = hrow(&b, "GUN", sp->gun, 214, 270, y, 23, 2);
+  y = hrow(&b, "ENGINES", sp->engines, 214, 270, y, 23, 2);
+  snprintf(a, sizeof a, "%d", sp->crew);
+  hrow(&b, "CREW", a, 214, 270, y, 23, 1);
+
+  /* right: the story, all seven scores, the weapons it can carry */
+  int x0 = 420;
+  y = hwrap(&b, sp->blurb, x0, 12, 34, 9, H_FG) + 6;
+  static const char *const SN[7] = { "SPEED", "TURN", "CLIMB", "RANGE", "FIELD", "FIREPOWER", "STEALTH" };
+  for (int i = 0; i < 7; i++) y = hbar(&b, SN[i], sp->stat[i], x0, y);
+  y += 6;
+  hheading(&b, "WEAPONS", x0, y, 208);
+  y += 12;
+  for (int i = 0; i < sp->nweapons && y < 330; i++) y = hwrap(&b, sp->weapons[i], x0, y, 34, 2, H_FG) + 2;
 }
 
 /* Word-wraps s into lines of up to w characters, centred at y. */
@@ -548,12 +699,14 @@ static void draw_net(Framebuffer *fb, const Settings *st, float time) {
     if (text && on && !net_active()) snprintf(vv, sizeof vv, "%s%s", v, cur ? "_" : " ");
     else snprintf(vv, sizeof vv, on && !text ? "< %s >" : "%s", v);
     btext(&b, vv, 262, y, 1, on ? C_LAMP : C_INK, ALIGN_RIGHT);
+    if (text) hit(&b, 30, y - 5, 240, 10, r, HK_TEXT);
+    else value_hit(&b, r, 30, y, 240, 262, vv, on && !net_active(), 1);
     y += 12;
   }
   y += 6;
   const char *go = net_active() ? "CANCEL" : st->net_join ? "JOIN" : "HOST GAME";
-  button(&b, go, 40, y, 108, sel == ROW_NGO);
-  button(&b, "BACK", 152, y, 108, sel == ROW_NBACK);
+  button(&b, go, 40, y, 108, ROW_NGO);
+  button(&b, "BACK", 152, y, 108, ROW_NBACK);
   y += 18;
   /* the relay code, big, while hosting through a relay */
   if (net_active() && net_is_host() && net_code()[0]) {
@@ -587,6 +740,10 @@ static void draw_net(Framebuffer *fb, const Settings *st, float time) {
 static void draw_menu(Framebuffer *fb, const Settings *st, float time) {
   if (page == PAGE_HANGAR) {
     draw_hangar(fb, st);
+    return;
+  }
+  if (page == PAGE_INFO) {
+    draw_info(fb, st);
     return;
   }
   if (page == PAGE_NET) {
@@ -665,23 +822,24 @@ static void draw_menu(Framebuffer *fb, const Settings *st, float time) {
     char v[sizeof row[0] + 4]; /* "< " row " >" */
     snprintf(v, sizeof v, on ? "< %s >" : "%s", row[r]);
     btext(&b, v, 262, y, 1, on ? C_LAMP : C_INK, ALIGN_RIGHT);
+    value_hit(&b, r, 30, y, 240, 262, v, on, 1);
     y += 12;
   }
   y += 6;
   if (page == PAGE_SETTINGS) {
-    button(&b, "BACK", 40, y, 220, sel == ROW_BACK);
+    button(&b, "BACK", 40, y, 220, ROW_BACK);
     return;
   }
-  button(&b, "START MISSION", 40, y, 220, sel == ROW_START);
+  button(&b, "START MISSION", 40, y, 220, ROW_START);
   y += 15;
-  button(&b, "HANGAR", 40, y, 72, sel == ROW_HANGAR);
-  button(&b, "SETTINGS", 114, y, 72, sel == ROW_SETTINGS);
-  button(&b, "NETWORK", 188, y, 72, sel == ROW_NETWORK);
+  button(&b, "HANGAR", 40, y, 72, ROW_HANGAR);
+  button(&b, "SETTINGS", 114, y, 72, ROW_SETTINGS);
+  button(&b, "NETWORK", 188, y, 72, ROW_NETWORK);
   y += 15;
   if (row_visible(st, ROW_WATCH)) {
-    button(&b, "WATCH INTRO", 40, y, 108, sel == ROW_WATCH);
-    button(&b, "EXIT", 152, y, 108, sel == ROW_EXIT);
-  } else button(&b, "EXIT", 40, y, 220, sel == ROW_EXIT);
+    button(&b, "WATCH INTRO", 40, y, 108, ROW_WATCH);
+    button(&b, "EXIT", 152, y, 108, ROW_EXIT);
+  } else button(&b, "EXIT", 40, y, 220, ROW_EXIT);
 
   if (sel == ROW_JET1 || sel == ROW_JET2) {
     draw_jet_info(&b, &JETS[st->jets[sel - ROW_JET1]], 316);
@@ -720,8 +878,8 @@ static void draw_menu(Framebuffer *fb, const Settings *st, float time) {
 static void draw_pause(Framebuffer *fb) {
   Box b = c64_box(fb, 160, 80);
   title(&b, "PAUSED", 80, 18, 3, ALIGN_CENTER);
-  button(&b, "RESUME", 20, 44, 120, sel2 == 0);
-  button(&b, "QUIT TO MENU", 20, 62, 120, sel2 == 1);
+  button(&b, "RESUME", 20, 44, 120, HIT_SEL2);
+  button(&b, "QUIT TO MENU", 20, 62, 120, HIT_SEL2 + 1);
 }
 
 static void draw_over(Framebuffer *fb, const Game *g) {
@@ -759,12 +917,13 @@ static void draw_over(Framebuffer *fb, const Game *g) {
     btext(&b, s, 245, y, 1, C_INK, ALIGN_RIGHT);
   }
   y += 20;
-  button(&b, net_playing() && !net_is_host() ? "HOST DECIDES" : "REMATCH", 20, y, 105, sel2 == 0);
-  button(&b, "MAIN MENU", 135, y, 105, sel2 == 1);
+  button(&b, net_playing() && !net_is_host() ? "HOST DECIDES" : "REMATCH", 20, y, 105, HIT_SEL2);
+  button(&b, "MAIN MENU", 135, y, 105, HIT_SEL2 + 1);
 }
 
 void ui_draw(Framebuffer *fb, Screen s, const Settings *st, const Game *g, float time) {
   fb_clip_reset(fb);
+  nhits = 0;
   if (s == SCREEN_MENU) draw_menu(fb, st, time);
   else if (s == SCREEN_PAUSE) draw_pause(fb);
   else draw_over(fb, g);

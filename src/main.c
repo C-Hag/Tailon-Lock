@@ -27,6 +27,8 @@
  *   --join ADDR       join a network match by address, --join RELAY/ through a relay;
  *                     --code NNNNNN gives the host's game code
  *   --seconds N       quit after N seconds of real time (network tests)
+ *   --click F:X:Y     at frame F, move the mouse to window (X, Y) and click (menu tests;
+ *                     R:F:X:Y the right button, W:F:X:Y the wheel up); repeatable
  */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -532,6 +534,23 @@ static void on_key(App *app, const SDL_KeyboardEvent *k) {
   }
 }
 
+/* The mouse on the menu, pause and game over: pointing selects, a click
+ * acts, the right button and the wheel step a value back and on. */
+static void on_mouse(App *app, const SDL_Event *ev) {
+  Screen s;
+  if (!screen_of(app, &s)) return;
+  int ww, wh;
+  SDL_GetWindowSize(app->window, &ww, &wh);
+  float kx = (float)app->fb.w / (ww > 0 ? ww : 1), ky = (float)app->fb.h / (wh > 0 ? wh : 1);
+  Nav n;
+  if (ev->type == SDL_EVENT_MOUSE_MOTION) ui_point(ev->motion.x * kx, ev->motion.y * ky);
+  else if (ev->type == SDL_EVENT_MOUSE_WHEEL) {
+    if (ev->wheel.y != 0 && ui_click(ev->wheel.mouse_x * kx, ev->wheel.mouse_y * ky, ev->wheel.y > 0 ? 1 : -1, &n)) ui_action(app, s, n);
+  } else if (ev->button.button == SDL_BUTTON_LEFT || ev->button.button == SDL_BUTTON_RIGHT) {
+    if (ui_click(ev->button.x * kx, ev->button.y * ky, ev->button.button == SDL_BUTTON_LEFT ? 0 : -1, &n)) ui_action(app, s, n);
+  }
+}
+
 static void on_pad_button(App *app, const SDL_GamepadButtonEvent *b) {
   if (app->state == ST_INTRO) {
     if (intro_time() > 0.5f) intro_to_menu(app);
@@ -734,8 +753,8 @@ int main(int argc, char **argv) {
   long max_frames = -1;
   const char *play = NULL, *shot = NULL;
   bool chase = false, editor = false, classic = false;
-  const char *sets[16];
-  int nsets = 0;
+  const char *sets[16], *clicks[16];
+  int nsets = 0, nclicks = 0;
   const char *map = NULL, *jet = NULL, *tod = NULL, *wx = NULL, *cmd = NULL, *renderer = NULL;
   int gfx = -1;
   const char *host = NULL, *join = NULL, *code = NULL;
@@ -775,6 +794,8 @@ int main(int argc, char **argv) {
       gfx = !strcmp(q, "low") ? 0 : !strcmp(q, "medium") ? 1 : !strcmp(q, "ultra") ? 3 : 2;
     } else if (!strcmp(argv[i], "--music-editor")) {
       editor = true;
+    } else if (!strcmp(argv[i], "--click") && i + 1 < argc && nclicks < 16) {
+      clicks[nclicks++] = argv[++i];
     } else if (!strcmp(argv[i], "--set") && i + 1 < argc && nsets < 16) {
       sets[nsets++] = argv[++i];
     } else if (!strcmp(argv[i], "--host")) {
@@ -933,6 +954,33 @@ int main(int argc, char **argv) {
 
   while (app.running) {
     SDL_Event ev;
+    for (int c = 0; c < nclicks; c++) { /* test hook: mouse clicks at given frames */
+      const char *a = clicks[c];
+      int how = *a == 'R' ? -1 : *a == 'W' ? 1 : 0;
+      if (how) a += 2;
+      long f;
+      float x, y;
+      if (sscanf(a, "%ld:%f:%f", &f, &x, &y) != 3 || f != frames) continue;
+      SDL_Event e = { 0 };
+      e.type = SDL_EVENT_MOUSE_MOTION;
+      e.motion.x = x;
+      e.motion.y = y;
+      SDL_PushEvent(&e);
+      SDL_zero(e);
+      if (how == 1) {
+        e.type = SDL_EVENT_MOUSE_WHEEL;
+        e.wheel.y = 1;
+        e.wheel.mouse_x = x;
+        e.wheel.mouse_y = y;
+      } else {
+        e.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+        e.button.button = how ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
+        e.button.down = true;
+        e.button.x = x;
+        e.button.y = y;
+      }
+      SDL_PushEvent(&e);
+    }
     while (SDL_PollEvent(&ev)) {
       if (app.state == ST_EDITOR && ev.type != SDL_EVENT_QUIT && ev.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
         int ww, wh;
@@ -961,7 +1009,15 @@ int main(int argc, char **argv) {
         on_pad_button(&app, &ev.gbutton);
         break;
       case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (app.state == ST_INTRO && intro_time() > 0.5f) intro_to_menu(&app);
+        if (app.state == ST_INTRO) {
+          if (intro_time() > 0.5f) intro_to_menu(&app);
+          break;
+        }
+        on_mouse(&app, &ev);
+        break;
+      case SDL_EVENT_MOUSE_MOTION:
+      case SDL_EVENT_MOUSE_WHEEL:
+        on_mouse(&app, &ev);
         break;
       case SDL_EVENT_WINDOW_FOCUS_LOST:
         if (!app.fixed) pause_game(&app); /* --frames runs are tests: a headless window has no focus */
