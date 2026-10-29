@@ -7,7 +7,7 @@ R=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=${1:-$R/build/p5bench}
 mkdir -p "$OUT"
 CORE="world mesh game sim ai jets map defend json glb crypto"
-GAME="assets raster render3d hud cockpit command hangar intro cic paint sfx synth"
+GAME="assets raster render3d hud cockpit command hangar intro cic paint sfx synth figure room"
 SRC="$R/tools/p5bench/p5bench.c $R/tools/p5bench/stubs.c $R/src/platform/plat_common.c $R/src/platform/plat_posix.c"
 for f in $CORE; do SRC="$SRC $R/src/core/$f.c"; done
 for f in $GAME; do SRC="$SRC $R/src/$f.c"; done

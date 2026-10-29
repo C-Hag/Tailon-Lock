@@ -32,7 +32,7 @@ in `build/check/<date>-<commit>.txt`).
 | 21 | our own crypto: X25519, ChaCha20-Poly1305, BLAKE2b, Elligator 2 | done | 8233598 |
 | 22 | online play on our own crypto (network version 4); Monocypher deleted | done | (this commit) |
 | 9 | the `plat.h` interface (touch, callback-driven loop); SDL3 only in `plat_sdl.c` and the GPU renderer | done | (this commit) |
-| R0 | the FreeDOS benchmark test: tools/p5bench built with DJGPP (test only), run in Bochs and DOSBox | next | |
+| R0 | the FreeDOS benchmark test: tools/p5bench built with DJGPP (test only), run in FreeDOS under Bochs | done; DOSBox did not boot headless (docs/PENTIUM.md) | (this commit) |
 | 25-29 | touch controls, scaling, Android | planned | |
 | 10-20 | our own desktop platform layer; SDL3 deleted | planned | |
 | 23-24 | the last downloaded library gone; final audit | planned | |

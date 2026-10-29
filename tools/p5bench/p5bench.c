@@ -4,7 +4,9 @@
  * valgrind's callgrind, to estimate what an old Pentium would make of it.
  * Test tool only, never shipped. Original code for this project.
  *
- *   p5bench scene dogfight|deck|cic W H full|retro FRAMES
+ *   p5bench scene dogfight|deck|cic W H full|retro FRAMES   (also prints the time per frame)
+ *   p5bench suite DF DK CI   (every scene at 320x200, 640x480 and 800x600, DF, DK and CI frames each, the
+ *                             assets loaded once; the pictures saved as DF320.BMP and so on: the FreeDOS test)
  *   p5bench sfx SECONDS
  *   p5bench synth h2h|sid3 SECONDS
  *
@@ -14,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "assets.h"
 #include "core/game.h"
@@ -29,6 +32,18 @@
 void p5_pull_audio(int frames); /* stubs.c: n frames of the sound-effect mix */
 
 static Framebuffer fb;
+
+/* the clock, for the frame times: DJGPP's uclock() in DOS (the timer chip, a microsecond), elsewhere the
+ * monotonic clock */
+static double now_s(void) {
+#ifdef __DJGPP__
+  return (double)uclock() / UCLOCKS_PER_SEC;
+#else
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec + ts.tv_nsec * 1e-9;
+#endif
+}
 static Game game;
 
 __attribute__((noinline)) void bench_sim(Game *g) { sim_update(g, 1.0f / 60); }
@@ -45,8 +60,11 @@ static void no_clouds(const Map *map, int tod) {
   world_set_map(map, tod, WX_CLEAR);
 }
 
+static char shot_name[64]; /* the suite's picture for this scene, or empty for P5_SHOT */
+
 static int scene(const char *name, int w, int h, bool retro, int frames) {
   if (!fb_resize(&fb, w, h)) return 1;
+  double t0 = 0;
   if (!strcmp(name, "dogfight")) {
     int m = assets_map_find("twin-isles");
     const Map *map = assets_map(m);
@@ -60,6 +78,7 @@ static int scene(const char *name, int w, int h, bool retro, int frames) {
       p->ai.gt = -1;
     }
     for (int i = 0; i < 600; i++) sim_update(&game, 1.0f / 60);
+    t0 = now_s();
     for (int i = 0; i < frames; i++) {
       bench_sim(&game);
       game.nsounds = 0;
@@ -67,16 +86,20 @@ static int scene(const char *name, int w, int h, bool retro, int frames) {
     }
   } else {
     float at = !strcmp(name, "deck") ? 9.6f : 7.5f; /* the deck as Viper 1 runs up; the control room's wide frame */
-    if (!intro_init()) return 1;
+    static bool intro_ready; /* the film is loaded once, for the suite */
+    if (!intro_ready && !intro_init()) return 1;
+    intro_ready = true;
     intro_start(false);
     if (retro) no_clouds(assets_map(assets_map_find("twin-isles")), TOD_DAWN);
     for (int i = 0; i < (int)(at * 60); i++) intro_update(1.0f / 60);
+    t0 = now_s();
     for (int i = 0; i < frames; i++) {
       bench_intro_update();
       bench_intro_render();
     }
   }
-  const char *shot = getenv("P5_SHOT"); /* the last frame as a 24-bit BMP, to see what was measured */
+  double ms = (now_s() - t0) * 1000 / (frames > 0 ? frames : 1);
+  const char *shot = shot_name[0] ? shot_name : getenv("P5_SHOT"); /* the last frame as a 24-bit BMP, to see what was measured */
   if (shot) {
     FILE *f = fopen(shot, "wb");
     if (f) {
@@ -102,7 +125,7 @@ static int scene(const char *name, int w, int h, bool retro, int frames) {
   }
   uint64_t sum = 0; /* touch the picture so nothing is optimised away */
   for (int i = 0; i < w * h; i += 97) sum += fb.px[i];
-  printf("%s %dx%d %s: %d frames, checksum %llu\n", name, w, h, retro ? "retro" : "full", frames, (unsigned long long)sum);
+  printf("%s %dx%d %s: %d frames, checksum %llu, %.1f ms per frame\n", name, w, h, retro ? "retro" : "full", frames, (unsigned long long)sum, ms);
   return 0;
 }
 
@@ -171,6 +194,9 @@ static int synth(const char *key, float seconds) {
 }
 
 int main(int argc, char **argv) {
+#ifdef __DJGPP__
+  freopen("ERR.TXT", "w", stderr); /* DOS's shell cannot send a program's errors to a file */
+#endif
   world_init();
   if (!assets_init()) {
     fprintf(stderr, "no assets (run it from the repository)\n");
@@ -178,6 +204,20 @@ int main(int argc, char **argv) {
   }
   if (argc >= 7 && !strcmp(argv[1], "scene"))
     return scene(argv[2], atoi(argv[3]), atoi(argv[4]), !strcmp(argv[5], "retro"), atoi(argv[6]));
+  if (argc >= 5 && !strcmp(argv[1], "suite")) {
+    static const char *const NAME[3] = { "dogfight", "deck", "cic" }, *const TAG[3] = { "DF", "DK", "CI" };
+    static const int RES[3][2] = { { 320, 200 }, { 640, 480 }, { 800, 600 } };
+    for (int s = 0; s < 3; s++)
+      for (int r = 0; r < 3; r++) {
+        snprintf(shot_name, sizeof shot_name, "%s%d.BMP", TAG[s], RES[r][0]);
+        if (scene(NAME[s], RES[r][0], RES[r][1], false, atoi(argv[2 + s]))) {
+          printf("%s %dx%d: could not run\n", NAME[s], RES[r][0], RES[r][1]);
+          return 1;
+        }
+        fflush(stdout);
+      }
+    return 0;
+  }
   if (argc >= 3 && !strcmp(argv[1], "sfx")) return sfx((float)atof(argv[2]));
   if (argc >= 4 && !strcmp(argv[1], "synth")) return synth(argv[2], (float)atof(argv[3]));
   fprintf(stderr, "usage: p5bench scene dogfight|deck|cic W H full|retro FRAMES | sfx SECONDS | synth h2h|sid3 SECONDS\n");
