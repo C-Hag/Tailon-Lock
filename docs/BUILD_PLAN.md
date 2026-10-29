@@ -314,6 +314,11 @@ clean-room platform files written from Apple's and Google's public docs.
     - **Layout:** a left-handed mirror mode, and layouts that adapt to phones
       and tablets. A connected gamepad hides the touch controls.
 
+    - **The instrument panel stays out of the thumbs' way:** in touch mode the
+      full cockpit panel is replaced by a slim see-through strip at the lower
+      left (speed, altitude, weapons, fuel), as the web version's mobile mode
+      does. The touch zones never sit under a gauge, and the full panel comes
+      back when a gamepad or the keyboard is used.
     - **Home screen:** a "Controls: Touch / Keyboard & mouse / Gamepad /
       HOTAS" choice on the main menu, also in the settings, so the touch mode
       can be picked on touchscreen PCs too. It is picked automatically on
