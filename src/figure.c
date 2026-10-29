@@ -398,6 +398,12 @@ static void tone(const HeadCtx *h, double u, double x, double z, double c[3]) {
     double k = (fl + cf) * 0.12 * fp->age;
     for (int i = 0; i < 3; i++) c[i] *= 1 - k;
   }
+  /* the shade the face casts on itself: the eye sockets, under the nose, under the lower lip and under the chin */
+  double ao = (z > 0.2 ? 0.2 * gauss(sq(u - L->eyeU) + sq(fabs(x) - L->eyeX), 0.07) + 0.16 * gauss(sq(u - L->noseBase + 0.015) * 4 + x * x, 0.07) +
+                           0.1 * gauss(sq(u - L->mouthU + 0.05) * 4 + x * x, 0.06)
+                     : 0) +
+              0.2 * gauss(u * u, 0.035);
+  for (int i = 0; i < 3; i++) c[i] *= 1 - ao;
 }
 
 static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
@@ -826,6 +832,24 @@ static void shade(V3 nn, const double base[3], V3 ld, V3 view, const FigLight *l
   }
 }
 
+/* skin: its own light, so a coloured screen tints a face but does not paint it; wrapped and soft, warm where the
+ * light turns to shadow (light scattered under the skin), a faint sheen, a softer rim (see figure.js) */
+static void skin_shade(V3 nn, const double base[3], V3 ld, V3 view, const FigLight *light, double out[3]) {
+  static const double SSS[3] = { 0.22, 0.06, 0.03 };
+  double kl = dot(nn, ld), w = (kl + 0.35) / 1.35, vv = dot(nn, view);
+  if (w < 0) w = 0;
+  if (vv < 0) vv = 0;
+  double sss = w * (1 - w) * 4, kL = ((double)light->key[0] + light->key[1] + light->key[2]) / 3;
+  V3 r = sub(mul(nn, 2 * kl), ld);
+  double rv = dot(r, view), sp = kl > 0 ? pow(rv > 0 ? rv : 0, 16) * 0.1 : 0, rim = pow(1 - vv, 3);
+  for (int q = 0; q < 3; q++) {
+    double key = kL + (light->key[q] - kL) * 0.4;
+    double v = base[q] * (0.28 + 0.8 * w * key / 255) + base[q] * SSS[q] * sss * key / 255 + 255 * sp * key / 255 + 255 * rim * 0.14 * light->rim[q] / 255;
+    out[q] = v > 255 ? 255 : v;
+  }
+}
+static bool skin_role(int r) { return r == FR_SKIN || r == FR_SKIN_SHADE || r == FR_LIP || r == FR_LID; }
+
 #define FIG_MAX_TRIS 8192
 void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *light, FigFill fill, void *ud) {
   FigTri *tris = malloc(sizeof *tris * (size_t)FIG_MAX_TRIS * (size_t)(n > 0 ? n : 1));
@@ -882,7 +906,7 @@ void fig_draw_meshes(const FigMesh *m, int n, const FigCam *cam, const FigLight 
           V3 vn = v3(t->ns[q][0], t->ns[q][1], t->ns[q][2]);
           if (dot(vn, view) < 0) vn = mul(vn, -1);
           double base[3] = { t->cs[q][0], t->cs[q][1], t->cs[q][2] };
-          shade(vn, base, ld, view, light, cs[q]);
+          (t->role == FR_SKIN ? skin_shade : shade)(vn, base, ld, view, light, cs[q]);
         }
         for (int q = 0; q < 3; q++) s->col[q] = (float)((cs[0][q] + cs[1][q] + cs[2][q]) / 3);
         s->grad = gradient((const float(*)[2])s->pts, (const double(*)[3])cs, &s->g);
@@ -891,7 +915,7 @@ void fig_draw_meshes(const FigMesh *m, int n, const FigCam *cam, const FigLight 
         if (t->shade == FS_OWN) bf[0] = t->col[0], bf[1] = t->col[1], bf[2] = t->col[2];
         else if (m[k].spec) fig_colour(m[k].spec, t->role, bf);
         double base[3] = { bf[0], bf[1], bf[2] }, out[3];
-        shade(nn, base, ld, view, light, out);
+        (skin_role(t->role) ? skin_shade : shade)(nn, base, ld, view, light, out);
         for (int q = 0; q < 3; q++) s->col[q] = (float)out[q];
       }
       na++;

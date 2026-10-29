@@ -3651,7 +3651,10 @@ const Figure = (() => {
         const k = (fl + cf) * 0.12 * fp.age;
         c = c.map(v => v * (1 - k));
       }
-      return c;
+      // the shade the face casts on itself: the eye sockets, under the nose, under the lower lip and under the chin
+      const ao = (z > 0.2 ? 0.2 * gauss((u - L.eyeU) ** 2 + (Math.abs(x) - L.eyeX) ** 2, 0.07) + 0.16 * gauss((u - L.noseBase + 0.015) ** 2 * 4 + x * x, 0.07)
+        + 0.1 * gauss((u - L.mouthU + 0.05) ** 2 * 4 + x * x, 0.06) : 0) + 0.2 * gauss(u * u, 0.035);
+      return c.map(v => v * (1 - ao));
     };
     // how much hair covers a point (0-1), soft at the hairline, the temples and the nape
     const smooth01 = (e0, e1, v) => { const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
@@ -3842,6 +3845,7 @@ const Figure = (() => {
   // ---- drawing: project, sort far to near, shade each facet (key light, fill, rim) ----
   // cam: { pos, f (forward), u (up), r (right), F (focal length in pixels), cx, cy }; light: direction toward the key
   // light and its colour. fill(points, colour) draws one triangle.
+  const SKIN_ROLES = new Set(['skin', 'skinShade', 'lip', 'lid']), SSS = [0.22, 0.06, 0.03];
   function draw(figs, cam, light, fill) {
     const all = [];
     for (const fig of figs) {
@@ -3856,6 +3860,14 @@ const Figure = (() => {
         }
         const pts = t.v.map(v => { const q = sub(v, cam.pos), zz = Math.max(0.05, dot(q, cam.f)); return [cam.cx + dot(q, cam.r) / zz * cam.F, cam.cy - dot(q, cam.u) / zz * cam.F]; });
         const view = norm(mul(d, -1));
+        // skin: its own light, so a coloured screen tints a face but does not paint it; wrapped and soft, warm where
+        // the light turns to shadow (light scattered under the skin), a faint sheen, a softer rim
+        const skinShade = (nn, base) => {
+          const kl = dot(nn, light.dir), w = Math.max(0, (kl + 0.35) / 1.35), sss = w * (1 - w) * 4;
+          const kL = (light.key[0] + light.key[1] + light.key[2]) / 3, key = light.key.map(v => kL + (v - kL) * 0.4);
+          const r = sub(mul(nn, 2 * kl), light.dir), sp = kl > 0 ? Math.pow(Math.max(0, dot(r, view)), 16) * 0.1 : 0, rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
+          return base.map((b, i) => Math.min(255, b * (0.28 + 0.8 * w * key[i] / 255) + b * SSS[i] * sss * key[i] / 255 + 255 * sp * key[i] / 255 + 255 * rim * 0.14 * light.rim[i] / 255));
+        };
         const shade = (nn, base) => {
           const k = Math.max(0, dot(nn, light.dir)), rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
           return base.map((b, i) => Math.min(255, b * (0.24 + 0.85 * k * light.key[i] / 255) + 255 * rim * 0.2 * light.rim[i] / 255));
@@ -3865,9 +3877,9 @@ const Figure = (() => {
           // a smooth part (the face): each corner lit by its own normal; the colour across the facet is then an affine
           // field, drawn as a linear gradient along its steepest direction (the same as shading the corners and
           // blending between them)
-          const cs = t.ns.map((nn, q) => shade(dot(nn, view) < 0 ? mul(nn, -1) : nn, t.cs[q]));
+          const sh = t.role === 'skin' ? skinShade : shade, cs = t.ns.map((nn, q) => sh(dot(nn, view) < 0 ? mul(nn, -1) : nn, t.cs[q]));
           all.push({ z, pts, col: cs.reduce((a, c) => a.map((v, i) => v + c[i] / 3), [0, 0, 0]), grad: gradient(pts, cs) });
-        } else all.push({ z, pts, col: shade(n, t.col || colour(fig, t.role)) });
+        } else all.push({ z, pts, col: (SKIN_ROLES.has(t.role) ? skinShade : shade)(n, t.col || colour(fig, t.role)) });
       }
     }
     all.sort((a, b) => b.z - a.z);
