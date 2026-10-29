@@ -16,6 +16,29 @@ uinput docs, the ALSA docs, and Microsoft's, Apple's and Google's docs. We use
 our own naming. Every new file starts with a header saying it is original code
 written from the spec, and naming that spec.
 
+## Status
+
+A brick is done when its gate passed on its own commit (the checker report is
+in `build/check/<date>-<commit>.txt`).
+
+| Brick | What | State | Commit |
+|---|---|---|---|
+| 0 | `tools/check`, the local code checker (10 stages, about 75 s) | done | in the root commit |
+| 1 | JSON tokenizer (RFC 8259, RFC 3629): 200 malformed inputs, 8 x 10 min of fuzzing | done | in the root commit |
+| 2 | JSON tree in one arena, typed getters, stress and leak tests | done | in the root commit |
+| 3 | our JSON reader and cJSON side by side on every asset: 43 of 43 identical | done | 5f67a14 |
+| 4 | the game reads JSON with our reader, our JSON writer; cJSON deleted | done | 3ab1a5b |
+| 5-8 | our own GLB loader (glTF 2.0) | next | |
+| 21-22 | our own crypto (X25519, ChaCha20-Poly1305, BLAKE2b) | planned | |
+| 9 | the `plat.h` interface (touch, callback-driven loop) | planned | |
+| 25-29 | touch controls, scaling, Android | planned | |
+| 10-20 | our own desktop platform layer; SDL3 deleted | planned | |
+| 23-24 | the last downloaded library gone; final audit | planned | |
+| 30-32 | iOS | later | |
+
+Outside code still in the build: SDL3 (until brick 20) and Monocypher (until
+brick 22), both downloaded at build time with checksums (docs/THIRD_PARTY.md).
+
 ## The process: brick by brick
 
 Each brick builds on the last one. A brick is audited and confirmed before the
