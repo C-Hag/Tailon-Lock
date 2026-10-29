@@ -29,8 +29,8 @@ in `build/check/<date>-<commit>.txt`).
 | 3 | our JSON reader and cJSON side by side on every asset: 43 of 43 identical | done | 5f67a14 |
 | 4 | the game reads JSON with our reader, our JSON writer; cJSON deleted | done | 3ab1a5b |
 | 5-8 | our own GLB loader (glTF 2.0); the game loads its meshes from .glb | done | 479daf4 ... 2f44c99 |
-| 21 | our own crypto: X25519, ChaCha20-Poly1305, BLAKE2b, Elligator 2 | done | (this commit) |
-| 22 | online play on our own crypto; Monocypher deleted | next | |
+| 21 | our own crypto: X25519, ChaCha20-Poly1305, BLAKE2b, Elligator 2 | done | 8233598 |
+| 22 | online play on our own crypto (network version 4); Monocypher deleted | done | (this commit) |
 | 9 | the `plat.h` interface (touch, callback-driven loop) | planned | |
 | 25-29 | touch controls, scaling, Android | planned | |
 | 10-20 | our own desktop platform layer; SDL3 deleted | planned | |
@@ -39,8 +39,8 @@ in `build/check/<date>-<commit>.txt`).
 | W1-W2 | mobile mode in the browser game (web v28) | done in the web build; repo copy to refresh | |
 | W3 | the browser game published as a web page | planned, after the push and Pages | |
 
-Outside code still in the build: SDL3 (until brick 20) and Monocypher (until
-brick 22), both downloaded at build time with checksums (docs/THIRD_PARTY.md).
+Outside code still in the build: SDL3 (until brick 20), downloaded at build
+time with a checksum (docs/THIRD_PARTY.md).
 
 ## The process: brick by brick
 

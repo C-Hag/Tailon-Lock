@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "core/sim.h"
-#include "monocypher.h"
+#include "core/crypto.h"
 #include "platform/plat.h"
 
 #ifdef _WIN32
@@ -96,10 +96,10 @@ static void addr_text(const Addr *a, char *buf, size_t n) {
  * (CPace on X25519: both start from a curve point made from the code, so
  * only someone who knows the code ends up with the same key, and someone
  * listening learns nothing they could test codes against offline). From
- * then on every match packet is encrypted and signed (XChaCha20-Poly1305,
- * Monocypher) and numbered, so it cannot be read, changed or replayed. A
+ * then on every match packet is encrypted and signed (ChaCha20-Poly1305,
+ * our own, core/crypto.c) and numbered, so it cannot be read, changed or replayed. A
  * wrong guess costs a full round trip, and the host gives up after 10. */
-#define VERSION 3 /* relay/relay.c checks it too: change both together */
+#define VERSION 4 /* relay/relay.c checks it too: change both together (4: our own crypto) */
 enum {
   T_BEACON = 1, T_HELLO, T_WELCOME, T_STATE, T_BYE, T_RHOST, T_RCODE, T_RJOIN, T_RFAIL, T_PING,
   T_CHALLENGE, T_JOIN, T_REJECT
@@ -229,28 +229,28 @@ static const Addr *peer_addr(void) { return N.via_relay ? &N.relay : N.have_peer
 /* The starting point both sides make from the code and the guest's nonce. */
 static void code_point(uint8_t g[32], const char *pin, const uint8_t nonce[16]) {
   uint8_t msg[11 + 6 + 16], h[32];
-  memcpy(msg, "A4C-CPACE-1", 11);
+  memcpy(msg, "A4C-CPACE-2", 11); /* 2: our own crypto (core/crypto.c) */
   memcpy(msg + 11, pin, 6);
   memcpy(msg + 17, nonce, 16);
-  crypto_blake2b(h, 32, msg, sizeof msg);
-  crypto_elligator_map(g, h);
-  crypto_wipe(h, sizeof h);
+  cr_blake2b(h, 32, NULL, 0, msg, sizeof msg);
+  cr_elligator2(g, h);
+  cr_wipe(h, sizeof h);
 }
 
 /* The two keys from the shared point and everything both sides sent. */
 static bool derive(uint8_t k_hg[32], uint8_t k_gh[32], uint8_t shared[32], const uint8_t nonce[16], const uint8_t yg[32],
                    const uint8_t yh[32]) {
   static const uint8_t zero[32];
-  if (crypto_verify32(shared, zero) == 0) return false; /* a broken point from the other side */
+  if (cr_same32(shared, zero)) return false; /* a broken point from the other side */
   uint8_t t[16 + 32 + 32], k[64];
   memcpy(t, nonce, 16);
   memcpy(t + 16, yg, 32);
   memcpy(t + 48, yh, 32);
-  crypto_blake2b_keyed(k, 64, shared, 32, t, sizeof t);
+  cr_blake2b(k, 64, shared, 32, t, sizeof t);
   memcpy(k_hg, k, 32);
   memcpy(k_gh, k + 32, 32);
-  crypto_wipe(k, sizeof k);
-  crypto_wipe(shared, 32);
+  cr_wipe(k, sizeof k);
+  cr_wipe(shared, 32);
   return true;
 }
 
@@ -262,12 +262,12 @@ static bool random_bytes(void *b, size_t n) {
 
 /* Encrypts p (header and body) under key with packet number ctr and sends it. */
 static void seal_to(const Addr *a, const Buf *p, const uint8_t key[32], uint64_t ctr) {
-  uint8_t out[sizeof p->b + SEAL_EXTRA], nonce[24] = { 0 };
+  uint8_t out[sizeof p->b + SEAL_EXTRA], nonce[12] = { 0 };
   int body = p->n - 5;
   memcpy(out, p->b, 5);
   for (int i = 0; i < 8; i++) out[5 + i] = (uint8_t)(ctr >> (8 * i));
-  memcpy(nonce, out + 5, 8);
-  crypto_aead_lock(out + 13, out + 13 + body, key, nonce, out, 13, p->b + 5, (size_t)body);
+  memcpy(nonce + 4, out + 5, 8); /* the 96-bit nonce: 4 zero bytes and the packet number (each direction has its own key) */
+  cr_aead_seal(out + 13, out + 13 + body, key, nonce, out, 13, p->b + 5, (size_t)body);
   send_raw(a, out, 13 + body + 16);
 }
 /* to the other computer: straight, or through the relay */
@@ -279,10 +279,10 @@ static void send_peer(const Buf *p) {
 /* Decrypts a sealed packet of n bytes in p under key; its number goes in ctr. */
 static bool unseal(Buf *p, int n, const uint8_t key[32], uint64_t *ctr) {
   if (n < 13 + 16 || n > (int)sizeof p->b) return false;
-  uint8_t plain[sizeof p->b], nonce[24] = { 0 };
+  uint8_t plain[sizeof p->b], nonce[12] = { 0 };
   int body = n - 13 - 16;
-  memcpy(nonce, p->b + 5, 8);
-  if (crypto_aead_unlock(plain, p->b + 13 + body, key, nonce, p->b, 13, p->b + 13, (size_t)body)) return false;
+  memcpy(nonce + 4, p->b + 5, 8);
+  if (!cr_aead_open(plain, p->b + 13 + body, key, nonce, p->b, 13, p->b + 13, (size_t)body)) return false;
   *ctr = 0;
   for (int i = 0; i < 8; i++) *ctr |= (uint64_t)p->b[5 + i] << (8 * i);
   memcpy(p->b + 5, plain, (size_t)body);
@@ -307,10 +307,10 @@ static bool unseal_session(Buf *p, int n) {
 }
 
 static void forget_keys(void) {
-  crypto_wipe(N.secret, sizeof N.secret);
-  crypto_wipe(N.k_tx, sizeof N.k_tx);
-  crypto_wipe(N.k_rx, sizeof N.k_rx);
-  crypto_wipe(N.pend, sizeof N.pend);
+  cr_wipe(N.secret, sizeof N.secret);
+  cr_wipe(N.k_tx, sizeof N.k_tx);
+  cr_wipe(N.k_rx, sizeof N.k_rx);
+  cr_wipe(N.pend, sizeof N.pend);
   N.keyed = N.challenged = false;
   N.tx_ctr = N.rx_top = N.rx_seen = 0;
 }
@@ -406,7 +406,7 @@ static bool join_common(const char *pin, int jet, const int *load, const char *n
   if (!random_bytes(N.nonce, sizeof N.nonce) || !random_bytes(N.secret, sizeof N.secret)) return false;
   uint8_t g[32];
   code_point(g, N.pin, N.nonce);
-  crypto_x25519(N.y, N.secret, g);
+  cr_x25519(N.y, N.secret, g);
   N.s = udp_open(0, false, false);
   if (N.s == BADSOCK) {
     say("CAN'T OPEN A UDP SOCKET%s", "");
@@ -550,8 +550,8 @@ static void start_play(void) {
   N.phase = PH_PLAY;
   N.since_rx = 0;
   N.ev_seq = N.ev_in = N.ev_ack = 0;
-  crypto_wipe(N.secret, sizeof N.secret);
-  crypto_wipe(N.pend, sizeof N.pend);
+  cr_wipe(N.secret, sizeof N.secret);
+  cr_wipe(N.pend, sizeof N.pend);
 }
 
 /* Host: a guest says hello with its half of the handshake; answer with ours. */
@@ -569,9 +569,9 @@ static void host_hello(Buf *p, const Addr *from) {
     uint8_t b[32], g[32], shared[32];
     if (!random_bytes(b, sizeof b)) return;
     code_point(g, N.pin, nonce);
-    crypto_x25519(N.pend[k].y, b, g);
-    crypto_x25519(shared, b, yg);
-    crypto_wipe(b, sizeof b);
+    cr_x25519(N.pend[k].y, b, g);
+    cr_x25519(shared, b, yg);
+    cr_wipe(b, sizeof b);
     if (!derive(N.pend[k].k_hg, N.pend[k].k_gh, shared, nonce, yg, N.pend[k].y)) return;
     N.pend[k].used = true;
     N.pend[k].from = *from;
@@ -741,7 +741,7 @@ NetEvent net_poll(float dt, NetMatch *out) {
       getn(&p, nonce, 16);
       getn(&p, yh, 32);
       if (p.bad || memcmp(nonce, N.nonce, 16)) continue;
-      crypto_x25519(shared, N.secret, yh);
+      cr_x25519(shared, N.secret, yh);
       if (!derive(N.k_rx, N.k_tx, shared, N.nonce, N.y, yh)) continue;
       N.keyed = N.challenged = true;
       N.hello_t = 0; /* join straight away */

@@ -219,7 +219,7 @@ way of joining:
 secret key with a password handshake (CPace on X25519), so a computer that
 does not know the code never gets the key, and someone listening learns
 nothing to test codes against later. Every match packet is then encrypted
-and signed with XChaCha20-Poly1305 ([Monocypher](https://monocypher.org))
+and signed with ChaCha20-Poly1305 (our own, from RFC 8439: `src/core/crypto.c`)
 and numbered, so it cannot be read, changed or replayed; packets that fail
 are dropped and the match carries on. Each wrong code costs a full round
 trip, and the host stops after 10 (host again for a new code). The relay

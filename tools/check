@@ -55,11 +55,9 @@ JOBS = str(os.cpu_count() or 4)
 # CMake fetches or builds; dir: where it is vendored. Delete an entry in the brick that removes the library.
 ALLOW = {
     'SDL3': dict(brick=20, names=[r'\bSDL', r'libdecor'], include=[r'^SDL3/'], cmake=['SDL3'], dir=None),
-    'Monocypher': dict(brick=22, names=[r'(?i)monocypher', r'\bcrypto_[a-z0-9_]+\('], include=[r'^monocypher\.h$'],
-                       cmake=['monocypher'], dir=None),
 }
 # never allowed: other projects' names
-FOREIGN = [r'cJSON', r'cgltf', r'\bstb_[a-z]', r'miniaudio', r'\bglfw', r'raylib', r'\bsokol_', r'lodepng', r'tinyobj',
+FOREIGN = [r'cJSON', r'(?i)monocypher', r'cgltf', r'\bstb_[a-z]', r'miniaudio', r'\bglfw', r'raylib', r'\bsokol_', r'lodepng', r'tinyobj',
            r'(?i)\bimgui\b', r'libsodium', r'tweetnacl', r'mbedtls', r'(?i)\bopenssl\b', r'\bjsmn\b', r'yyjson',
            r'\bglad\b', r'nuklear']
 # the libraries a Linux binary may link or load: the OS interfaces and the GPU driver
@@ -184,10 +182,10 @@ def tracked(*patterns):
 
 # ---- 1 build ---------------------------------------------------------------------------------------------
 def fetched_sources():
-    """-D options pointing every build at the sources the first build fetched (SDL3, Monocypher), so the
+    """-D options pointing every build at the sources the first build fetched (SDL3), so the
     other builds do not download them again"""
     opts = []
-    for name, sub in (('SDL3', 'sdl3-src'), ('MONOCYPHER', 'monocypher-src')):
+    for name, sub in (('SDL3', 'sdl3-src'),):
         for b in BUILDS:
             p = os.path.join(bdir(b), '_deps', sub)
             if os.path.isdir(p) and os.listdir(p):

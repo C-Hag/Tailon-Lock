@@ -36,16 +36,6 @@ FetchContent_Declare(SDL3
   SYSTEM)
 FetchContent_MakeAvailable(SDL3)
 
-# Monocypher is not kept in the repository either: a pinned release tarball
-# with a checksum, until our own crypto (brick 22) replaces it
-# (docs/BUILD_PLAN.md). Only its C file is used; its own build files are not.
-FetchContent_Declare(monocypher
-  URL      https://monocypher.org/download/monocypher-4.0.2.tar.gz
-  URL_HASH SHA256=38d07179738c0c90677dba3ceb7a7b8496bcfea758ba1a53e803fed30ae0879c
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-  SOURCE_SUBDIR do-not-build)
-FetchContent_MakeAvailable(monocypher)
-set(MONOCYPHER_DIR ${monocypher_SOURCE_DIR}/src)
 
 # ---- warnings and flags ---------------------------------------------------
 add_library(a4c_flags INTERFACE)
@@ -101,7 +91,6 @@ add_executable(tailonlock
   src/compose.c
   src/editor.c
   src/gpu.c
-  ${MONOCYPHER_DIR}/monocypher.c
   src/raster.c
   src/render3d.c
   src/hud.c
@@ -125,10 +114,6 @@ endif()
 target_link_libraries(tailonlock PRIVATE a4c_core SDL3::SDL3-static)
 target_compile_definitions(tailonlock PRIVATE A4C_VERSION="${PROJECT_VERSION}"
   A4C_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-target_include_directories(tailonlock SYSTEM PRIVATE ${MONOCYPHER_DIR})
-if(NOT MSVC)
-  set_source_files_properties(${MONOCYPHER_DIR}/monocypher.c PROPERTIES COMPILE_OPTIONS -w)
-endif()
 # The game looks for assets/ next to the program, so a build folder (or a zip
 # of it) runs on its own.
 # The copy runs on every build (not only when the game relinks), so a changed
