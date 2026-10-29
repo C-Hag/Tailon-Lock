@@ -11,6 +11,7 @@
 
 #include "cJSON.h"
 #include "core/jets.h"
+#include "core/json.h"
 
 static char dir[1024];
 
@@ -28,6 +29,47 @@ const char *assets_path(const char *rel) {
   return p;
 }
 
+#ifndef NDEBUG
+/* Brick 3 (docs/BUILD_PLAN.md): in debug builds every asset is read by both
+ * readers, cJSON and our own (src/core/json.c), and the two trees must match
+ * value for value: the same types, names, order, strings and numbers (bit for
+ * bit). A mismatch stops the game, naming the file and the path into it. */
+static bool same_tree(const cJSON *a, const Json *b, char *path, size_t cap) {
+  size_t at = strlen(path);
+  bool ok;
+  if (cJSON_IsNull(a)) ok = b->type == JSON_NULL;
+  else if (cJSON_IsTrue(a)) ok = b->type == JSON_TRUE;
+  else if (cJSON_IsFalse(a)) ok = b->type == JSON_FALSE;
+  else if (cJSON_IsNumber(a)) ok = b->type == JSON_NUMBER && memcmp(&a->valuedouble, &b->num, sizeof b->num) == 0;
+  else if (cJSON_IsString(a)) ok = b->type == JSON_STRING && !strcmp(a->valuestring, b->str) && strlen(b->str) == b->len;
+  else if (cJSON_IsArray(a) || cJSON_IsObject(a)) {
+    ok = b->type == (cJSON_IsArray(a) ? JSON_ARRAY : JSON_OBJECT) && cJSON_GetArraySize(a) == b->count;
+    const cJSON *e = a->child;
+    for (int i = 0; ok && i < b->count; i++, e = e->next) {
+      const Json *f = &b->items[i];
+      ok = e && (e->string == NULL) == (f->name == NULL) && (!e->string || !strcmp(e->string, f->name));
+      if (e && e->string) snprintf(path + at, cap - at, ".%s", e->string);
+      else snprintf(path + at, cap - at, "[%d]", i);
+      if (ok) ok = same_tree(e, f, path, cap);
+      if (ok) path[at] = 0;
+    }
+  } else ok = false;
+  return ok;
+}
+
+static void crosscheck(const char *file, const cJSON *a, const char *text, size_t n) {
+  Json *b = json_parse(text, n, NULL);
+  char path[512] = "";
+  if (!a != !b || (a && !same_tree(a, b, path, sizeof path))) {
+    SDL_Log("assets: our JSON reader and cJSON disagree on %s at %s", file, path[0] ? path : "(the whole file)");
+    abort();
+  }
+  json_free(b);
+}
+#else
+#define crosscheck(file, a, text, n) ((void)0)
+#endif
+
 cJSON *assets_json(const char *rel) {
   const char *p = assets_path(rel);
   if (!p) return NULL;
@@ -38,6 +80,7 @@ cJSON *assets_json(const char *rel) {
     return NULL;
   }
   cJSON *j = cJSON_ParseWithLength(text, n);
+  crosscheck(p, j, text, n);
   SDL_free(text);
   if (!j) SDL_Log("assets: %s is not valid JSON", p);
   return j;
@@ -92,6 +135,7 @@ static cJSON *json_in_js(const char *rel, char open, char close) {
   if (!text) return NULL;
   char *a = strchr(text, open), *b = strrchr(text, close);
   cJSON *j = a && b && b > a ? cJSON_ParseWithLength(a, (size_t)(b - a + 1)) : NULL;
+  if (a && b && b > a) crosscheck(p, j, a, (size_t)(b - a + 1));
   SDL_free(text);
   if (!j) SDL_Log("assets: cannot parse %s", p);
   return j;

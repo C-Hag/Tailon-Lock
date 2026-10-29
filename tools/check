@@ -16,7 +16,8 @@ build/check/<date>-<commit>.txt (with -dirty when the tree has uncommitted chang
 The stages:
    1 build       release and ASan+UBSan, with GCC and with Clang, -Wall -Wextra -Werror on our code
    2 tests       the unit tests (ctest) in the GCC release and the Clang ASan builds
-   3 golden      every JSON the game reads, dumped and compared byte for byte with the reference dumps
+   3 golden      every JSON the game reads, dumped and compared byte for byte with the reference dumps, read
+                 by cJSON and by our own reader
    4 deps        what the binaries link and load, what CMake fetches, what the sources include
    5 cleanroom   no third-party names past the allow-list, no licence headers, no personal or machine
                  terms, the homage line the only reference to the original game
@@ -315,6 +316,18 @@ def stage_golden(baseline):
     if invalid:
         say('    unparsable: ' + ', '.join(invalid))
         ok_all = False
+    # our own reader (brick 3): the same dumps, byte for byte
+    if not baseline:
+        same = 0
+        for path, table in json_inputs():
+            key = path + (' %s%s' % table if table else '')
+            rc, out = run([dumper, '--own', path] + list(table or ()))
+            if rc == 0 and manifest.get(key) == hashlib.sha256(out.encode()).hexdigest():
+                same += 1
+            else:
+                ok_all = False
+                bad.append('%s: our own reader differs from the reference' % key)
+        say('    our own JSON reader: %d of %d identical to the references' % (same, len(new)))
     glb = tracked('*.glb', '*.gltf')
     say('    %d .glb/.gltf files (the game loads none today)' % len(glb))
     for b in bad[:10]:

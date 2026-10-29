@@ -3,7 +3,9 @@
  * from the old reader and from ours must be byte for byte the same.
  * Original code for this project.
  *
- * usage: json_dump FILE [OPEN CLOSE]
+ * usage: json_dump [--own] FILE [OPEN CLOSE]
+ *   --own: read it with our own reader (src/core/json.c) instead of cJSON;
+ *   the two dumps must be identical (brick 3)
  *   OPEN CLOSE: a table inside a .js file, from the first OPEN to the last
  *   CLOSE (as assets.c reads jets_game.js and carrier_game.js)
  *
@@ -12,11 +14,13 @@
  *   null | true | false | n <number as %.17g> | s "<string>" | [ <count> | { <count>
  * Strings keep their UTF-8 bytes; '"', '\' and bytes below 0x20 are written
  * as \" \\ \xHH. */
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "cJSON.h"
+#include "core/json.h"
 
 static void put_str(FILE *o, const char *s) {
   fputc('"', o);
@@ -49,9 +53,37 @@ static void dump(FILE *o, const cJSON *v, int depth) {
   } else fputs("?\n", o);
 }
 
+/* the same lines from our own tree */
+static void dump_own(FILE *o, const Json *v, int depth) {
+  for (int i = 0; i < depth; i++) fputc(' ', o);
+  if (v->name) {
+    put_str(o, v->name);
+    fputc(':', o);
+  }
+  switch (v->type) {
+  case JSON_NULL: fputs("null\n", o); break;
+  case JSON_TRUE: fputs("true\n", o); break;
+  case JSON_FALSE: fputs("false\n", o); break;
+  case JSON_NUMBER: fprintf(o, "n %.17g\n", v->num); break;
+  case JSON_STRING:
+    fputs("s ", o);
+    put_str(o, v->str);
+    fputc('\n', o);
+    break;
+  default:
+    fprintf(o, "%c %d\n", v->type == JSON_ARRAY ? '[' : '{', v->count);
+    JSON_EACH(e, v) dump_own(o, e, depth + 1);
+  }
+}
+
 int main(int argc, char **argv) {
+  bool own = argc > 1 && !strcmp(argv[1], "--own");
+  if (own) {
+    argv++;
+    argc--;
+  }
   if (argc != 2 && argc != 4) {
-    fprintf(stderr, "usage: json_dump FILE [OPEN CLOSE]\n");
+    fprintf(stderr, "usage: json_dump [--own] FILE [OPEN CLOSE]\n");
     return 2;
   }
   FILE *f = fopen(argv[1], "rb");
@@ -79,6 +111,14 @@ int main(int argc, char **argv) {
       return 1;
     }
     len = (size_t)(b - a + 1);
+  }
+  if (own) {
+    Json *d = json_parse(a, len, NULL);
+    if (!d) printf("invalid\n");
+    else dump_own(stdout, d, 0);
+    json_free(d);
+    free(text);
+    return 0;
   }
   cJSON *j = cJSON_ParseWithLength(a, len);
   if (!j) {
