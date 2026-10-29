@@ -43,6 +43,9 @@ in `build/check/<date>-<commit>.txt`).
 | F2 | the DMX10 main theme played live from its song data | planned | |
 | F3 | the size pass: no SDL3 (bricks 10-20), stripped, data packed | planned | |
 | F4 | the floppy build made and the budget a hard fail | planned | |
+| R1 | speed work: 320x200 in 256 colours, 15-25 fps on a Pentium 120 | planned, after F4 | |
+| R2 | the DOS version, tested on FreeDOS | planned | |
+| R3 | the Windows 95 version | on hold until there is a Windows 95 disc | |
 
 Outside code still in the build: SDL3 (until brick 20), downloaded at build
 time with a checksum (docs/THIRD_PARTY.md).
@@ -315,6 +318,45 @@ F4. **The floppy build.** A `floppy` build variant that makes the disk image
 
 Order: brick 9 first, then F1, F2, and the rest of the platform bricks; F3 and
 F4 close the track once SDL3 is gone.
+
+## The retro track (bricks R1-R3)
+
+The game on a mid-90s PC: a Pentium 120 with 16-32 MB of memory and VGA or VESA graphics. It starts after
+brick 9 and the floppy bricks F1-F4. Where we start is in docs/PENTIUM.md: today a Pentium 120 would draw
+the dogfight at about 4 fps at 320x200, or 6 fps without clouds.
+
+The main test machine is FreeDOS running in DOSBox. Bochs, with its own free BIOS, gives a second check on
+speed because it runs at a fixed instruction rate. Emulators that need copies of real BIOS chips (86Box,
+PCem) are not used. FreeDOS, DOSBox and Bochs are test tools on the development machine only. They are
+never shipped.
+
+R1. **Speed work for 320x200 in 256 colours.**
+    - an 8-bit framebuffer with a palette and blend tables;
+    - the sky drawn as per-row bands, a coarser terrain grid at low resolution, no whitecaps, and the terrain
+      drawn back to front without a depth test;
+    - an integer depth buffer only where meshes overlap;
+    - rounding with no FPU control-word switches, and fixed-point maths in the span and edge loops;
+    - sound envelopes worked out every 32 samples, with table-based exponentials, and the mix at 22 kHz;
+    - a light version of the opening film: the control room as flat polygons with no anti-aliasing or blur,
+      and fewer steam puffs with no grade.
+
+    The audit: tools/p5bench shows 15-25 fps for the dogfight at 320x200 on a Pentium 120 (at 0.8
+    instructions per clock, including memory stalls). The sound costs under 20 % of the CPU. The modern
+    build's pictures, sound and perf are unchanged.
+
+R2. **The DOS version.** A 32-bit protected-mode program with its own small DOS extender: no DOS/4GW, no
+    CWSDPMI, no other outside runtime. Picture in mode 13h (320x200) or VESA 256-colour modes (640x480,
+    800x600), with the palette and a vsync wait. Sound through the Sound Blaster: DMA, the DSP, at
+    22 kHz. Keyboard and joystick read directly from the hardware (the keyboard controller and the game
+    port). The settings file and assets are read through DOS file calls. The checker gains a stage for
+    it: the build boots in FreeDOS under DOSBox, without anyone at the keys, and reaches the menu. The
+    stage checks this from a screenshot or a log line the game writes. The audit: the DOS build plays
+    a match in DOSBox, and Bochs gives a speed in line with tools/p5bench.
+
+R3. **The Windows 95 version**, on hold until there is a Windows 95 disc to test with. Our own Win32 layer
+    (bricks 17-19), kept to what Windows 95 has: a GDI or DirectDraw window in 8-bit colour, waveOut
+    sound and the WinMM joystick calls. It is built for a Pentium with no SSE. The audit: it starts and
+    plays in a Windows 95 VM.
 
 ## Web version: mobile mode in the browser game (bricks W1-W3)
 
