@@ -10,10 +10,10 @@ const ROLES = ['trousers', 'belt', 'shirt', 'collar', 'sleeve', 'skin', 'skinSha
 const PARTS = { trunk: 1, head: 2, face: 3, handL: 4, handR: 5, eye: 7 };
 let bad = 0;
 for (const [who, name] of [[0, 'operator'], [1, 'supervisor'], [2, 'commander']])
-  for (const [raise, open] of [[0, null], [1, 0.7]]) {
+  for (const [raise, open, detail] of [[0, null, 0], [1, 0.7, 0], [1, 0.7, 1]]) {
     const c = F.CREW[name], face = open == null ? undefined : { open, wide: 0.3, smile: 0.2, browUp: 0.5, blink: 0.3 };
-    const js = F.build({ height: 1.75, kit: c.kit, skin: c.skin, hair: c.hair, iris: c.iris, faceShape: c.faceShape, face, pose: c.pose(1.75, raise) }).tris;
-    const lines = execFileSync(bin, ['--dump', String(who), String(raise)].concat(open == null ? [] : [String(open)])).toString().trim().split('\n');
+    const js = F.build({ height: 1.75, kit: c.kit, skin: c.skin, hair: c.hair, iris: c.iris, faceShape: c.faceShape, face, pose: c.pose(1.75, raise), detail }).tris;
+    const lines = execFileSync(bin, ['--dump', String(who), String(raise)].concat(open == null ? [] : [String(open), String(detail)]), { maxBuffer: 1 << 28 }).toString().trim().split('\n');
     const n = +lines[0];
     let worst = 0, mism = 0, cworst = 0;
     if (n !== js.length) { console.log(`${name} raise ${raise}: ${n} triangles in C, ${js.length} here`); bad++; continue; }
@@ -28,7 +28,7 @@ for (const [who, name] of [[0, 'operator'], [1, 'supervisor'], [2, 'commander']]
     }
     const ok = !mism && worst < 5e-5 && cworst < 0.02;
     if (!ok) bad++;
-    console.log(`${name.padEnd(10)} ${open == null ? 'at rest  ' : 'speaking '}: ${n} triangles, ${mism} differ in role or part, largest vertex gap ${(worst * 1000).toFixed(4)} mm, colour ${cworst.toFixed(4)} ${ok ? 'ok' : 'DIFFERENT'}`);
+    console.log(`${name.padEnd(10)} ${open == null ? 'at rest  ' : detail ? 'close-up ' : 'speaking '}: ${n} triangles, ${mism} differ in role or part, largest vertex gap ${(worst * 1000).toFixed(4)} mm, colour ${cworst.toFixed(4)} ${ok ? 'ok' : 'DIFFERENT'}`);
   }
 // the speech timelines: the same segments, shapes and word starts
 const VN = ['rest', 'mbp', 'fv', 'th', 'aa', 'ee', 'ih', 'oo', 'oh', 'w', 'sh', 'tt', 'kk', 'ss'];

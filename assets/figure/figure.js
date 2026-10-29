@@ -117,12 +117,20 @@ const Figure = (() => {
         const e = shape || 0.8, cx = Math.sign(ca) * Math.pow(Math.abs(ca), e), cz = Math.sign(sa) * Math.pow(Math.abs(sa), e);
         pts.push(add(c, add(mul(F.across, cx * r[1] * K.H), mul(F.fwd, cz * r[2] * K.H + (r[3] || 0) * K.H))));
       }
-      base.push({ pts, role: r[4] || role });
+      // each point's normal, for skin drawn smooth: the rounded box's outward direction
+      const ns = Array.from({ length: SEG }, (_, i) => {
+        const a = i / SEG * Math.PI * 2, e = shape || 0.8, cx = Math.sign(Math.cos(a)) * Math.pow(Math.abs(Math.cos(a)), e), cz = Math.sign(Math.sin(a)) * Math.pow(Math.abs(Math.sin(a)), e);
+        return norm(add(mul(F.across, cx / r[1]), mul(F.fwd, cz / r[2])));
+      });
+      base.push({ pts, ns, role: r[4] || role });
     }
     for (let k = 0; k + 1 < base.length; k++)
       for (let i = 0; i < SEG; i++) {
-        const j = (i + 1) % SEG, a = base[k].pts, b = base[k + 1].pts;
-        out.push({ v: [a[i], b[j], a[j]], role: base[k].role, part: role }, { v: [a[i], b[i], b[j]], role: base[k].role, part: role });
+        const j = (i + 1) % SEG, a = base[k].pts, b = base[k + 1].pts, na = base[k].ns, nb = base[k + 1].ns;
+        if (out.skin && base[k].role === 'skin' && base[k + 1].role === 'skin') {   // skin: smooth, as the face is
+          const cs = [out.skin, out.skin, out.skin];
+          out.push({ v: [a[i], b[j], a[j]], role: 'skin', part: role, ns: [na[i], nb[j], na[j]], cs }, { v: [a[i], b[i], b[j]], role: 'skin', part: role, ns: [na[i], nb[i], nb[j]], cs });
+        } else out.push({ v: [a[i], b[j], a[j]], role: base[k].role, part: role }, { v: [a[i], b[i], b[j]], role: base[k].role, part: role });
       }
     // close both ends
     for (const k of [0, base.length - 1]) {
@@ -145,6 +153,7 @@ const Figure = (() => {
 
   function build(fig) {
     const K = skeleton(fig.height || 1.75), W = solve(K, fig.pose || {}), tris = [];
+    tris.skin = fig.skin || [196, 152, 122];   // skin is drawn smooth, in this colour (sides, tube)
     const H = K.H, C = fig.kit || {};
     // the trunk: rings from the crotch to the base of the neck, wider at the chest, the waist taken in at the navel
     const hips = W.hips, chest = W.chest;
@@ -215,9 +224,15 @@ const Figure = (() => {
       return add(c, add(mul(x, Math.sign(ca) * Math.pow(Math.abs(ca), 0.8) * w * K.H), mul(z, Math.sign(sa) * Math.pow(Math.abs(sa), 0.8) * d * K.H)));
     });
     const A = ring(a, w0, d0), B = ring(b, w1, d1);
+    const nr = (w, d) => Array.from({ length: SEG }, (_, i) => {
+      const t = i / SEG * Math.PI * 2, ca = Math.cos(t), sa = Math.sin(t);
+      return norm(add(mul(x, Math.sign(ca) * Math.pow(Math.abs(ca), 0.8) / w), mul(z, Math.sign(sa) * Math.pow(Math.abs(sa), 0.8) / d)));
+    });
+    const NA = nr(w0, d0), NB = nr(w1, d1), cs = out.skin && role === 'skin' ? [out.skin, out.skin, out.skin] : null;
     for (let i = 0; i < SEG; i++) {
       const j = (i + 1) % SEG;
-      out.push({ v: [A[i], B[j], A[j]], role }, { v: [A[i], B[i], B[j]], role });
+      if (cs) out.push({ v: [A[i], B[j], A[j]], role, ns: [NA[i], NB[j], NA[j]], cs }, { v: [A[i], B[i], B[j]], role, ns: [NA[i], NB[i], NB[j]], cs });   // skin: smooth
+      else out.push({ v: [A[i], B[j], A[j]], role }, { v: [A[i], B[i], B[j]], role });
       out.push({ v: [A[i], A[j], a], role }, { v: [B[j], B[i], b], role });
     }
   }
@@ -254,7 +269,8 @@ const Figure = (() => {
   // nose's base, the face in thirds. Per person, parameters (0-1) shape the brow ridge, cheekbones, jaw, chin, nose,
   // lips, eye sockets and age; expressions (jaw open, mouth shapes, brows, blink, smile, gaze) move it.
   const FACE_DEFAULT = { brow: 0.5, cheek: 0.5, jaw: 0.5, chin: 0.5, bridge: 0.5, tip: 0.5, lips: 0.5, socket: 0.5, age: 0.3, stubble: 0.2 };
-  const FU = 36, FA = 40;   // rings up the head, segments round it
+  // rings up the head and segments round it: for the film, and finer for a close-up (fig.detail)
+  const GRID = [[36, 40], [60, 72]];
   const EYE_U = 0.5;
   // the landmarks in head units (head height = 1); x across, u up from the chin, z forward
   function landmarks() {
@@ -279,7 +295,7 @@ const Figure = (() => {
     let dz = 0, dx = 0, du = 0;
     if (front) {
       // the brow ridge over the eyes; the sockets under it; the cheekbones below and outside the eyes
-      dz += (0.015 + 0.04 * fp.brow) * gauss((u - 0.56) ** 2 * 6 + Math.max(0, ax - 0.32) ** 2, 0.06);
+      dz += (0.015 + 0.04 * fp.brow) * gauss((u - 0.56) ** 2 * 6 + (ax - L.eyeX) ** 2 * 0.5, 0.06);   // over each eye
       dz -= (0.02 + 0.05 * fp.socket) * gauss((u - L.eyeU) ** 2 + (ax - L.eyeX) ** 2, 0.075);
       dz += (0.01 + 0.035 * fp.cheek) * gauss((u - 0.4) ** 2 + (ax - 0.3) ** 2, 0.09);
       // the chin forward, the lips full, the mouth's line between them
@@ -294,6 +310,12 @@ const Figure = (() => {
       // the smile lifts the mouth's corners and the cheeks
       du += ex.smile * 0.02 * gauss((u - L.mouthU) ** 2 + (ax - L.mouthX) ** 2, 0.06);
       dz += ex.smile * 0.012 * gauss((u - 0.36) ** 2 + (ax - 0.26) ** 2, 0.07);
+      // the finer modelling: the temples' hollow, the hollow under the cheekbones, the groove from the nose to the
+      // upper lip, the fold under the lower lip
+      dz -= 0.012 * gauss((u - 0.62) ** 2 + (ax - 0.34) ** 2, 0.06);
+      dz -= (0.004 + 0.012 * fp.cheek) * gauss((u - 0.28) ** 2 + (ax - 0.29) ** 2, 0.05);
+      dz -= 0.005 * gauss((u - (L.noseBase + L.mouthU) / 2) ** 2 * 3, 0.03) * gauss(x * x, 0.025);
+      dz -= 0.008 * gauss((u - L.mouthU + 0.075) ** 2, 0.02) * inMouth;
     }
     // the jaw: wider or narrower below the mouth
     if (u < 0.3) x *= 1 + 0.22 * (fp.jaw - 0.5) * (1 - u / 0.3);
@@ -349,6 +371,7 @@ const Figure = (() => {
     const hairAt = (u, x, z) => Math.max(smooth01(L.hairline - 0.02, L.hairline + 0.03, u + 0.015 * Math.cos(x * 6)) * smooth01(-0.1, 0.0, z + 0.6 - u),
       smooth01(0.0, -0.1, z) * smooth01(0.38, 0.46, u), smooth01(0.33, 0.4, Math.abs(x)) * smooth01(0.56, 0.64, u) * smooth01(0.3, 0.18, z));
     // the grid: u from the chin to the crown, finer round the face
+    const [FU, FA] = GRID[fig.detail ? 1 : 0];
     const us = Array.from({ length: FU + 1 }, (_, k) => { const t = k / FU; return t * t * (3 - 2 * t) * 0.5 + t * 0.5; })
       .filter(u => Math.abs(u - L.mouthU) > 0.008).concat([L.mouthU - 0.002, L.mouthU + 0.002]).sort((a, b) => a - b);
     const lipRow = us.indexOf(L.mouthU - 0.002);   // the row between the lips: left open across the mouth
@@ -407,29 +430,41 @@ const Figure = (() => {
     for (const sx of [1, -1]) {
       const rE = L.EW * 0.5, [, zf] = surf(L.eyeU, angleAt(L.eyeU, L.eyeX * sx)), ec = P(L.eyeU, L.eyeX * sx, zf - rE * 0.9 - 0.03 * fp.socket);
       const RE = rE * hH, ax = F.across, up = F.along, fw = F.fwd;
-      const sphere = (c, r, role, col, cutTop) => {
-        const rows = 6, segs = 10, pts = [];
+      // the eyeball, smooth: each point's normal straight out from its centre
+      const sphere = (c, r, role, col) => {
+        const rows = 8, segs = 14, pts = [];
         for (let k = 0; k <= rows; k++) { const b = -Math.PI / 2 + Math.PI * k / rows; pts.push(Array.from({ length: segs }, (_, i) => { const a = i / segs * Math.PI * 2; return add(c, add(mul(ax, Math.cos(b) * Math.cos(a) * r), add(mul(up, Math.sin(b) * r), mul(fw, Math.cos(b) * Math.sin(a) * r)))); })); }
-        for (let k = 0; k < rows; k++) for (let i = 0; i < segs; i++) { const j = (i + 1) % segs; out.push({ v: [pts[k][i], pts[k + 1][j], pts[k][j]], role, part: 'eye', col }, { v: [pts[k][i], pts[k + 1][i], pts[k + 1][j]], role, part: 'eye', col }); }
+        const nn = p => norm(sub(p, c)), cs = [col, col, col];
+        for (let k = 0; k < rows; k++) for (let i = 0; i < segs; i++) {
+          const j = (i + 1) % segs, A = pts[k][i], B = pts[k + 1][j], Cc = pts[k][j], Dd = pts[k + 1][i];
+          out.push({ v: [A, B, Cc], role, part: 'eye', ns: [nn(A), nn(B), nn(Cc)], cs }, { v: [A, Dd, B], role, part: 'eye', ns: [nn(A), nn(Dd), nn(B)], cs });
+        }
       };
       sphere(ec, RE, 'eyeWhite', [222, 216, 208]);
       // the iris and pupil: discs on the eyeball's front, toward the gaze
       const g = norm(add(mul(gaze, 1), mul(fw, 0.4))), gx = norm(cross(up, g)), gy = cross(g, gx);
-      const disc = (r, lift, col, role) => {
-        const c = add(ec, mul(g, RE * lift)), ring = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * Math.PI * 2; return add(c, add(mul(gx, Math.cos(a) * r), mul(gy, Math.sin(a) * r))); });
+      const disc = (r, lift, col, role, ox = 0, oy = 0) => {
+        const c = add(add(ec, mul(g, RE * lift)), add(mul(gx, ox * RE), mul(gy, oy * RE))), ring = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * Math.PI * 2; return add(c, add(mul(gx, Math.cos(a) * r), mul(gy, Math.sin(a) * r))); });
         for (let i = 0; i < 10; i++) out.push({ v: [c, ring[i], ring[(i + 1) % 10]], role, part: 'eye', two: true, col });
       };
       disc(RE * 0.46, 1.0, fig.iris || [70, 58, 44], 'iris');
       disc(RE * 0.19, 1.012, [10, 10, 12], 'iris');
-      disc(RE * 0.065, 1.022, [235, 235, 230], 'iris');   // the screen light caught in it
+      // the wet eye: the screen's light caught in it, and a smaller second light
+      disc(RE * 0.07, 1.022, [240, 240, 236], 'iris', -0.17, 0.2);
+      disc(RE * 0.035, 1.024, [220, 224, 226], 'iris', 0.16, -0.12);
       // the lids: the upper comes down over the eyeball to blink, the lower stays
-      const lid = (from, to, col) => {
-        const segs = 10, rows = 3, r = RE * 1.07, pts = [];
+      const lid = (from, to, col, rk = 1.07) => {
+        const segs = 10, rows = 3, r = RE * rk, pts = [];
         for (let k = 0; k <= rows; k++) { const b = from + (to - from) * k / rows; pts.push(Array.from({ length: segs + 1 }, (_, i) => { const a = Math.PI * 0.08 + Math.PI * 0.84 * i / segs; return add(ec, add(mul(ax, Math.cos(b) * Math.cos(a) * r), add(mul(up, Math.sin(b) * r), mul(fw, Math.cos(b) * Math.sin(a) * r)))); })); }
-        for (let k = 0; k < rows; k++) for (let i = 0; i < segs; i++) out.push({ v: [pts[k][i], pts[k + 1][i + 1], pts[k][i + 1]], role: 'lid', part: 'eye', two: true, col }, { v: [pts[k][i], pts[k + 1][i], pts[k + 1][i + 1]], role: 'lid', part: 'eye', two: true, col });
+        const nn = p => norm(sub(p, ec)), cs = [col, col, col];   // smooth, round the eyeball
+        for (let k = 0; k < rows; k++) for (let i = 0; i < segs; i++) {
+          const A = pts[k][i], B = pts[k + 1][i + 1], Cc = pts[k][i + 1], Dd = pts[k + 1][i];
+          out.push({ v: [A, B, Cc], role: 'lid', part: 'eye', two: true, ns: [nn(A), nn(B), nn(Cc)], cs }, { v: [A, Dd, B], role: 'lid', part: 'eye', two: true, ns: [nn(A), nn(Dd), nn(B)], cs });
+        }
       };
       const open = -0.36 + (0.62 + 0.1 * ex.browUp - 0.08 * ex.frown) * (1 - ex.blink);   // the upper lid's edge, from the eye's middle
       lid(Math.PI / 2, open, tone(L.eyeU + 0.04, L.eyeX, zf).map(v => v * 0.92));
+      lid(open + 0.06, open - 0.03, hair.map(v => v * 0.45), 1.085);   // the lashes along the upper lid's edge
       lid(-0.38, -Math.PI / 2, tone(L.eyeU - 0.04, L.eyeX, zf).map(v => v * 0.95));
       // the brow: a band of hair over the ridge, the inner end lifting or drawing down
       const bu = (k) => 0.57 + 0.035 * ex.browUp * (1 - k * 0.3) - 0.025 * ex.frown * (1 - k);
@@ -534,44 +569,109 @@ const Figure = (() => {
   // cam: { pos, f (forward), u (up), r (right), F (focal length in pixels), cx, cy }; light: direction toward the key
   // light and its colour. fill(points, colour) draws one triangle.
   const SKIN_ROLES = new Set(['skin', 'skinShade', 'lip', 'lid']), SSS = [0.22, 0.06, 0.03];
+  // a triangle lit for the camera: culled when it faces away (unless two-sided), else its corners on the screen, its
+  // depth, and the colour at each corner (as fig_draw and fig_raster light them in the C game)
+  function litTri(t, fig, cam, light) {
+    let n = norm(cross(sub(t.v[1], t.v[0]), sub(t.v[2], t.v[0])));
+    const c = mul(add(add(t.v[0], t.v[1]), t.v[2]), 1 / 3), d = sub(c, cam.pos), z = dot(d, cam.f);
+    if (z < 0.05) return null;
+    if (dot(n, d) > 0) {
+      if (!t.two) return null; // facing away
+      n = mul(n, -1);          // a flat part (eyes, lips, insignia) shows either side
+    }
+    const zs = t.v.map(v => dot(sub(v, cam.pos), cam.f));
+    const pts = t.v.map((v, q) => { const p = sub(v, cam.pos), zz = Math.max(0.05, zs[q]); return [cam.cx + dot(p, cam.r) / zz * cam.F, cam.cy - dot(p, cam.u) / zz * cam.F]; });
+    const view = norm(mul(d, -1));
+    // skin: its own light, so a coloured screen tints a face but does not paint it; wrapped and soft, warm where
+    // the light turns to shadow (light scattered under the skin), a faint sheen, a softer rim
+    const skinShade = (nn, base) => {
+      const kl = dot(nn, light.dir), w = Math.max(0, (kl + 0.35) / 1.35), sss = w * (1 - w) * 4;
+      const kL = (light.key[0] + light.key[1] + light.key[2]) / 3, key = light.key.map(v => kL + (v - kL) * 0.4);
+      const r = sub(mul(nn, 2 * kl), light.dir), sp = kl > 0 ? Math.pow(Math.max(0, dot(r, view)), 16) * 0.1 : 0, rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
+      return base.map((b, i) => Math.min(255, b * (0.28 + 0.8 * w * key[i] / 255) + b * SSS[i] * sss * key[i] / 255 + 255 * sp * key[i] / 255 + 255 * rim * 0.14 * light.rim[i] / 255));
+    };
+    const shade = (nn, base) => {
+      const k = Math.max(0, dot(nn, light.dir)), rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
+      return base.map((b, i) => Math.min(255, b * (0.24 + 0.85 * k * light.key[i] / 255) + 255 * rim * 0.2 * light.rim[i] / 255));
+    };
+    let cs;
+    if (t.lit) cs = [t.col, t.col, t.col];   // the room, already lit (lightRoom)
+    else if (t.ns) { const sh = SKIN_ROLES.has(t.role) ? skinShade : shade; cs = t.ns.map((nn, q) => sh(dot(nn, view) < 0 ? mul(nn, -1) : nn, t.cs[q])); }
+    else { const c1 = (SKIN_ROLES.has(t.role) ? skinShade : shade)(n, t.col || colour(fig, t.role)); cs = [c1, c1, c1]; }
+    return { z, zs, pts, cs, smooth: !!t.ns && !t.lit, tag: t.tag || 0 };
+  }
   function draw(figs, cam, light, fill) {
     const all = [];
     for (const fig of figs) {
       const mesh = fig.mesh || build(fig);
       for (const t of mesh.tris) {
-        let n = norm(cross(sub(t.v[1], t.v[0]), sub(t.v[2], t.v[0])));
-        const c = mul(add(add(t.v[0], t.v[1]), t.v[2]), 1 / 3), d = sub(c, cam.pos), z = dot(d, cam.f);
-        if (z < 0.05) continue;
-        if (dot(n, d) > 0) {
-          if (!t.two) continue; // facing away
-          n = mul(n, -1);       // a flat part (eyes, lips, insignia) shows either side
-        }
-        const pts = t.v.map(v => { const q = sub(v, cam.pos), zz = Math.max(0.05, dot(q, cam.f)); return [cam.cx + dot(q, cam.r) / zz * cam.F, cam.cy - dot(q, cam.u) / zz * cam.F]; });
-        const view = norm(mul(d, -1));
-        // skin: its own light, so a coloured screen tints a face but does not paint it; wrapped and soft, warm where
-        // the light turns to shadow (light scattered under the skin), a faint sheen, a softer rim
-        const skinShade = (nn, base) => {
-          const kl = dot(nn, light.dir), w = Math.max(0, (kl + 0.35) / 1.35), sss = w * (1 - w) * 4;
-          const kL = (light.key[0] + light.key[1] + light.key[2]) / 3, key = light.key.map(v => kL + (v - kL) * 0.4);
-          const r = sub(mul(nn, 2 * kl), light.dir), sp = kl > 0 ? Math.pow(Math.max(0, dot(r, view)), 16) * 0.1 : 0, rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
-          return base.map((b, i) => Math.min(255, b * (0.28 + 0.8 * w * key[i] / 255) + b * SSS[i] * sss * key[i] / 255 + 255 * sp * key[i] / 255 + 255 * rim * 0.14 * light.rim[i] / 255));
-        };
-        const shade = (nn, base) => {
-          const k = Math.max(0, dot(nn, light.dir)), rim = Math.pow(1 - Math.max(0, dot(nn, view)), 3);
-          return base.map((b, i) => Math.min(255, b * (0.24 + 0.85 * k * light.key[i] / 255) + 255 * rim * 0.2 * light.rim[i] / 255));
-        };
-        if (t.lit) all.push({ z, pts, col: t.col, tag: t.tag });   // the room, already lit (lightRoom)
-        else if (t.ns) {
-          // a smooth part (the face): each corner lit by its own normal; the colour across the facet is then an affine
-          // field, drawn as a linear gradient along its steepest direction (the same as shading the corners and
-          // blending between them)
-          const sh = t.role === 'skin' ? skinShade : shade, cs = t.ns.map((nn, q) => sh(dot(nn, view) < 0 ? mul(nn, -1) : nn, t.cs[q]));
-          all.push({ z, pts, col: cs.reduce((a, c) => a.map((v, i) => v + c[i] / 3), [0, 0, 0]), grad: gradient(pts, cs) });
-        } else all.push({ z, pts, col: (SKIN_ROLES.has(t.role) ? skinShade : shade)(n, t.col || colour(fig, t.role)) });
+        const L = litTri(t, fig, cam, light);
+        if (!L) continue;
+        // a smooth part (the face): each corner lit by its own normal; the colour across the facet is then an affine
+        // field, drawn as a linear gradient along its steepest direction (the same as shading the corners and
+        // blending between them)
+        if (L.smooth) all.push({ z: L.z, pts: L.pts, col: L.cs.reduce((a, c) => a.map((v, i) => v + c[i] / 3), [0, 0, 0]), grad: gradient(L.pts, L.cs) });
+        else all.push({ z: L.z, pts: L.pts, col: L.cs[0], tag: L.tag });
       }
     }
     all.sort((a, b) => b.z - a.z);
     for (const t of all) fill(t.pts, t.col, t.grad, t.tag || 0);
+  }
+
+  // ---- the close-up path: people drawn with a depth buffer ----
+  // The painter's far-to-near sort is enough for the room, but a face up close has small parts in layers (the
+  // eyeball, the iris, the lids, the lashes, the brows over the skin), so people are drawn here a pixel at a time:
+  // each triangle's corners lit, the colour blended smoothly across it, the nearest surface kept at every sample, two
+  // by two samples to a pixel so the edges are smooth. The camera's picture is scaled by sc and moved by (ox, oy)
+  // into a W x H picture; returns the box drawn and its pixels (RGBA, the alpha how much of each pixel is covered).
+  function raster(figs, cam, light, sc, ox, oy, W, H) {
+    const RSS = 2, tris = [];
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    for (const fig of figs) {
+      const mesh = fig.mesh || build(fig);
+      for (const t of mesh.tris) {
+        for (const v of t.v) {
+          const p = sub(v, cam.pos), zz = dot(p, cam.f);
+          if (zz < 0.05) continue;
+          const x = (cam.cx + dot(p, cam.r) / zz * cam.F) * sc + ox, y = (cam.cy - dot(p, cam.u) / zz * cam.F) * sc + oy;
+          bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y);
+        }
+        const L = litTri(t, fig, cam, light);
+        if (L && L.zs.every(z => z >= 0.05)) tris.push(L);
+      }
+    }
+    const x0 = Math.max(0, Math.floor(bx0) - 1), y0 = Math.max(0, Math.floor(by0) - 1), x1 = Math.min(W, Math.ceil(bx1) + 1), y1 = Math.min(H, Math.ceil(by1) + 1);
+    if (x1 <= x0 || y1 <= y0) return null;
+    const bw = (x1 - x0) * RSS, bh = (y1 - y0) * RSS, Z = new Float32Array(bw * bh), Cb = new Float32Array(bw * bh * 3);
+    for (const L of tris) {
+      const X = L.pts.map(p => (p[0] * sc + ox - x0) * RSS), Y = L.pts.map(p => (p[1] * sc + oy - y0) * RSS), IZ = L.zs.map(z => 1 / z), cs = L.cs;
+      const area = (X[1] - X[0]) * (Y[2] - Y[0]) - (X[2] - X[0]) * (Y[1] - Y[0]);
+      if (Math.abs(area) < 1e-9) continue;
+      const sx0 = Math.max(0, Math.floor(Math.min(...X))), sx1 = Math.min(bw, Math.ceil(Math.max(...X))), sy0 = Math.max(0, Math.floor(Math.min(...Y))), sy1 = Math.min(bh, Math.ceil(Math.max(...Y)));
+      for (let y = sy0; y < sy1; y++)
+        for (let x = sx0; x < sx1; x++) {
+          const px = x + 0.5, py = y + 0.5;
+          const w0 = ((X[1] - px) * (Y[2] - py) - (X[2] - px) * (Y[1] - py)) / area, w1 = ((X[2] - px) * (Y[0] - py) - (X[0] - px) * (Y[2] - py)) / area, w2 = 1 - w0 - w1;
+          if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+          const iz = w0 * IZ[0] + w1 * IZ[1] + w2 * IZ[2], at = y * bw + x;
+          if (iz <= Z[at]) continue;
+          Z[at] = iz;
+          for (let j = 0; j < 3; j++) Cb[at * 3 + j] = w0 * cs[0][j] + w1 * cs[1][j] + w2 * cs[2][j];
+        }
+    }
+    const w = x1 - x0, h = y1 - y0, rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        let r = 0, g = 0, b = 0, cov = 0;
+        for (let sy = 0; sy < RSS; sy++) for (let sx = 0; sx < RSS; sx++) {
+          const at = (y * RSS + sy) * bw + x * RSS + sx;
+          if (Z[at] > 0) { cov++; r += Cb[at * 3]; g += Cb[at * 3 + 1]; b += Cb[at * 3 + 2]; }
+        }
+        if (!cov) continue;
+        const o = (y * w + x) * 4;
+        rgba[o] = r / cov; rgba[o + 1] = g / cov; rgba[o + 2] = b / cov; rgba[o + 3] = 255 * cov / (RSS * RSS);
+      }
+    return { x: x0, y: y0, w, h, rgba };
   }
 
   // ---- measuring a figure against the canon (the checker's test, and the viewer's table) ----
@@ -993,6 +1093,6 @@ const Figure = (() => {
     return L;
   }
 
-  return { VITRUVIAN, PALM, skeleton, solve, build, draw, measureMesh, vitruvianPose, POSES, SEAT, CREW, colour, speechTrack, mouthAt, wordsShown, spokenUpTo, words, toPhonemes, FACE_DEFAULT, landmarks, SCREEN, room, chair, lightRoom, roomLamps };
+  return { VITRUVIAN, PALM, skeleton, solve, build, draw, measureMesh, vitruvianPose, POSES, SEAT, CREW, colour, speechTrack, mouthAt, wordsShown, spokenUpTo, words, toPhonemes, FACE_DEFAULT, landmarks, SCREEN, room, chair, lightRoom, roomLamps, raster };
 })();
 if (typeof module !== 'undefined') module.exports = Figure;

@@ -46,6 +46,7 @@ typedef struct { float open, wide, round, smile, brow_up, frown, blink; float ga
 
 typedef struct {
   float   height;
+  int     detail; /* 0 for the film, 1 a finer head for a close-up */
   FigPose pose;
   FigKit  kit;
   uint8_t skin[3], hair[3], iris[3];
@@ -64,7 +65,9 @@ typedef struct {
   bool    two;       /* a flat part shown from either side */
 } FigTri;
 
-/* Builds the figure's triangles into out (up to max); returns how many, or -1 if max was too small. */
+/* Builds the figure's triangles into out (up to max; FIG_MAX_TRIS is always enough); returns how many, or -1 if max
+ * was too small. */
+#define FIG_MAX_TRIS 16384
 int fig_build(const FigSpec *f, FigTri *out, int max);
 /* The colour of a role for this figure's kit and looks. */
 void fig_colour(const FigSpec *f, int role, float rgb[3]);
@@ -82,6 +85,9 @@ void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *lig
 typedef struct { const FigTri *tris; int n; const FigSpec *spec; } FigMesh;
 /* Draws meshes together, far to near, the same way; a triangle's tag goes to fill with it. */
 void fig_draw_meshes(const FigMesh *m, int n, const FigCam *cam, const FigLight *light, FigFill fill, void *ud);
+/* The close-up path: draws meshes with a depth buffer, smooth colour across each triangle and smooth edges, into
+ * pixels px (0xAARRGGBB, W x H), the camera's picture scaled by sc and moved by (ox, oy). */
+void fig_raster(const FigMesh *m, int n, const FigCam *cam, const FigLight *light, float sc, float ox, float oy, uint32_t *px, int W, int H);
 /* where a bone starts in the room, for the figure as posed (FB_*) */
 void fig_joint(const FigSpec *f, int bone, float at[3]);
 

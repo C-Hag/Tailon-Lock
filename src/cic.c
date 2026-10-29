@@ -19,7 +19,6 @@
 #include "paint.h"
 #include "room.h"
 
-#define FIG_MAX_TRIS_CIC 8192
 
 static Painter *P;
 static Framebuffer bg; /* the room, drawn on its own and blurred, behind the people */
@@ -100,6 +99,9 @@ static int n_far, n_near, n_scr = -1;
 static RoomScreen scr[ROOM_MAX_SCREENS];
 static float scr_p[ROOM_MAX_SCREENS][3][2]; /* each screen's corners on the film: o, o + ex, o + ey */
 static RoomLights lamps;
+static float zoom; /* the film's zoom: a head large on the screen is built finer (FigSpec.detail) */
+static float view_sc, view_ox, view_oy; /* the scene to the film's pixels */
+static Framebuffer *view_fb;
 static bool alert;
 static float gq;
 
@@ -355,23 +357,24 @@ static void voice(FigSpec *f, const char *text, const float L[2], float blink_se
   memcpy(f->face.gaze, gaze, sizeof f->face.gaze);
   f->face.has_gaze = true;
 }
-static FigTri fig_tris[FIG_MAX_TRIS_CIC], chair_tris[ROOM_CHAIR_TRIS], chair_lit[ROOM_CHAIR_TRIS];
+static FigTri fig_tris[FIG_MAX_TRIS], chair_tris[ROOM_CHAIR_TRIS], chair_lit[ROOM_CHAIR_TRIS];
 /* Places a man so the crown of his head lands where the scene wants it, the head s scene units tall, and draws him
  * with his chair under him (chair: 0 none, 1 a swivel chair, 2 the high chair). */
 static void crew3d(FigSpec *f, float crown_x, float crown_y, float s, float yaw, V3 key, int chair) {
   const float H = 1.75f;
   f->pose.yaw = yaw;
+  f->detail = s * zoom > 300; /* the close-up head */
   float dz = H / 8 * CAM.F / s;
   float target[3] = { (crown_x - CAM.cx) * dz / CAM.F, CAM.pos[1] - (crown_y - CAM.cy) * dz / CAM.F, dz };
   /* where the crown lands with the pose as it is: the top of a figure built there */
-  int n = fig_build(f, fig_tris, FIG_MAX_TRIS_CIC);
+  int n = fig_build(f, fig_tris, FIG_MAX_TRIS);
   float top = -1e9f, tx = 0, tz = 0;
   for (int i = 0; i < n; i++)
     if (fig_tris[i].part == FP_HEAD)
       for (int k = 0; k < 3; k++)
         if (fig_tris[i].v[k][1] > top) top = fig_tris[i].v[k][1], tx = fig_tris[i].v[k][0], tz = fig_tris[i].v[k][2];
   f->pose.root[0] += target[0] - tx, f->pose.root[1] += target[1] - top, f->pose.root[2] += target[2] - tz;
-  n = fig_build(f, fig_tris, FIG_MAX_TRIS_CIC);
+  n = fig_build(f, fig_tris, FIG_MAX_TRIS);
   FigMesh m[2] = { { fig_tris, n > 0 ? n : 0, f }, { chair_lit, 0, NULL } };
   if (chair) {
     float hips[3], a = yaw * PI_F / 180;
@@ -381,7 +384,7 @@ static void crew3d(FigSpec *f, float crown_x, float crown_y, float s, float yaw,
     if (nc > 0) room_light(chair_tris, chair_lit, nc, &lamps), m[1].n = nc;
   }
   FigLight L = { { -0.62f, 0.36f, -0.7f }, { key.v[0], key.v[1], key.v[2] }, { blue_rim.v[0], blue_rim.v[1], blue_rim.v[2] } };
-  fig_draw_meshes(m, 2, &CAM, &L, fill_tri, NULL);
+  fig_raster(m, 2, &CAM, &L, view_sc, view_ox, view_oy, view_fb->px, view_fb->w, view_fb->h); /* the people: the close-up path */
 }
 
 void cic_draw(Framebuffer *out, float t, float t0, float t1) {
@@ -397,6 +400,8 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
   float sc = H / 900.0f, z = expf(logf(zc) + (logf(zw) - logf(zc)) * zo);
   float wx = 760 + 260 * ease(u) + 120 * ease(clampf_((t - L3[0]) / 1.1f, 0, 1)), wy = 450 + 10 * sinf(t * 0.7f);
   float camx = 272 + (wx - 272) * zo, camy = 392 + (wy - 392) * zo;
+  zoom = z;
+  view_sc = sc * z, view_ox = W / 2.0f - camx * sc * z, view_oy = H / 2.0f - camy * sc * z, view_fb = out;
   blue_rim = alert ? mix(v3c(90, 150, 230), v3c(255, 70, 60), gq * 0.5f) : v3c(90, 150, 230);
   red_k = alert ? gq * 0.25f : 0;
   if (!room_ready()) return;
@@ -431,7 +436,7 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
     pl.pose.ang[FB_FORE_R][0] = 0, pl.pose.ang[FB_FORE_R][1] = 50, pl.pose.ang[FB_FORE_R][2] = 0;
     pl.pose.curl[1] = 50;
     pl.pose.ang[FB_HEAD][0] = -6, pl.pose.ang[FB_HEAD][1] = -8, pl.pose.ang[FB_HEAD][2] = 0;
-    int np = fig_build(&pl, fig_tris, FIG_MAX_TRIS_CIC);
+    int np = fig_build(&pl, fig_tris, FIG_MAX_TRIS);
     FigMesh m[2] = { { lit_far, n_far, NULL }, { fig_tris, np > 0 ? np : 0, &pl } };
     V3 k = mix(v3c(200, 180, 120), v3c(255, 80, 60), red_k);
     FigLight L = { { -0.62f, 0.36f, -0.7f }, { k.v[0], k.v[1], k.v[2] }, { blue_rim.v[0], blue_rim.v[1], blue_rim.v[2] } };

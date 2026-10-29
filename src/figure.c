@@ -146,6 +146,7 @@ typedef struct {
   FigTri *t;
   int n, max;
   bool full;
+  double skin[3]; /* skin is drawn smooth, in this colour (sides, tube) */
 } Out;
 
 static void put(Out *o, V3 a, V3 b, V3 c, int role, int part, bool two) {
@@ -194,19 +195,27 @@ typedef struct { double t, w, d, z; int role; } Ring;
 
 static void sides(const Skel *K, const Joint *w, const Ring *rings, int nr, int part, Out *o) {
   Frame F = frame(w);
-  V3 base[8][SEG];
+  V3 base[8][SEG], bn[8][SEG];
   for (int k = 0; k < nr; k++) {
     V3 c = add(w->at, mul(F.along, rings[k].t * w->len));
     for (int i = 0; i < SEG; i++) {
       double a = (double)i / SEG * PI * 2, cx = spow(cos(a), 0.8), cz = spow(sin(a), 0.8);
       base[k][i] = add(c, add(mul(F.across, cx * rings[k].w * K->H), mul(F.fwd, cz * rings[k].d * K->H + rings[k].z * K->H)));
+      bn[k][i] = norm(add(mul(F.across, cx / rings[k].w), mul(F.fwd, cz / rings[k].d))); /* the outward direction, for skin */
     }
   }
+  const double(*cs)[3] = (const double(*)[3])(double[3][3]){ { o->skin[0], o->skin[1], o->skin[2] }, { o->skin[0], o->skin[1], o->skin[2] }, { o->skin[0], o->skin[1], o->skin[2] } };
   for (int k = 0; k + 1 < nr; k++)
     for (int i = 0; i < SEG; i++) {
       int j = (i + 1) % SEG;
-      put(o, base[k][i], base[k + 1][j], base[k][j], rings[k].role, part, false);
-      put(o, base[k][i], base[k + 1][i], base[k + 1][j], rings[k].role, part, false);
+      if (rings[k].role == FR_SKIN && rings[k + 1].role == FR_SKIN) { /* skin: smooth, as the face is */
+        V3 n1[3] = { bn[k][i], bn[k + 1][j], bn[k][j] }, n2[3] = { bn[k][i], bn[k + 1][i], bn[k + 1][j] };
+        put_smooth(o, base[k][i], base[k + 1][j], base[k][j], FR_SKIN, part, false, n1, cs);
+        put_smooth(o, base[k][i], base[k + 1][i], base[k + 1][j], FR_SKIN, part, false, n2, cs);
+      } else {
+        put(o, base[k][i], base[k + 1][j], base[k][j], rings[k].role, part, false);
+        put(o, base[k][i], base[k + 1][i], base[k + 1][j], rings[k].role, part, false);
+      }
     }
   for (int e = 0; e < 2; e++) { /* close both ends */
     int k = e ? nr - 1 : 0;
@@ -223,16 +232,24 @@ static void sides(const Skel *K, const Joint *w, const Ring *rings, int nr, int 
 /* a tube between two points, its cross-section a rounded box (half-width along `across`) */
 static void tube(const Skel *K, V3 a, V3 b, V3 across, double w0, double d0, double w1, double d1, int role, int part, Out *o) {
   V3 along = norm(sub(b, a)), x = norm(sub(across, mul(along, dot(across, along)))), z = cross(x, along);
-  V3 A[SEG], B[SEG];
+  V3 A[SEG], B[SEG], NA[SEG], NB[SEG];
   for (int i = 0; i < SEG; i++) {
     double t = (double)i / SEG * PI * 2, cx = spow(cos(t), 0.8), cz = spow(sin(t), 0.8);
     A[i] = add(a, add(mul(x, cx * w0 * K->H), mul(z, cz * d0 * K->H)));
     B[i] = add(b, add(mul(x, cx * w1 * K->H), mul(z, cz * d1 * K->H)));
+    NA[i] = norm(add(mul(x, cx / w0), mul(z, cz / d0))), NB[i] = norm(add(mul(x, cx / w1), mul(z, cz / d1)));
   }
+  const double(*cs)[3] = (const double(*)[3])(double[3][3]){ { o->skin[0], o->skin[1], o->skin[2] }, { o->skin[0], o->skin[1], o->skin[2] }, { o->skin[0], o->skin[1], o->skin[2] } };
   for (int i = 0; i < SEG; i++) {
     int j = (i + 1) % SEG;
-    put(o, A[i], B[j], A[j], role, part, false);
-    put(o, A[i], B[i], B[j], role, part, false);
+    if (role == FR_SKIN) { /* skin: smooth */
+      V3 n1[3] = { NA[i], NB[j], NA[j] }, n2[3] = { NA[i], NB[i], NB[j] };
+      put_smooth(o, A[i], B[j], A[j], role, part, false, n1, cs);
+      put_smooth(o, A[i], B[i], B[j], role, part, false, n2, cs);
+    } else {
+      put(o, A[i], B[j], A[j], role, part, false);
+      put(o, A[i], B[i], B[j], role, part, false);
+    }
     put(o, A[i], A[j], a, role, part, false);
     put(o, B[j], B[i], b, role, part, false);
   }
@@ -279,8 +296,10 @@ static void quad(Out *o, V3 a, V3 b, V3 c, V3 d, int role, int part) {
 }
 
 /* ---- the face engine (see figure.js: the same landmarks, shapes, expressions and colours) ---- */
-#define FU 36
-#define FA 40
+/* rings up the head and segments round it: for the film, and finer for a close-up (FigSpec.detail) */
+static const int GRID[2][2] = { { 36, 40 }, { 60, 72 } };
+#define FU_MAX 60
+#define FA_MAX 72
 #define EYE_U 0.5
 typedef struct { double EW, eyeX, inner, outer, eyeU, brow, noseBase, hairline, mouthU, mouthX, noseHalf, earTop, earBottom; } Land;
 static Land landmarks(void) {
@@ -319,7 +338,7 @@ static void head_shape(double u, double a, const FigFace *fp, const Ex *ex, cons
   int front = sin(a) > 0;
   double ax = fabs(x), dz = 0, du = 0;
   if (front) {
-    dz += (0.015 + 0.04 * fp->brow) * gauss(sq(u - 0.56) * 6 + sq(maxd(0, ax - 0.32)), 0.06);
+    dz += (0.015 + 0.04 * fp->brow) * gauss(sq(u - 0.56) * 6 + sq(ax - L->eyeX) * 0.5, 0.06); /* over each eye */
     dz -= (0.02 + 0.05 * fp->socket) * gauss(sq(u - L->eyeU) + sq(ax - L->eyeX), 0.075);
     dz += (0.01 + 0.035 * fp->cheek) * gauss(sq(u - 0.4) + sq(ax - 0.3), 0.09);
     dz += (0.01 + 0.04 * fp->chin) * gauss(sq(u - 0.05) * 3 + x * x, 0.1);
@@ -332,6 +351,12 @@ static void head_shape(double u, double a, const FigFace *fp, const Ex *ex, cons
     dz -= 0.012 * fp->age * gauss(sq(ax - fold) + 0, 0.03) * (u < L->noseBase && u > L->mouthU - 0.02 ? 1 : 0);
     du += ex->smile * 0.02 * gauss(sq(u - L->mouthU) + sq(ax - L->mouthX), 0.06);
     dz += ex->smile * 0.012 * gauss(sq(u - 0.36) + sq(ax - 0.26), 0.07);
+    /* the finer modelling: the temples' hollow, the hollow under the cheekbones, the groove from the nose to the upper
+     * lip, the fold under the lower lip */
+    dz -= 0.012 * gauss(sq(u - 0.62) + sq(ax - 0.34), 0.06);
+    dz -= (0.004 + 0.012 * fp->cheek) * gauss(sq(u - 0.28) + sq(ax - 0.29), 0.05);
+    dz -= 0.005 * gauss(sq(u - (L->noseBase + L->mouthU) / 2) * 3, 0.03) * gauss(x * x, 0.025);
+    dz -= 0.008 * gauss(sq(u - L->mouthU + 0.075), 0.02) * inMouth;
   }
   if (u < 0.3) x *= 1 + 0.22 * (fp->jaw - 0.5) * (1 - u / 0.3);
   double n = sqrt(x * x + z * z);
@@ -421,7 +446,8 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
   h.jawA = ex.open * 0.26;
   h.MW = L->mouthX * (1 + 0.25 * ex.wide + 0.15 * ex.smile - 0.35 * ex.round);
   /* the grid's rows: finer round the face, and two rows at the mouth's line, the lips' parting */
-  double us[FU + 3];
+  const int FU = GRID[fig->detail ? 1 : 0][0], FA = GRID[fig->detail ? 1 : 0][1];
+  double us[FU_MAX + 3];
   int nu = 0, lip_row = -1;
   for (int k = 0; k <= FU; k++) {
     double t = (double)k / FU, u = t * t * (3 - 2 * t) * 0.5 + t * 0.5;
@@ -436,9 +462,9 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
     }
   for (int k = 0; k < nu; k++)
     if (us[k] == L->mouthU - 0.002) lip_row = k;
-  static V3 GP[FU + 3][FA], GN[FU + 3][FA];
-  static double GC[FU + 3][FA][3], GX[FU + 3][FA], GZ[FU + 3][FA];
-  static bool GH[FU + 3][FA];
+  static V3 GP[FU_MAX + 3][FA_MAX], GN[FU_MAX + 3][FA_MAX];
+  static double GC[FU_MAX + 3][FA_MAX][3], GX[FU_MAX + 3][FA_MAX], GZ[FU_MAX + 3][FA_MAX];
+  static bool GH[FU_MAX + 3][FA_MAX];
   for (int k = 0; k < nu; k++)
     for (int i = 0; i < FA; i++) {
       double a = (double)i / FA * PI * 2, x, z, uu;
@@ -531,30 +557,33 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
     V3 ec = HP(&h, L->eyeU, L->eyeX * sx, zf - rE * 0.9 - 0.03 * fp->socket);
     double RE = rE * h.hH;
     V3 ax = h.F.across, up = h.F.along, fw = h.F.fwd;
-    { /* the eyeball */
-      static const double WHITE[3] = { 222, 216, 208 };
-      V3 pts[7][10];
-      for (int k = 0; k <= 6; k++) {
-        double b = -PI / 2 + PI * k / 6;
-        for (int i = 0; i < 10; i++) {
-          double a = (double)i / 10 * PI * 2;
+    { /* the eyeball, smooth: each point's normal straight out from its centre */
+      static const double WHITE[3][3] = { { 222, 216, 208 }, { 222, 216, 208 }, { 222, 216, 208 } };
+      V3 pts[9][14];
+      for (int k = 0; k <= 8; k++) {
+        double b = -PI / 2 + PI * k / 8;
+        for (int i = 0; i < 14; i++) {
+          double a = (double)i / 14 * PI * 2;
           pts[k][i] = add(ec, add(mul(ax, cos(b) * cos(a) * RE), add(mul(up, sin(b) * RE), mul(fw, cos(b) * sin(a) * RE))));
         }
       }
-      for (int k = 0; k < 6; k++)
-        for (int i = 0; i < 10; i++) {
-          int j = (i + 1) % 10;
-          put_own(o, pts[k][i], pts[k + 1][j], pts[k][j], FR_EYE_WHITE, FP_EYE, false, WHITE);
-          put_own(o, pts[k][i], pts[k + 1][i], pts[k + 1][j], FR_EYE_WHITE, FP_EYE, false, WHITE);
+      for (int k = 0; k < 8; k++)
+        for (int i = 0; i < 14; i++) {
+          int j = (i + 1) % 14;
+          V3 A = pts[k][i], B = pts[k + 1][j], C = pts[k][j], Dd = pts[k + 1][i];
+          V3 n1[3] = { norm(sub(A, ec)), norm(sub(B, ec)), norm(sub(C, ec)) }, n2[3] = { norm(sub(A, ec)), norm(sub(Dd, ec)), norm(sub(B, ec)) };
+          put_smooth(o, A, B, C, FR_EYE_WHITE, FP_EYE, false, n1, WHITE);
+          put_smooth(o, A, Dd, B, FR_EYE_WHITE, FP_EYE, false, n2, WHITE);
         }
     }
     V3 g = norm(add(mul(gaze, 1), mul(fw, 0.4))), gx = norm(cross(up, g)), gy = cross(g, gx);
     double iris[3] = { fig->iris[0], fig->iris[1], fig->iris[2] };
-    static const double PUPIL[3] = { 10, 10, 12 }, SHINE[3] = { 235, 235, 230 };
-    const double *dcol[3] = { iris, PUPIL, SHINE };
-    static const double DR[3] = { 0.46, 0.19, 0.065 }, DL[3] = { 1.0, 1.012, 1.022 };
-    for (int d = 0; d < 3; d++) {
-      V3 c = add(ec, mul(g, RE * DL[d])), ring[10];
+    /* the iris, the pupil, and the wet eye: the screen's light caught in it and a smaller second light */
+    static const double PUPIL[3] = { 10, 10, 12 }, SHINE[3] = { 240, 240, 236 }, SHINE2[3] = { 220, 224, 226 };
+    const double *dcol[4] = { iris, PUPIL, SHINE, SHINE2 };
+    static const double DR[4] = { 0.46, 0.19, 0.07, 0.035 }, DL[4] = { 1.0, 1.012, 1.022, 1.024 }, DX[4] = { 0, 0, -0.17, 0.16 }, DY[4] = { 0, 0, 0.2, -0.12 };
+    for (int d = 0; d < 4; d++) {
+      V3 c = add(add(ec, mul(g, RE * DL[d])), add(mul(gx, DX[d] * RE), mul(gy, DY[d] * RE))), ring[10];
       for (int i = 0; i < 10; i++) {
         double a = (double)i / 10 * PI * 2;
         ring[i] = add(c, add(mul(gx, cos(a) * RE * DR[d]), mul(gy, sin(a) * RE * DR[d])));
@@ -562,12 +591,16 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
       for (int i = 0; i < 10; i++) put_own(o, c, ring[i], ring[(i + 1) % 10], FR_IRIS, FP_EYE, true, dcol[d]);
     }
     double open = -0.36 + (0.62 + 0.1 * ex.browUp - 0.08 * ex.frown) * (1 - ex.blink);
-    for (int l = 0; l < 2; l++) { /* the lids: the upper comes down to blink, the lower stays */
-      double from = l ? -0.38 : PI / 2, to = l ? -PI / 2 : open, lc[3];
-      tone(&h, L->eyeU + (l ? -0.04 : 0.04), L->eyeX, zf, lc);
-      for (int c = 0; c < 3; c++) lc[c] *= l ? 0.95 : 0.92;
+    for (int l = 0; l < 3; l++) { /* the lids: the upper comes down to blink, its lashes, the lower stays */
+      double from = l == 2 ? -0.38 : l ? open + 0.06 : PI / 2, to = l == 2 ? -PI / 2 : l ? open - 0.03 : open, lc[3];
+      if (l == 1)
+        for (int c = 0; c < 3; c++) lc[c] = fig->hair[c] * 0.45;
+      else {
+        tone(&h, L->eyeU + (l ? -0.04 : 0.04), L->eyeX, zf, lc);
+        for (int c = 0; c < 3; c++) lc[c] *= l ? 0.95 : 0.92;
+      }
       V3 pts[4][11];
-      double r = RE * 1.07;
+      double r = RE * (l == 1 ? 1.085 : 1.07);
       for (int k = 0; k <= 3; k++) {
         double b = from + (to - from) * k / 3;
         for (int i = 0; i <= 10; i++) {
@@ -575,10 +608,13 @@ static void head(const Skel *K, const Joint *w, const FigSpec *fig, Out *o) {
           pts[k][i] = add(ec, add(mul(ax, cos(b) * cos(a) * r), add(mul(up, sin(b) * r), mul(fw, cos(b) * sin(a) * r))));
         }
       }
-      for (int k = 0; k < 3; k++)
+      const double lcs[3][3] = { { lc[0], lc[1], lc[2] }, { lc[0], lc[1], lc[2] }, { lc[0], lc[1], lc[2] } };
+      for (int k = 0; k < 3; k++) /* smooth, round the eyeball */
         for (int i = 0; i < 10; i++) {
-          put_own(o, pts[k][i], pts[k + 1][i + 1], pts[k][i + 1], FR_LID, FP_EYE, true, lc);
-          put_own(o, pts[k][i], pts[k + 1][i], pts[k + 1][i + 1], FR_LID, FP_EYE, true, lc);
+          V3 A = pts[k][i], B = pts[k + 1][i + 1], C = pts[k][i + 1], Dd = pts[k + 1][i];
+          V3 n1[3] = { norm(sub(A, ec)), norm(sub(B, ec)), norm(sub(C, ec)) }, n2[3] = { norm(sub(A, ec)), norm(sub(Dd, ec)), norm(sub(B, ec)) };
+          put_smooth(o, A, B, C, FR_LID, FP_EYE, true, n1, lcs);
+          put_smooth(o, A, Dd, B, FR_LID, FP_EYE, true, n2, lcs);
         }
     }
     { /* the brow: a band of hair over the ridge, the inner end lifting or drawing down */
@@ -685,7 +721,7 @@ static const double LEG_THIGH[4][4] = { { 0, 0.046, 0.05, 0 }, { 0.4, 0.043, 0.0
 static const double LEG_SHIN[4][4] = { { 0, 0.027, 0.03, 0 }, { 0.3, 0.028, 0.034, -0.004 }, { 0.75, 0.02, 0.021, 0 }, { 1, 0.016, 0.018, 0 } };
 
 int fig_build(const FigSpec *fig, FigTri *outp, int max) {
-  Out O = { outp, 0, max, false }, *o = &O;
+  Out O = { outp, 0, max, false, { fig->skin[0], fig->skin[1], fig->skin[2] } }, *o = &O;
   Skel K = skeleton(fig->height > 0 ? fig->height : 1.75);
   double H = K.H;
   Joint W[FB_COUNT];
@@ -850,7 +886,7 @@ static void skin_shade(V3 nn, const double base[3], V3 ld, V3 view, const FigLig
 }
 static bool skin_role(int r) { return r == FR_SKIN || r == FR_SKIN_SHADE || r == FR_LIP || r == FR_LID; }
 
-#define FIG_MAX_TRIS 8192
+
 void fig_draw(const FigSpec *figs, int n, const FigCam *cam, const FigLight *light, FigFill fill, void *ud) {
   FigTri *tris = malloc(sizeof *tris * (size_t)FIG_MAX_TRIS * (size_t)(n > 0 ? n : 1));
   FigMesh *m = malloc(sizeof *m * (size_t)(n > 0 ? n : 1));
@@ -906,7 +942,7 @@ void fig_draw_meshes(const FigMesh *m, int n, const FigCam *cam, const FigLight 
           V3 vn = v3(t->ns[q][0], t->ns[q][1], t->ns[q][2]);
           if (dot(vn, view) < 0) vn = mul(vn, -1);
           double base[3] = { t->cs[q][0], t->cs[q][1], t->cs[q][2] };
-          (t->role == FR_SKIN ? skin_shade : shade)(vn, base, ld, view, light, cs[q]);
+          (skin_role(t->role) ? skin_shade : shade)(vn, base, ld, view, light, cs[q]);
         }
         for (int q = 0; q < 3; q++) s->col[q] = (float)((cs[0][q] + cs[1][q] + cs[2][q]) / 3);
         s->grad = gradient((const float(*)[2])s->pts, (const double(*)[3])cs, &s->g);
@@ -924,6 +960,132 @@ void fig_draw_meshes(const FigMesh *m, int n, const FigCam *cam, const FigLight 
   qsort(all, (size_t)na, sizeof *all, by_depth);
   for (int i = 0; i < na; i++) fill((const float(*)[2])all[i].pts, all[i].col, all[i].grad ? &all[i].g : NULL, all[i].tag, ud);
   free(all);
+}
+
+/* ---- the close-up path: people drawn with a depth buffer ----
+ * The painter's far-to-near sort is enough for the room, but a face up close has small parts in layers (the eyeball,
+ * the iris, the lids, the lashes, the brows over the skin), so people are drawn here a pixel at a time instead: each
+ * triangle's corners lit (as fig_draw lights them), the colour blended smoothly across it, the nearest surface kept
+ * at every sample, two by two samples to a pixel so the edges are smooth. */
+#define RSS 2
+static float *r_col, *r_z;
+static size_t r_cap;
+void fig_raster(const FigMesh *m, int n, const FigCam *cam, const FigLight *light, float sc, float ox, float oy, uint32_t *px, int W, int H) {
+  V3 cp = v3(cam->pos[0], cam->pos[1], cam->pos[2]), cf = v3(cam->f[0], cam->f[1], cam->f[2]);
+  V3 cu = v3(cam->u[0], cam->u[1], cam->u[2]), cr = v3(cam->r[0], cam->r[1], cam->r[2]), ld = v3(light->dir[0], light->dir[1], light->dir[2]);
+  /* the samples' box: every triangle's corners on the screen */
+  float bx0 = 1e30f, by0 = 1e30f, bx1 = -1e30f, by1 = -1e30f;
+  for (int k = 0; k < n; k++)
+    for (int i = 0; i < m[k].n; i++)
+      for (int q = 0; q < 3; q++) {
+        V3 qd = sub(v3(m[k].tris[i].v[q][0], m[k].tris[i].v[q][1], m[k].tris[i].v[q][2]), cp);
+        double zz = dot(qd, cf);
+        if (zz < 0.05) continue;
+        float x = (float)((cam->cx + dot(qd, cr) / zz * cam->F) * sc + ox), y = (float)((cam->cy - dot(qd, cu) / zz * cam->F) * sc + oy);
+        bx0 = x < bx0 ? x : bx0, by0 = y < by0 ? y : by0, bx1 = x > bx1 ? x : bx1, by1 = y > by1 ? y : by1;
+      }
+  int x0 = (int)floorf(bx0) - 1, y0 = (int)floorf(by0) - 1, x1 = (int)ceilf(bx1) + 1, y1 = (int)ceilf(by1) + 1;
+  if (x0 < 0) x0 = 0;
+  if (y0 < 0) y0 = 0;
+  if (x1 > W) x1 = W;
+  if (y1 > H) y1 = H;
+  if (x1 <= x0 || y1 <= y0) return;
+  int bw = (x1 - x0) * RSS, bh = (y1 - y0) * RSS;
+  size_t need = (size_t)bw * bh;
+  if (need > r_cap) {
+    float *c = realloc(r_col, need * 3 * sizeof *c), *z = c ? realloc(r_z, need * sizeof *z) : NULL;
+    if (c) r_col = c;
+    if (!z) return;
+    r_z = z, r_cap = need;
+  }
+  memset(r_z, 0, need * sizeof *r_z); /* 1/z: 0 is nothing there */
+  for (int k = 0; k < n; k++)
+    for (int i = 0; i < m[k].n; i++) {
+      const FigTri *t = &m[k].tris[i];
+      V3 a = v3(t->v[0][0], t->v[0][1], t->v[0][2]), b = v3(t->v[1][0], t->v[1][1], t->v[1][2]), c = v3(t->v[2][0], t->v[2][1], t->v[2][2]);
+      V3 nn = norm(cross(sub(b, a), sub(c, a))), d = sub(mul(add(add(a, b), c), 1.0 / 3), cp);
+      if (dot(d, cf) < 0.05) continue;
+      if (dot(nn, d) > 0) {
+        if (!t->two) continue;
+        nn = mul(nn, -1);
+      }
+      /* the corners on the screen (in samples), their 1/z, and their colours */
+      double X[3], Y[3], IZ[3], col[3][3];
+      bool ok = true;
+      for (int q = 0; q < 3; q++) {
+        V3 qd = sub(q == 0 ? a : q == 1 ? b : c, cp);
+        double zz = dot(qd, cf);
+        if (zz < 0.05) ok = false;
+        X[q] = ((cam->cx + dot(qd, cr) / zz * cam->F) * sc + ox - x0) * RSS;
+        Y[q] = ((cam->cy - dot(qd, cu) / zz * cam->F) * sc + oy - y0) * RSS;
+        IZ[q] = 1 / zz;
+      }
+      if (!ok) continue;
+      V3 view = norm(mul(d, -1));
+      if (t->shade == FS_LIT)
+        for (int q = 0; q < 3; q++)
+          for (int j = 0; j < 3; j++) col[q][j] = t->col[j];
+      else if (t->shade == FS_SMOOTH)
+        for (int q = 0; q < 3; q++) {
+          V3 vn = v3(t->ns[q][0], t->ns[q][1], t->ns[q][2]);
+          if (dot(vn, view) < 0) vn = mul(vn, -1);
+          double base[3] = { t->cs[q][0], t->cs[q][1], t->cs[q][2] };
+          (skin_role(t->role) ? skin_shade : shade)(vn, base, ld, view, light, col[q]);
+        }
+      else {
+        float bf[3] = { 255, 0, 255 };
+        if (t->shade == FS_OWN) bf[0] = t->col[0], bf[1] = t->col[1], bf[2] = t->col[2];
+        else if (m[k].spec) fig_colour(m[k].spec, t->role, bf);
+        double base[3] = { bf[0], bf[1], bf[2] };
+        (skin_role(t->role) ? skin_shade : shade)(nn, base, ld, view, light, col[0]);
+        memcpy(col[1], col[0], sizeof col[0]), memcpy(col[2], col[0], sizeof col[0]);
+      }
+      double area = (X[1] - X[0]) * (Y[2] - Y[0]) - (X[2] - X[0]) * (Y[1] - Y[0]);
+      if (fabs(area) < 1e-9) continue;
+      int sx0 = (int)floor(fmin(X[0], fmin(X[1], X[2]))), sx1 = (int)ceil(fmax(X[0], fmax(X[1], X[2])));
+      int sy0 = (int)floor(fmin(Y[0], fmin(Y[1], Y[2]))), sy1 = (int)ceil(fmax(Y[0], fmax(Y[1], Y[2])));
+      if (sx0 < 0) sx0 = 0;
+      if (sy0 < 0) sy0 = 0;
+      if (sx1 > bw) sx1 = bw;
+      if (sy1 > bh) sy1 = bh;
+      for (int y = sy0; y < sy1; y++)
+        for (int x = sx0; x < sx1; x++) {
+          double px_ = x + 0.5, py_ = y + 0.5;
+          double w0 = ((X[1] - px_) * (Y[2] - py_) - (X[2] - px_) * (Y[1] - py_)) / area;
+          double w1 = ((X[2] - px_) * (Y[0] - py_) - (X[0] - px_) * (Y[2] - py_)) / area;
+          double w2 = 1 - w0 - w1;
+          if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+          float iz = (float)(w0 * IZ[0] + w1 * IZ[1] + w2 * IZ[2]);
+          size_t at = (size_t)y * bw + x;
+          if (iz <= r_z[at]) continue;
+          r_z[at] = iz;
+          for (int j = 0; j < 3; j++) r_col[at * 3 + j] = (float)(w0 * col[0][j] + w1 * col[1][j] + w2 * col[2][j]);
+        }
+    }
+  /* each pixel: the samples covered, averaged, laid over what is there by how many were covered */
+  for (int y = y0; y < y1; y++)
+    for (int x = x0; x < x1; x++) {
+      float acc[3] = { 0, 0, 0 };
+      int cov = 0;
+      for (int sy = 0; sy < RSS; sy++)
+        for (int sx = 0; sx < RSS; sx++) {
+          size_t at = (size_t)((y - y0) * RSS + sy) * bw + (x - x0) * RSS + sx;
+          if (r_z[at] > 0) {
+            cov++;
+            for (int j = 0; j < 3; j++) acc[j] += r_col[at * 3 + j];
+          }
+        }
+      if (!cov) continue;
+      float a = (float)cov / (RSS * RSS);
+      uint32_t o = px[(size_t)y * W + x];
+      float base[3] = { (float)(o >> 16 & 255), (float)(o >> 8 & 255), (float)(o & 255) };
+      uint32_t out = 0xFF000000u;
+      for (int j = 0; j < 3; j++) {
+        float v = acc[j] / cov * a + base[j] * (1 - a);
+        out |= (uint32_t)(v < 0 ? 0 : v > 255 ? 255 : v + 0.5f) << (16 - 8 * j);
+      }
+      px[(size_t)y * W + x] = out;
+    }
 }
 
 void fig_joint(const FigSpec *f, int bone, float at[3]) {

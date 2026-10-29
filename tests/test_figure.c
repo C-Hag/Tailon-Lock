@@ -26,11 +26,12 @@ static void ratio(const char *name, double got, double want) {
 int main(int argc, char **argv) {
   if (argc > 2 && !strcmp(argv[1], "--dump")) {
     /* the triangles of one crew member: who (0-2), raise */
-    static FigTri t[8192];
+    static FigTri t[FIG_MAX_TRIS];
     FigSpec f;
     fig_crew(argv[2][0] - '0', 1.75f, argc > 3 ? (float)atof(argv[3]) : 0, &f);
     if (argc > 4) f.face.open = (float)atof(argv[4]), f.face.wide = 0.3f, f.face.smile = 0.2f, f.face.brow_up = 0.5f, f.face.blink = 0.3f;
-    int n = fig_build(&f, t, 8192);
+    if (argc > 5) f.detail = atoi(argv[5]); /* the close-up head */
+    int n = fig_build(&f, t, FIG_MAX_TRIS);
     printf("%d\n", n);
     for (int i = 0; i < n; i++) {
       printf("%d %d %d %.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f %d", t[i].role, t[i].part, t[i].two, t[i].v[0][0], t[i].v[0][1], t[i].v[0][2],
