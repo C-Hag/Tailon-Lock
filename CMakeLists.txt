@@ -74,7 +74,8 @@ add_library(a4c_core STATIC
   src/core/defend.c
   src/core/json.c
   src/core/glb.c
-  src/core/crypto.c)
+  src/core/crypto.c
+  src/figure.c)
 target_include_directories(a4c_core PUBLIC src)
 target_link_libraries(a4c_core PUBLIC a4c_flags)
 if(NOT MSVC)
@@ -171,6 +172,10 @@ if(A4C_BUILD_TESTS)
   # the checker's golden-data dumper (tools/check, stage 3)
   add_executable(json_dump tests/json_dump.c)
   target_link_libraries(json_dump PRIVATE a4c_core)
+  # the figure engine against Leonardo's canon, measured on the mesh (and its triangles, for the parity check)
+  add_executable(test_figure tests/test_figure.c)
+  target_link_libraries(test_figure PRIVATE a4c_core)
+  add_test(NAME figure COMMAND test_figure)
   # the brick 9 audit of plat.h: the callback loop, and several fingers of touch with their ids
   add_executable(test_plat tests/test_plat.c src/platform/plat_sdl.c src/platform/plat_common.c)
   target_link_libraries(test_plat PRIVATE a4c_core SDL3::SDL3-static)

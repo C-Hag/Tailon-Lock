@@ -19,7 +19,8 @@ The stages:
    3 golden      every JSON the game reads, dumped by our own reader and compared byte for byte with the
                  reference dumps (taken with the old reader in brick 0); every game mesh, and the same mesh
                  written to and read back from our own .glb, against its reference dump; the opening film
-                 keeps every shot's subjects in frame (assets/intro/tools/frame_check.js --strict)
+                 keeps every shot's subjects in frame (assets/intro/tools/frame_check.js --strict); the figure
+                 engine makes the same triangles in C and in the browser game (assets/figure/parity.js)
    4 deps        what the binaries link and load, what CMake fetches, what the sources include
    5 cleanroom   no third-party names past the allow-list, no licence headers, no personal or machine
                  terms, the homage line the only reference to the original game
@@ -334,6 +335,16 @@ def stage_golden(baseline):
     say('    intro framing: %s' % ('every shot keeps its subjects in frame' if rc == 0 else 'subjects leave the frame'))
     for l in lines[:6]:
         say('      ' + l.strip()[:150])
+    ok_all = ok_all and rc == 0
+    # the figure engine: the C game's and the browser game's make the same triangles (assets/figure/parity.js)
+    rc, out = run(['node', os.path.join(ROOT, 'assets', 'figure', 'parity.js'), os.path.join(bdir('gcc-release'), 'test_figure')])
+    say('    figure engine, C against the browser game: %s' % ('the same triangles for every crew pose' if rc == 0 else 'DIFFERENT'))
+    rc2, out2 = run([sys.executable, os.path.join(ROOT, 'tools', 'sync_figure.py'), '--check'])
+    say('    ' + out2.strip())
+    ok_all = ok_all and rc2 == 0
+    for l in out.splitlines():
+        if rc and l.strip():
+            say('      ' + l.strip()[:150])
     ok_all = ok_all and rc == 0
     return ok_all
 
