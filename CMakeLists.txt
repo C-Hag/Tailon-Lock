@@ -129,9 +129,12 @@ if(NOT MSVC)
 endif()
 # The game looks for assets/ next to the program, so a build folder (or a zip
 # of it) runs on its own.
-add_custom_command(TARGET tailonlock POST_BUILD
+# The copy runs on every build (not only when the game relinks), so a changed
+# asset never goes stale in a build folder.
+add_custom_target(game_assets ALL
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:tailonlock>/assets
   VERBATIM)
+add_dependencies(game_assets tailonlock)
 
 # ---- relay server ---------------------------------------------------------
 if(A4C_BUILD_RELAY AND NOT WIN32)

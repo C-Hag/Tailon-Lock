@@ -233,6 +233,36 @@ static void load_specs(void) {
   json_free(root);
 }
 
+/* A mesh from assets/<rel>, a .glb read by our own loader (core/glb.c); false
+ * if there is no such file or it is not a mesh we can read. */
+static bool glb_mesh_file(const char *rel, Mesh *m) {
+  const char *p = assets_path(rel);
+  if (!p) return false;
+  size_t n = 0;
+  void *data = SDL_LoadFile(p, &n);
+  if (!data) return false;
+  GlbModel g;
+  const char *err = NULL;
+  bool ok = glb_load(data, n, &g, &err) && glb_mesh(&g, m, &err);
+  if (g.doc) glb_close(&g);
+  SDL_free(data);
+  if (!ok) SDL_Log("assets: %s: %s", p, err ? err : "not readable");
+  return ok;
+}
+
+static int meshes_from_glb; /* how many meshes came from .glb files */
+
+/* a source mesh: assets/jets/<id>.glb when there is one, else the JSON mesh */
+static bool source_mesh(const char *id, const Json *json_mesh, Mesh *m) {
+  char rel[64];
+  snprintf(rel, sizeof rel, "jets/%s.glb", id);
+  if (glb_mesh_file(rel, m)) {
+    meshes_from_glb++;
+    return true;
+  }
+  return assets_mesh(json_mesh, m);
+}
+
 static void load_jets(void) {
   Json *root = json_in_js("jets/jets_game.js", '[', ']');
   if (!root) return;
@@ -242,7 +272,7 @@ static void load_jets(void) {
     JSON_FOR(j, root) {
       if (strcmp(str(j, "id"), JET_ORDER[o].id) != 0) continue;
       const Json *g = json_get(j, "game");
-      if (!assets_mesh(json_get(j, "mesh"), &near)) break;
+      if (!source_mesh(JET_ORDER[o].id, json_get(j, "mesh"), &near)) break;
       float minz = 0;
       for (int i = 0; i < near.nv; i++) minz = fminf(minz, near.v[i].z);
       decimate(&near, &far, 1.1f);
@@ -257,7 +287,7 @@ static void load_jets(void) {
   }
   json_free(root);
   load_specs();
-  SDL_Log("assets: %d jets", NJETS);
+  SDL_Log("assets: %d jets (%d meshes from .glb)", NJETS, meshes_from_glb);
 }
 
 /* ---- maps --------------------------------------------------------------- */
@@ -491,7 +521,7 @@ const Map *assets_map(int i) {
 
 static void load_carrier(void) {
   Json *root = json_in_js("jets/carrier_game.js", '{', '}');
-  if (root && assets_mesh(json_get(root, "mesh"), &MESH_CARRIER))
+  if (root && source_mesh(str(root, "id"), json_get(root, "mesh"), &MESH_CARRIER))
     SDL_Log("assets: carrier, %d faces", MESH_CARRIER.nf);
   json_free(root);
 }

@@ -118,6 +118,7 @@ SHOTS = {  # name: arguments; each a fixed number of ticks with the retro (softw
     'menu': ['--frames', '200', '--cmd', 'k', '--seed', '1'],
     'cockpit': ['--play', '1p', '--frames', '600', '--seed', '1'],
     'titlecard': ['--play', 'intro', '--frames', '3735'],
+    'hangar': ['--frames', '200', '--cmd', 'kh', '--seed', '1'],
 }
 MODES = ['1p', '2p', 'coop', 'defend', 'defend1', 'demo']
 PERF = ['--play', '1p', '--frames', '1500', '--seed', '1', '--cmd', 'g']
@@ -363,6 +364,17 @@ def golden_meshes(baseline, bad):
             same_glb += 1
         else:
             bad.append('mesh %s: through our .glb it differs from its reference' % i)
+    # the .glb files the game loads (brick 8): each must hold its reference mesh exactly
+    shipped, same_shipped = 0, 0
+    if not baseline:
+        for p in tracked('assets/jets/*.glb'):
+            i = os.path.basename(p)[:-4]
+            shipped += 1
+            rc, out = run([dumper, os.path.join(ROOT, p)])
+            if rc == 0 and hashlib.sha256(out.encode()).hexdigest() == manifest.get(i):
+                same_shipped += 1
+            else:
+                bad.append('%s: not the reference mesh (re-export with --export-glb assets/jets)' % p)
     shutil.rmtree(work, ignore_errors=True)
     if baseline:
         with open(manifest_p, 'w') as f:
@@ -374,7 +386,8 @@ def golden_meshes(baseline, bad):
     for g in gone:
         bad.append('mesh %s: in the manifest, no longer exported' % g)
     say('    %d meshes: %d sources and %d .glb round trips identical to the references' % (len(ids), same_src, same_glb))
-    return bool(ids) and same_src == same_glb == len(ids) == len(manifest)
+    say('    the game loads %d .glb meshes, %d identical to the references' % (shipped, same_shipped))
+    return bool(ids) and same_src == same_glb == len(ids) == len(manifest) and same_shipped == shipped
 
 
 # ---- 4 dependencies --------------------------------------------------------------------------------------
