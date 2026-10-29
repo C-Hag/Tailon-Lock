@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cJSON.h"
+#include "core/json.h"
 #include "core/jets.h"
 #include "core/json.h"
 
@@ -29,48 +29,8 @@ const char *assets_path(const char *rel) {
   return p;
 }
 
-#ifndef NDEBUG
-/* Brick 3 (docs/BUILD_PLAN.md): in debug builds every asset is read by both
- * readers, cJSON and our own (src/core/json.c), and the two trees must match
- * value for value: the same types, names, order, strings and numbers (bit for
- * bit). A mismatch stops the game, naming the file and the path into it. */
-static bool same_tree(const cJSON *a, const Json *b, char *path, size_t cap) {
-  size_t at = strlen(path);
-  bool ok;
-  if (cJSON_IsNull(a)) ok = b->type == JSON_NULL;
-  else if (cJSON_IsTrue(a)) ok = b->type == JSON_TRUE;
-  else if (cJSON_IsFalse(a)) ok = b->type == JSON_FALSE;
-  else if (cJSON_IsNumber(a)) ok = b->type == JSON_NUMBER && memcmp(&a->valuedouble, &b->num, sizeof b->num) == 0;
-  else if (cJSON_IsString(a)) ok = b->type == JSON_STRING && !strcmp(a->valuestring, b->str) && strlen(b->str) == b->len;
-  else if (cJSON_IsArray(a) || cJSON_IsObject(a)) {
-    ok = b->type == (cJSON_IsArray(a) ? JSON_ARRAY : JSON_OBJECT) && cJSON_GetArraySize(a) == b->count;
-    const cJSON *e = a->child;
-    for (int i = 0; ok && i < b->count; i++, e = e->next) {
-      const Json *f = &b->items[i];
-      ok = e && (e->string == NULL) == (f->name == NULL) && (!e->string || !strcmp(e->string, f->name));
-      if (e && e->string) snprintf(path + at, cap - at, ".%s", e->string);
-      else snprintf(path + at, cap - at, "[%d]", i);
-      if (ok) ok = same_tree(e, f, path, cap);
-      if (ok) path[at] = 0;
-    }
-  } else ok = false;
-  return ok;
-}
 
-static void crosscheck(const char *file, const cJSON *a, const char *text, size_t n) {
-  Json *b = json_parse(text, n, NULL);
-  char path[512] = "";
-  if (!a != !b || (a && !same_tree(a, b, path, sizeof path))) {
-    SDL_Log("assets: our JSON reader and cJSON disagree on %s at %s", file, path[0] ? path : "(the whole file)");
-    abort();
-  }
-  json_free(b);
-}
-#else
-#define crosscheck(file, a, text, n) ((void)0)
-#endif
-
-cJSON *assets_json(const char *rel) {
+Json *assets_json(const char *rel) {
   const char *p = assets_path(rel);
   if (!p) return NULL;
   size_t n = 0;
@@ -79,8 +39,7 @@ cJSON *assets_json(const char *rel) {
     SDL_Log("assets: cannot read %s", p);
     return NULL;
   }
-  cJSON *j = cJSON_ParseWithLength(text, n);
-  crosscheck(p, j, text, n);
+  Json *j = json_parse(text, n, NULL);
   SDL_free(text);
   if (!j) SDL_Log("assets: %s is not valid JSON", p);
   return j;
@@ -92,50 +51,49 @@ unsigned assets_hex(const char *s) {
   return (unsigned)strtoul(s, NULL, 16);
 }
 
-bool assets_mesh(const cJSON *j, Mesh *m) {
-  const cJSON *V = cJSON_GetObjectItemCaseSensitive(j, "v"), *F = cJSON_GetObjectItemCaseSensitive(j, "f");
-  const cJSON *rad = cJSON_GetObjectItemCaseSensitive(j, "rad");
-  if (!cJSON_IsArray(V) || !cJSON_IsArray(F)) return false;
-  mesh_reset(m, cJSON_IsNumber(rad) ? (float)rad->valuedouble : 10);
-  const cJSON *v;
-  cJSON_ArrayForEach(v, V) {
-    if (cJSON_GetArraySize(v) < 3) return false;
-    mesh_vert(m, (float)cJSON_GetArrayItem(v, 0)->valuedouble, (float)cJSON_GetArrayItem(v, 1)->valuedouble,
-              (float)cJSON_GetArrayItem(v, 2)->valuedouble);
+bool assets_mesh(const Json *j, Mesh *m) {
+  const Json *V = json_get(j, "v"), *F = json_get(j, "f");
+  const Json *rad = json_get(j, "rad");
+  if (!json_is_array(V) || !json_is_array(F)) return false;
+  mesh_reset(m, json_is_number(rad) ? (float)rad->num : 10);
+  const Json *v;
+  JSON_FOR(v, V) {
+    if (json_count(v) < 3) return false;
+    mesh_vert(m, (float)json_at(v, 0)->num, (float)json_at(v, 1)->num,
+              (float)json_at(v, 2)->num);
   }
-  const cJSON *f;
-  cJSON_ArrayForEach(f, F) {
-    const cJSON *idx = cJSON_GetArrayItem(f, 0), *col = cJSON_GetArrayItem(f, 1);
+  const Json *f;
+  JSON_FOR(f, F) {
+    const Json *idx = json_at(f, 0), *col = json_at(f, 1);
     int ii[FACE_MAX_V], n = 0;
-    const cJSON *k;
-    cJSON_ArrayForEach(k, idx) {
-      if (n < FACE_MAX_V) ii[n] = k->valueint;
+    const Json *k;
+    JSON_FOR(k, idx) {
+      if (n < FACE_MAX_V) ii[n] = json_int(k, 0);
       n++;
     }
-    if (n <= FACE_MAX_V) mesh_face(m, ii, n, assets_hex(cJSON_GetStringValue(col)));
+    if (n <= FACE_MAX_V) mesh_face(m, ii, n, assets_hex(json_str(col)));
   }
   return m->nf > 0;
 }
 
-static const char *str(const cJSON *o, const char *k) {
-  const char *s = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(o, k));
+static const char *str(const Json *o, const char *k) {
+  const char *s = json_str(json_get(o, k));
   return s ? s : "";
 }
-static float num(const cJSON *o, const char *k, float def) {
-  const cJSON *n = cJSON_GetObjectItemCaseSensitive(o, k);
-  return cJSON_IsNumber(n) ? (float)n->valuedouble : def;
+static float num(const Json *o, const char *k, float def) {
+  const Json *n = json_get(o, k);
+  return json_is_number(n) ? (float)n->num : def;
 }
 
 /* The game-format table in a .js file (const X = [...] or {...}). */
-static cJSON *json_in_js(const char *rel, char open, char close) {
+static Json *json_in_js(const char *rel, char open, char close) {
   const char *p = assets_path(rel);
   if (!p) return NULL;
   size_t n = 0;
   char *text = SDL_LoadFile(p, &n);
   if (!text) return NULL;
   char *a = strchr(text, open), *b = strrchr(text, close);
-  cJSON *j = a && b && b > a ? cJSON_ParseWithLength(a, (size_t)(b - a + 1)) : NULL;
-  if (a && b && b > a) crosscheck(p, j, a, (size_t)(b - a + 1));
+  Json *j = a && b && b > a ? json_parse(a, (size_t)(b - a + 1), NULL) : NULL;
   SDL_free(text);
   if (!j) SDL_Log("assets: cannot parse %s", p);
   return j;
@@ -217,9 +175,9 @@ static bool    have_spec[MAX_JETS];
 const JetSpec *assets_jet_spec(int jet) { return jet >= 0 && jet < MAX_JETS && have_spec[jet] ? &specs[jet] : NULL; }
 
 static void load_specs(void) {
-  cJSON *root = assets_json("jets/jets_data.json");
-  const cJSON *j;
-  cJSON_ArrayForEach(j, root) {
+  Json *root = assets_json("jets/jets_data.json");
+  const Json *j;
+  JSON_FOR(j, root) {
     int k = jets_find(str(j, "id"));
     if (k < 0 || k >= MAX_JETS) continue;
     JetSpec *s = &specs[k];
@@ -232,17 +190,17 @@ static void load_specs(void) {
     snprintf(s->rcs, sizeof s->rcs, "%s", str(j, "rcs"));
     snprintf(s->gun, sizeof s->gun, "%s", str(j, "gun"));
     snprintf(s->engines, sizeof s->engines, "%s", str(j, "engines"));
-    const cJSON *e;
+    const Json *e;
     int n = 0;
-    cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(j, "sensors")) {
-      const char *t = cJSON_GetStringValue(e);
+    JSON_FOR(e, json_get(j, "sensors")) {
+      const char *t = json_str(e);
       if (t) n += snprintf(s->sensors + n, sizeof s->sensors - (size_t)n, "%s%s", n ? ", " : "", t);
       if (n >= (int)sizeof s->sensors) break;
     }
-    cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(j, "weapons")) {
+    JSON_FOR(e, json_get(j, "weapons")) {
       if (s->nweapons >= 4) break;
       snprintf(s->weapons[s->nweapons++], sizeof s->weapons[0], "%d X %s",
-               (int)cJSON_GetNumberValue(cJSON_GetArrayItem(e, 1)), cJSON_GetStringValue(cJSON_GetArrayItem(e, 0)));
+               (int)json_num(json_at(e, 1)), json_str(json_at(e, 0)));
     }
     s->crew = (int)num(j, "crew", 1);
     s->roll = (int)num(j, "roll", 200);
@@ -253,7 +211,7 @@ static void load_specs(void) {
     char *txt[] = { s->bloc, s->era, s->inspired, s->role, s->blurb, s->radar, s->rcs, s->gun, s->engines, s->sensors,
                     s->weapons[0], s->weapons[1], s->weapons[2], s->weapons[3] };
     for (size_t q = 0; q < sizeof txt / sizeof txt[0]; q++) plain(txt[q]);
-    const cJSON *p = cJSON_GetObjectItemCaseSensitive(j, "perf");
+    const Json *p = json_get(j, "perf");
     s->mach_alt = num(p, "m_max_alt", 0);
     s->vmax_sl = num(p, "v_max_sl_kmh", 0);
     s->supercruise = num(p, "supercruise", 0);
@@ -266,37 +224,37 @@ static void load_specs(void) {
     s->radius = num(p, "radius_km", 0);
     s->takeoff = num(p, "takeoff_m", 0);
     s->landing = num(p, "landing_m", 0);
-    const cJSON *g = cJSON_GetObjectItemCaseSensitive(j, "game");
+    const Json *g = json_get(j, "game");
     static const char *const STAT[7] = { "speed", "turn", "climb", "range", "field", "firepower", "stealth" };
     for (int q = 0; q < 7; q++) s->stat[q] = num(g, STAT[q], 5);
     have_spec[k] = true;
   }
-  cJSON_Delete(root);
+  json_free(root);
 }
 
 static void load_jets(void) {
-  cJSON *root = json_in_js("jets/jets_game.js", '[', ']');
+  Json *root = json_in_js("jets/jets_game.js", '[', ']');
   if (!root) return;
   static Mesh near, far; /* scratch, reused for every jet */
   for (size_t o = 0; o < sizeof JET_ORDER / sizeof JET_ORDER[0]; o++) {
-    const cJSON *j;
-    cJSON_ArrayForEach(j, root) {
+    const Json *j;
+    JSON_FOR(j, root) {
       if (strcmp(str(j, "id"), JET_ORDER[o].id) != 0) continue;
-      const cJSON *g = cJSON_GetObjectItemCaseSensitive(j, "game");
-      if (!assets_mesh(cJSON_GetObjectItemCaseSensitive(j, "mesh"), &near)) break;
+      const Json *g = json_get(j, "game");
+      if (!assets_mesh(json_get(j, "mesh"), &near)) break;
       float minz = 0;
       for (int i = 0; i < near.nv; i++) minz = fminf(minz, near.v[i].z);
       decimate(&near, &far, 1.1f);
       int k = jets_add(JET_ORDER[o].id, str(j, "designation"), str(j, "name"), JET_ORDER[o].role, num(g, "speed", 6),
                        num(g, "turn", 6), num(g, "climb", 6), num(g, "range", 6), -minz, &near, &far);
-      const cJSON *fl = cJSON_GetObjectItemCaseSensitive(j, "flight");
+      const Json *fl = json_get(j, "flight");
       if (k >= 0) {
         JETS[k].g_max = num(fl, "g_max", 9);
         JETS[k].g_min = num(fl, "g_min", -3);
       }
     }
   }
-  cJSON_Delete(root);
+  json_free(root);
   load_specs();
   SDL_Log("assets: %d jets", NJETS);
 }
@@ -315,9 +273,9 @@ int assets_map_find(const char *id) {
 }
 
 static void load_map_index(void) {
-  cJSON *root = assets_json("maps/maps_index.json");
-  const cJSON *e;
-  cJSON_ArrayForEach(e, root) {
+  Json *root = assets_json("maps/maps_index.json");
+  const Json *e;
+  JSON_FOR(e, root) {
     if (nmaps >= MAX_MAPS) break;
     snprintf(maps[nmaps].id, sizeof maps[0].id, "%s", str(e, "id"));
     snprintf(maps[nmaps].name, sizeof maps[0].name, "%s", str(e, "name"));
@@ -325,12 +283,12 @@ static void load_map_index(void) {
       if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 32);
     nmaps++;
   }
-  cJSON_Delete(root);
+  json_free(root);
 }
 
-static vec3 vec_of(const cJSON *a) {
-  return v3((float)cJSON_GetArrayItem(a, 0)->valuedouble, (float)cJSON_GetArrayItem(a, 1)->valuedouble,
-            (float)cJSON_GetArrayItem(a, 2)->valuedouble);
+static vec3 vec_of(const Json *a) {
+  return v3((float)json_at(a, 0)->num, (float)json_at(a, 1)->num,
+            (float)json_at(a, 2)->num);
 }
 
 static const char *const TOD_KEYS[TOD_COUNT] = { "dawn", "day", "dusk", "night" };
@@ -348,16 +306,16 @@ static int target_type(const char *t) {
 static bool load_map(int idx, Map *m) {
   char rel[96];
   snprintf(rel, sizeof rel, "maps/%s.json", maps[idx].id);
-  cJSON *j = assets_json(rel);
+  Json *j = assets_json(rel);
   if (!j) return false;
   snprintf(m->id, sizeof m->id, "%s", maps[idx].id);
   snprintf(m->name, sizeof m->name, "%s", maps[idx].name);
   snprintf(m->blurb, sizeof m->blurb, "%s", str(j, "blurb"));
 
-  const cJSON *hm = cJSON_GetObjectItemCaseSensitive(j, "heightmap");
-  const cJSON *org = cJSON_GetObjectItemCaseSensitive(hm, "origin");
-  m->origin_x = (float)cJSON_GetArrayItem(org, 0)->valuedouble;
-  m->origin_z = (float)cJSON_GetArrayItem(org, 1)->valuedouble;
+  const Json *hm = json_get(j, "heightmap");
+  const Json *org = json_get(hm, "origin");
+  m->origin_x = (float)json_at(org, 0)->num;
+  m->origin_z = (float)json_at(org, 1)->num;
   m->spacing = num(hm, "spacing", 200);
   float scale = num(hm, "scale", 0.1f);
   snprintf(rel, sizeof rel, "maps/%s", str(hm, "file"));
@@ -365,23 +323,23 @@ static bool load_map(int idx, Map *m) {
   uint8_t *raw = SDL_LoadFile(assets_path(rel), &n);
   if (!raw || n < MAP_SAMPLES * MAP_SAMPLES * 2) {
     SDL_free(raw);
-    cJSON_Delete(j);
+    json_free(j);
     return false;
   }
   for (int i = 0; i < MAP_SAMPLES * MAP_SAMPLES; i++) m->h[i] = (float)(int16_t)(raw[2 * i] | raw[2 * i + 1] << 8) * scale;
   SDL_free(raw);
-  snprintf(rel, sizeof rel, "maps/%s", str(cJSON_GetObjectItemCaseSensitive(j, "surface"), "file"));
+  snprintf(rel, sizeof rel, "maps/%s", str(json_get(j, "surface"), "file"));
   raw = SDL_LoadFile(assets_path(rel), &n);
   if (!raw || n < MAP_CELLS * MAP_CELLS) {
     SDL_free(raw);
-    cJSON_Delete(j);
+    json_free(j);
     return false;
   }
   memcpy(m->mat, raw, MAP_CELLS * MAP_CELLS);
   SDL_free(raw);
 
-  const cJSON *e;
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(j, "palette")) {
+  const Json *e;
+  JSON_FOR(e, json_get(j, "palette")) {
     int id = (int)num(e, "id", (float)m->npal);
     if (id < 0 || id >= MAP_MAX_PAL) continue;
     m->pal[id].color = assets_hex(str(e, "color"));
@@ -389,15 +347,15 @@ static bool load_map(int idx, Map *m) {
     m->pal[id].jitter = num(e, "jitter", 0);
     if (id + 1 > m->npal) m->npal = id + 1;
   }
-  const cJSON *wl = cJSON_GetObjectItemCaseSensitive(j, "water_level");
-  m->sea = cJSON_IsNumber(wl);
-  m->water_level = m->sea ? (float)wl->valuedouble : 40;
+  const Json *wl = json_get(j, "water_level");
+  m->sea = json_is_number(wl);
+  m->water_level = m->sea ? (float)wl->num : 40;
   m->water_sky_mix = num(j, "water_sky_mix", 0.25f);
   m->far_ground = assets_hex(str(j, "sky_far_ground"));
 
-  const cJSON *tods = cJSON_GetObjectItemCaseSensitive(j, "time_of_day");
+  const Json *tods = json_get(j, "time_of_day");
   for (int t = 0; t < TOD_COUNT; t++) {
-    const cJSON *o = cJSON_GetObjectItemCaseSensitive(tods, TOD_KEYS[t]);
+    const Json *o = json_get(tods, TOD_KEYS[t]);
     TimeOfDay *d = &m->tod[t];
     d->sky_top = assets_hex(str(o, "sky_top"));
     d->sky_hor = assets_hex(str(o, "sky_horizon"));
@@ -410,25 +368,25 @@ static bool load_map(int idx, Map *m) {
     d->ambient_intensity = num(o, "ambient_intensity", 0.7f);
     d->stars = num(o, "stars", 0);
     d->lights = num(o, "lights", 0);
-    d->sun = v3_norm(vec_of(cJSON_GetObjectItemCaseSensitive(o, "sun")));
+    d->sun = v3_norm(vec_of(json_get(o, "sun")));
   }
 
-  const cJSON *wx = cJSON_GetObjectItemCaseSensitive(j, "weather");
-  const cJSON *pre = cJSON_GetObjectItemCaseSensitive(wx, "presets");
+  const Json *wx = json_get(j, "weather");
+  const Json *pre = json_get(wx, "presets");
   m->default_weather = WX_SCATTERED;
   for (int w = 0; w < WX_COUNT; w++) {
     if (!strcmp(str(wx, "default"), WX_KEYS[w])) m->default_weather = w;
-    const cJSON *o = cJSON_GetObjectItemCaseSensitive(pre, WX_KEYS[w]);
+    const Json *o = json_get(pre, WX_KEYS[w]);
     Weather *W = &m->weather[w];
     W->visibility_km = num(o, "visibility_km", 30);
     W->sun_factor = num(o, "sun_factor", 1);
     W->ambient_factor = num(o, "ambient_factor", 1);
-    const cJSON *cl = cJSON_GetObjectItemCaseSensitive(o, "clouds");
-    W->nclouds = cJSON_GetArraySize(cl);
+    const Json *cl = json_get(o, "clouds");
+    W->nclouds = json_count(cl);
     W->clouds = W->nclouds ? calloc((size_t)W->nclouds, sizeof(Cloud)) : NULL;
     int k = 0;
-    const cJSON *c;
-    cJSON_ArrayForEach(c, cl) {
+    const Json *c;
+    JSON_FOR(c, cl) {
       Cloud *C = &W->clouds[k++];
       C->x = num(c, "x", 0);
       C->z = num(c, "z", 0);
@@ -436,30 +394,30 @@ static bool load_map(int idx, Map *m) {
       C->top = num(c, "top", 2000);
       const char *genus = str(c, "genus");
       C->albedo = (!strcmp(genus, "Cb") ? 0.92f : !strcmp(genus, "Fs") ? 0.62f : 1.0f) * (w == WX_STORM ? 0.72f : 1);
-      const cJSON *pl = cJSON_GetObjectItemCaseSensitive(c, "puffs");
-      C->npuffs = cJSON_GetArraySize(pl);
+      const Json *pl = json_get(c, "puffs");
+      C->npuffs = json_count(pl);
       C->puffs = calloc((size_t)(C->npuffs ? C->npuffs : 1), sizeof(Puff));
       int q = 0;
-      const cJSON *pf;
-      cJSON_ArrayForEach(pf, pl) {
+      const Json *pf;
+      JSON_FOR(pf, pl) {
         Puff *P = &C->puffs[q++];
-        P->dx = (float)cJSON_GetArrayItem(pf, 0)->valuedouble;
-        P->dy = (float)cJSON_GetArrayItem(pf, 1)->valuedouble;
-        P->dz = (float)cJSON_GetArrayItem(pf, 2)->valuedouble;
-        P->r = (float)cJSON_GetArrayItem(pf, 3)->valuedouble;
-        P->tier = cJSON_GetArraySize(pf) > 4 ? cJSON_GetArrayItem(pf, 4)->valueint : 0;
+        P->dx = (float)json_at(pf, 0)->num;
+        P->dy = (float)json_at(pf, 1)->num;
+        P->dz = (float)json_at(pf, 2)->num;
+        P->r = (float)json_at(pf, 3)->num;
+        P->tier = json_count(pf) > 4 ? json_int(json_at(pf, 4), 0) : 0;
       }
     }
   }
 
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(j, "bases")) {
+  JSON_FOR(e, json_get(j, "bases")) {
     int t = (int)num(e, "team", 0) & 1;
     m->bases[t].x = num(e, "x", 0);
     m->bases[t].z = num(e, "z", 0);
     m->bases[t].elev = num(e, "elev", 0);
     m->bases[t].heading = num(e, "heading", 0);
   }
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(j, "carriers")) {
+  JSON_FOR(e, json_get(j, "carriers")) {
     if (m->ncarriers >= MAP_MAX_CARRIERS) break;
     Carrier *c = &m->carriers[m->ncarriers++];
     c->team = (int)num(e, "team", 0);
@@ -470,7 +428,7 @@ static bool load_map(int idx, Map *m) {
     c->beam = num(e, "beam", 86);
     c->deck = num(e, "deck_height", 20.5f);
   }
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(j, "targets")) {
+  JSON_FOR(e, json_get(j, "targets")) {
     int type = target_type(str(e, "type"));
     if (type < 0 || m->ntargets >= MAP_MAX_TGT) continue;
     MapTarget *t = &m->targets[m->ntargets++];
@@ -481,7 +439,7 @@ static bool load_map(int idx, Map *m) {
     t->heading = num(e, "heading", 0);
   }
   bool got[2] = { false, false };
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(j, "spawns")) {
+  JSON_FOR(e, json_get(j, "spawns")) {
     int t = (int)num(e, "team", 0) & 1;
     if (got[t] || strcmp(str(e, "kind"), "air") != 0) continue;
     got[t] = true;
@@ -490,28 +448,28 @@ static bool load_map(int idx, Map *m) {
     m->spawn[t].z = num(e, "z", 0);
     m->spawn[t].heading = num(e, "heading", 0);
   }
-  const cJSON *tk = cJSON_GetObjectItemCaseSensitive(j, "tanker");
+  const Json *tk = json_get(j, "tanker");
   m->tanker_x = num(tk, "x", 0);
   m->tanker_z = num(tk, "z", 0);
   m->tanker_r = num(tk, "radius", 3200);
   m->tanker_alt = num(tk, "alt", 2300);
 
-  const cJSON *lc = cJSON_GetObjectItemCaseSensitive(j, "light_colors");
-  const cJSON *ls = cJSON_GetObjectItemCaseSensitive(j, "lights");
-  m->nlights = cJSON_GetArraySize(ls);
+  const Json *lc = json_get(j, "light_colors");
+  const Json *ls = json_get(j, "lights");
+  m->nlights = json_count(ls);
   m->lights = calloc((size_t)(m->nlights ? m->nlights : 1), sizeof(MapLight));
   int k = 0;
-  cJSON_ArrayForEach(e, ls) {
+  JSON_FOR(e, ls) {
     MapLight *L = &m->lights[k++];
     L->x = num(e, "x", 0);
     L->y = num(e, "y", 0);
     L->z = num(e, "z", 0);
     L->size = num(e, "size", 1);
     L->blink = num(e, "blink", 0);
-    L->color = assets_hex(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(lc, str(e, "kind"))));
+    L->color = assets_hex(json_str(json_get(lc, str(e, "kind"))));
     if (!L->color) L->color = 0xffffff;
   }
-  cJSON_Delete(j);
+  json_free(j);
   SDL_Log("map %s: %d targets, %d carriers, %d lights", m->id, m->ntargets, m->ncarriers, m->nlights);
   return true;
 }
@@ -531,10 +489,10 @@ const Map *assets_map(int i) {
 }
 
 static void load_carrier(void) {
-  cJSON *root = json_in_js("jets/carrier_game.js", '{', '}');
-  if (root && assets_mesh(cJSON_GetObjectItemCaseSensitive(root, "mesh"), &MESH_CARRIER))
+  Json *root = json_in_js("jets/carrier_game.js", '{', '}');
+  if (root && assets_mesh(json_get(root, "mesh"), &MESH_CARRIER))
     SDL_Log("assets: carrier, %d faces", MESH_CARRIER.nf);
-  cJSON_Delete(root);
+  json_free(root);
 }
 
 bool assets_init(void) {

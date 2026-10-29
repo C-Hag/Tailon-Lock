@@ -36,22 +36,15 @@ FetchContent_Declare(SDL3
   SYSTEM)
 FetchContent_MakeAvailable(SDL3)
 
-# cJSON and Monocypher are not kept in the repository either: pinned release
-# tarballs with checksums, until our own JSON reader (brick 4) and our own
-# crypto (brick 22) replace them (docs/BUILD_PLAN.md). Only their two C files
-# are used; their own build files are not.
-FetchContent_Declare(cjson
-  URL      https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.19.tar.gz
-  URL_HASH SHA256=7fa616e3046edfa7a28a32d5f9eacfd23f92900fe1f8ccd988c1662f30454562
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-  SOURCE_SUBDIR do-not-build)
+# Monocypher is not kept in the repository either: a pinned release tarball
+# with a checksum, until our own crypto (brick 22) replaces it
+# (docs/BUILD_PLAN.md). Only its C file is used; its own build files are not.
 FetchContent_Declare(monocypher
   URL      https://monocypher.org/download/monocypher-4.0.2.tar.gz
   URL_HASH SHA256=38d07179738c0c90677dba3ceb7a7b8496bcfea758ba1a53e803fed30ae0879c
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
   SOURCE_SUBDIR do-not-build)
-FetchContent_MakeAvailable(cjson monocypher)
-set(CJSON_DIR      ${cjson_SOURCE_DIR})
+FetchContent_MakeAvailable(monocypher)
 set(MONOCYPHER_DIR ${monocypher_SOURCE_DIR}/src)
 
 # ---- warnings and flags ---------------------------------------------------
@@ -106,7 +99,6 @@ add_executable(tailonlock
   src/compose.c
   src/editor.c
   src/gpu.c
-  ${CJSON_DIR}/cJSON.c
   ${MONOCYPHER_DIR}/monocypher.c
   src/raster.c
   src/render3d.c
@@ -130,9 +122,9 @@ endif()
 target_link_libraries(tailonlock PRIVATE a4c_core SDL3::SDL3-static)
 target_compile_definitions(tailonlock PRIVATE A4C_VERSION="${PROJECT_VERSION}"
   A4C_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-target_include_directories(tailonlock SYSTEM PRIVATE ${CJSON_DIR} ${MONOCYPHER_DIR})
+target_include_directories(tailonlock SYSTEM PRIVATE ${MONOCYPHER_DIR})
 if(NOT MSVC)
-  set_source_files_properties(${CJSON_DIR}/cJSON.c ${MONOCYPHER_DIR}/monocypher.c PROPERTIES COMPILE_OPTIONS -w)
+  set_source_files_properties(${MONOCYPHER_DIR}/monocypher.c PROPERTIES COMPILE_OPTIONS -w)
 endif()
 # The game looks for assets/ next to the program, so a build folder (or a zip
 # of it) runs on its own.
@@ -162,9 +154,8 @@ if(A4C_BUILD_TESTS)
     ${CMAKE_SOURCE_DIR}/assets/jets/jets_data.json ${CMAKE_SOURCE_DIR}/assets/intro/intro_script.json
     ${CMAKE_SOURCE_DIR}/assets/music/ghost.json)
   # the checker's golden-data dumper (tools/check, stage 3)
-  add_executable(json_dump tests/json_dump.c ${CJSON_DIR}/cJSON.c)
+  add_executable(json_dump tests/json_dump.c)
   target_link_libraries(json_dump PRIVATE a4c_core)
-  target_include_directories(json_dump SYSTEM PRIVATE ${CJSON_DIR})
   # the checker's picture and sound comparisons (tools/check, stages 7-8)
   add_executable(check_cmp tests/check_cmp.c)
   target_link_libraries(check_cmp PRIVATE a4c_flags $<$<NOT:$<BOOL:${WIN32}>>:m>)

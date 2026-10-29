@@ -4,6 +4,8 @@
 #include "core/json.h"
 
 #include <limits.h>
+#include <math.h>
+#include <stdio.h>
 #include <locale.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -563,4 +565,115 @@ int json_int(const Json *v, int fallback) {
   if (d >= (double)INT_MAX) return INT_MAX;
   if (d <= (double)INT_MIN) return INT_MIN;
   return (int)d;
+}
+
+const char *json_str(const Json *v) { return json_string(v, NULL); }
+double json_num(const Json *v) { return json_number(v, NAN); }
+bool json_is_number(const Json *v) { return json_is(v, JSON_NUMBER); }
+bool json_is_array(const Json *v) { return json_is(v, JSON_ARRAY); }
+
+/* ---- writing -------------------------------------------------------------- */
+
+static void w_put(JsonWriter *w, const char *s, size_t n) {
+  if (w->failed) return;
+  if (w->len + n + 1 > w->cap) {
+    size_t cap = w->cap ? w->cap : 4096;
+    while (cap < w->len + n + 1) cap *= 2;
+    char *b = realloc(w->buf, cap);
+    if (!b) {
+      w->failed = true;
+      return;
+    }
+    w->buf = b;
+    w->cap = cap;
+  }
+  memcpy(w->buf + w->len, s, n);
+  w->len += n;
+  w->buf[w->len] = 0;
+}
+
+static void w_text(JsonWriter *w, const char *s) {
+  w_put(w, "\"", 1);
+  for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+    char esc[8];
+    if (*p == '"' || *p == '\\') {
+      esc[0] = '\\';
+      esc[1] = (char)*p;
+      w_put(w, esc, 2);
+    } else if (*p < 0x20) {
+      int n = snprintf(esc, sizeof esc, "\\u%04x", *p);
+      w_put(w, esc, (size_t)n);
+    } else w_put(w, (const char *)p, 1);
+  }
+  w_put(w, "\"", 1);
+}
+
+/* the comma and the member name before a value */
+static void w_member(JsonWriter *w, const char *key) {
+  if (w->depth > 0) {
+    if (w->more[w->depth - 1]) w_put(w, ",", 1);
+    w->more[w->depth - 1] = true;
+    bool in_object = w->close[w->depth - 1] == '}';
+    if (in_object != (key != NULL)) w->failed = true; /* a name in an array, or none in an object */
+  } else if (w->len) w->failed = true;                 /* a second value at the top */
+  if (key) {
+    w_text(w, key);
+    w_put(w, ":", 1);
+  }
+}
+
+static void w_open(JsonWriter *w, const char *key, char open, char close) {
+  w_member(w, key);
+  if (w->depth >= (int)sizeof w->close) {
+    w->failed = true;
+    return;
+  }
+  w_put(w, &open, 1);
+  w->close[w->depth] = close;
+  w->more[w->depth] = false;
+  w->depth++;
+}
+
+void json_w_open_object(JsonWriter *w, const char *key) { w_open(w, key, '{', '}'); }
+void json_w_open_array(JsonWriter *w, const char *key) { w_open(w, key, '[', ']'); }
+
+void json_w_close(JsonWriter *w) {
+  if (w->depth <= 0) {
+    w->failed = true;
+    return;
+  }
+  w->depth--;
+  w_put(w, &w->close[w->depth], 1);
+}
+
+void json_w_number(JsonWriter *w, const char *key, double v) {
+  w_member(w, key);
+  if (!isfinite(v)) {
+    w_put(w, "null", 4);
+    return;
+  }
+  /* the shortest of 15, 16 or 17 significant digits that reads back the same */
+  char t[40];
+  for (int digits = 15; digits <= 17; digits++) {
+    snprintf(t, sizeof t, "%.*g", digits, v);
+    const char *dp = localeconv()->decimal_point;
+    if (dp && dp[0] && dp[0] != '.' && !dp[1]) {
+      char *c = strchr(t, dp[0]);
+      if (c) *c = '.';
+    }
+    if (number_value(t, strlen(t)) == v) break;
+  }
+  w_put(w, t, strlen(t));
+}
+
+void json_w_string(JsonWriter *w, const char *key, const char *s) {
+  w_member(w, key);
+  w_text(w, s ? s : "");
+}
+
+char *json_w_finish(JsonWriter *w) {
+  char *out = !w->failed && w->depth == 0 && w->len ? w->buf : NULL;
+  if (!out) free(w->buf);
+  memset(w, 0, sizeof *w);
+  return out;
 }

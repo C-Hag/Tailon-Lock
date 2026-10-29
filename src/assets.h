@@ -7,17 +7,17 @@
 #include "core/map.h"
 #include "core/mesh.h"
 
-struct cJSON;
+struct Json;
 
 /* Finds the assets folder next to the program (or in the source tree for
  * development builds) and loads the jets. Returns false if there is none. */
 bool assets_init(void);
 /* Full path of a file in assets/, or NULL if the folder was not found. */
 const char *assets_path(const char *rel);
-/* Parses a JSON file from assets/; free with cJSON_Delete. */
-struct cJSON *assets_json(const char *rel);
+/* Parses a JSON file from assets/; free with json_free. */
+struct Json *assets_json(const char *rel);
 /* {v: [[x, y, z]...], f: [[[i...], "#rrggbb"]...], rad} -> mesh */
-bool assets_mesh(const struct cJSON *j, Mesh *m);
+bool assets_mesh(const struct Json *j, Mesh *m);
 /* The maps listed in assets/maps/maps_index.json, loaded on first use. */
 #define MAX_MAPS 8
 int         assets_map_count(void);

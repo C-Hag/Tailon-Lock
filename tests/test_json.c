@@ -382,6 +382,66 @@ static void test_stress(void) {
   }
 }
 
+/* ---- the writer ----------------------------------------------------------- */
+
+static void test_writer(void) {
+  JsonWriter w = { 0 };
+  json_w_open_object(&w, NULL);
+  json_w_string(&w, "key", "fullburn \"DMX10\"\n\\");
+  json_w_number(&w, "a", 0.1);
+  json_w_number(&w, "b", 142.99);
+  json_w_number(&w, "c", -0.0);
+  json_w_number(&w, "d", 1e300);
+  json_w_number(&w, "e", 3);
+  json_w_number(&w, "nan", NAN);
+  json_w_open_array(&w, "list");
+  json_w_number(&w, NULL, 1);
+  json_w_string(&w, NULL, "\x01");
+  json_w_open_object(&w, NULL);
+  json_w_close(&w);
+  json_w_close(&w);
+  json_w_close(&w);
+  char *text = json_w_finish(&w);
+  const char *want = "{\"key\":\"fullburn \\\"DMX10\\\"\\u000a\\\\\",\"a\":0.1,\"b\":142.99,\"c\":-0,\"d\":1e+300,\"e\":3,"
+                     "\"nan\":null,\"list\":[1,\"\\u0001\",{}]}";
+  CHECK(text && !strcmp(text, want));
+  if (text && strcmp(text, want)) fprintf(stderr, "  wrote %s\n", text);
+  /* and it reads back to the same values */
+  Json *d = text ? json_parse(text, strlen(text), NULL) : NULL;
+  CHECK(d && !strcmp(json_str(json_get(d, "key")), "fullburn \"DMX10\"\n\\") && json_num(json_get(d, "b")) == 142.99);
+  CHECK(json_is(json_get(d, "nan"), JSON_NULL) && json_count(json_get(d, "list")) == 3);
+  json_free(d);
+  free(text);
+  /* every double reads back exactly */
+  double v = 1;
+  int exact = 0;
+  for (int i = 0; i < 2000; i++) {
+    v = v * 1.7 + 0.123456789 * i;
+    if (v > 1e200) v = 1e-200 * i;
+    JsonWriter n = { 0 };
+    json_w_number(&n, NULL, (i & 1) ? -v : v);
+    char *t = json_w_finish(&n);
+    Json *r = t ? json_parse(t, strlen(t), NULL) : NULL;
+    if (r && json_num(r) == ((i & 1) ? -v : v)) exact++;
+    json_free(r);
+    free(t);
+  }
+  CHECK(exact == 2000);
+  /* misuse fails instead of writing broken JSON */
+  JsonWriter bad = { 0 };
+  json_w_open_array(&bad, NULL);
+  json_w_number(&bad, "named", 1); /* a name inside an array */
+  json_w_close(&bad);
+  CHECK(json_w_finish(&bad) == NULL);
+  JsonWriter open = { 0 };
+  json_w_open_object(&open, NULL);
+  CHECK(json_w_finish(&open) == NULL); /* still open */
+  JsonWriter two = { 0 };
+  json_w_number(&two, NULL, 1);
+  json_w_number(&two, NULL, 2); /* two values at the top */
+  CHECK(json_w_finish(&two) == NULL);
+}
+
 int main(void) {
   test_rfc_examples();
   test_tokens();
@@ -392,6 +452,7 @@ int main(void) {
   test_tree();
   test_tree_refuses();
   test_stress();
+  test_writer();
   if (failures) {
     fprintf(stderr, "%d of %d json checks failed\n", failures, checks);
     return 1;

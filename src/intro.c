@@ -16,7 +16,7 @@
 #include <string.h>
 
 #include "assets.h"
-#include "cJSON.h"
+#include "core/json.h"
 #include "core/jets.h"
 #include "core/world.h"
 #include "gpu.h"
@@ -31,17 +31,17 @@
 typedef struct { int n; float *k; } Seg; /* n keys of `stride` floats */
 typedef struct { int nseg, stride; Seg *segs; } Track;
 
-static bool parse_track(const cJSON *keys, int stride, Track *tr) {
+static bool parse_track(const Json *keys, int stride, Track *tr) {
   memset(tr, 0, sizeof *tr);
   tr->stride = stride;
-  int n = cJSON_GetArraySize(keys);
+  int n = json_count(keys);
   if (n <= 0) return false;
   tr->segs = calloc((size_t)n, sizeof(Seg));
   float *buf = malloc(sizeof(float) * (size_t)n * stride);
   Seg *cur = NULL;
-  const cJSON *k;
-  cJSON_ArrayForEach(k, keys) {
-    if (!cJSON_IsArray(k)) {
+  const Json *k;
+  JSON_FOR(k, keys) {
+    if (!json_is_array(k)) {
       cur = NULL;
       continue;
     }
@@ -51,8 +51,8 @@ static bool parse_track(const cJSON *keys, int stride, Track *tr) {
       cur->n = 0;
     }
     for (int c = 0; c < stride; c++) {
-      const cJSON *v = cJSON_GetArrayItem(k, c);
-      buf[c] = cJSON_IsNumber(v) ? (float)v->valuedouble : 0;
+      const Json *v = json_at(k, c);
+      buf[c] = json_is_number(v) ? (float)v->num : 0;
     }
     buf += stride;
     cur->n++;
@@ -206,27 +206,27 @@ static int      nextra;
 static Mesh     nf24, nf24_lod;
 static bool     ready;
 
-static float numv(const cJSON *o, const char *k, float def) {
-  const cJSON *n = cJSON_GetObjectItemCaseSensitive(o, k);
-  return cJSON_IsNumber(n) ? (float)n->valuedouble : def;
+static float numv(const Json *o, const char *k, float def) {
+  const Json *n = json_get(o, k);
+  return json_is_number(n) ? (float)n->num : def;
 }
-static const char *strv(const cJSON *o, const char *k) {
-  const char *s = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(o, k));
+static const char *strv(const Json *o, const char *k) {
+  const char *s = json_str(json_get(o, k));
   return s ? s : "";
 }
-static vec3 vecv(const cJSON *a) {
-  return v3((float)cJSON_GetArrayItem(a, 0)->valuedouble, (float)cJSON_GetArrayItem(a, 1)->valuedouble,
-            (float)cJSON_GetArrayItem(a, 2)->valuedouble);
+static vec3 vecv(const Json *a) {
+  return v3((float)json_at(a, 0)->num, (float)json_at(a, 1)->num,
+            (float)json_at(a, 2)->num);
 }
-static int windows(const cJSON *a, Win *w, int max) {
+static int windows(const Json *a, Win *w, int max) {
   int n = 0;
-  const cJSON *e;
-  cJSON_ArrayForEach(e, a) {
+  const Json *e;
+  JSON_FOR(e, a) {
     if (n >= max) break;
-    w[n].t0 = (float)cJSON_GetArrayItem(e, 0)->valuedouble;
-    w[n].t1 = (float)cJSON_GetArrayItem(e, 1)->valuedouble;
-    const cJSON *v = cJSON_GetArrayItem(e, 2);
-    w[n].v = cJSON_IsNumber(v) ? (float)v->valuedouble : 1;
+    w[n].t0 = (float)json_at(e, 0)->num;
+    w[n].t1 = (float)json_at(e, 1)->num;
+    const Json *v = json_at(e, 2);
+    w[n].v = json_is_number(v) ? (float)v->num : 1;
     n++;
   }
   return n;
@@ -243,9 +243,9 @@ static int find_actor(const char *id) {
   return -1;
 }
 
-static void load_clouds(const cJSON *list) {
-  const cJSON *c;
-  cJSON_ArrayForEach(c, list) {
+static void load_clouds(const Json *list) {
+  const Json *c;
+  JSON_FOR(c, list) {
     if (nextra >= 4) break;
     Cloud *C = &extra[nextra++];
     C->x = numv(c, "x", 0);
@@ -253,47 +253,47 @@ static void load_clouds(const cJSON *list) {
     C->base = numv(c, "base", 1000);
     C->top = numv(c, "top", 1500);
     C->albedo = 1;
-    const cJSON *pl = cJSON_GetObjectItemCaseSensitive(c, "puffs");
-    C->npuffs = cJSON_GetArraySize(pl);
+    const Json *pl = json_get(c, "puffs");
+    C->npuffs = json_count(pl);
     C->puffs = calloc((size_t)(C->npuffs ? C->npuffs : 1), sizeof(Puff));
     int q = 0;
-    const cJSON *pf;
-    cJSON_ArrayForEach(pf, pl) {
+    const Json *pf;
+    JSON_FOR(pf, pl) {
       Puff *P = &C->puffs[q++];
-      P->dx = (float)cJSON_GetArrayItem(pf, 0)->valuedouble;
-      P->dy = (float)cJSON_GetArrayItem(pf, 1)->valuedouble;
-      P->dz = (float)cJSON_GetArrayItem(pf, 2)->valuedouble;
-      P->r = (float)cJSON_GetArrayItem(pf, 3)->valuedouble;
+      P->dx = (float)json_at(pf, 0)->num;
+      P->dy = (float)json_at(pf, 1)->num;
+      P->dz = (float)json_at(pf, 2)->num;
+      P->r = (float)json_at(pf, 3)->num;
     }
   }
 }
 
 bool intro_init(void) {
-  cJSON *S = assets_json("intro/intro_script.json"), *A = assets_json("intro/intro_assets.json");
+  Json *S = assets_json("intro/intro_script.json"), *A = assets_json("intro/intro_assets.json");
   if (!S || !A || assets_map_find("twin-isles") < 0) {
-    cJSON_Delete(S);
-    cJSON_Delete(A);
+    json_free(S);
+    json_free(A);
     return false;
   }
-  const cJSON *nf = cJSON_GetObjectItemCaseSensitive(A, "nf24");
-  if (assets_mesh(cJSON_GetObjectItemCaseSensitive(nf, "m"), &nf24) && assets_mesh(cJSON_GetObjectItemCaseSensitive(nf, "lod"), &nf24_lod))
+  const Json *nf = json_get(A, "nf24");
+  if (assets_mesh(json_get(nf, "m"), &nf24) && assets_mesh(json_get(nf, "lod"), &nf24_lod))
     nf24.lod = &nf24_lod;
   menu_at = numv(S, "menu_at", 36);
-  snprintf(music_key, sizeof music_key, "%s", strv(cJSON_GetObjectItemCaseSensitive(S, "music"), "track"));
+  snprintf(music_key, sizeof music_key, "%s", strv(json_get(S, "music"), "track"));
 
-  const cJSON *e;
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(S, "poses")) {
+  const Json *e;
+  JSON_FOR(e, json_get(S, "poses")) {
     if (nposes >= MAX_POSES) break;
-    snprintf(pose_name[nposes], sizeof pose_name[0], "%s", e->string);
-    for (int q = 0; q < POSE_N; q++) pose_val[nposes][q] = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(e, q));
+    snprintf(pose_name[nposes], sizeof pose_name[0], "%s", e->name);
+    for (int q = 0; q < POSE_N; q++) pose_val[nposes][q] = (float)json_num(json_at(e, q));
     nposes++;
   }
-  const cJSON *sun = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(S, "env"), "sun");
-  if (cJSON_GetArraySize(sun) == 3) {
+  const Json *sun = json_get(json_get(S, "env"), "sun");
+  if (json_count(sun) == 3) {
     env_sun = v3_norm(vecv(sun));
     has_sun = true;
   }
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(S, "actors")) {
+  JSON_FOR(e, json_get(S, "actors")) {
     if (nact >= MAX_ACT) break;
     Actor *a = &act[nact];
     memset(a, 0, sizeof *a);
@@ -308,25 +308,25 @@ bool intro_init(void) {
     a->spawn = numv(e, "spawn", -1);
     a->end = numv(e, "end", -1);
     a->dead = numv(e, "dead", -1);
-    a->nab = windows(cJSON_GetObjectItemCaseSensitive(e, "ab"), a->ab, 8);
-    a->ntrail = windows(cJSON_GetObjectItemCaseSensitive(e, "trail"), a->trail, 4);
-    a->nvapour = windows(cJSON_GetObjectItemCaseSensitive(e, "vapour"), a->vapour, 8);
-    a->ncone = windows(cJSON_GetObjectItemCaseSensitive(e, "cone"), a->cone, 4);
+    a->nab = windows(json_get(e, "ab"), a->ab, 8);
+    a->ntrail = windows(json_get(e, "trail"), a->trail, 4);
+    a->nvapour = windows(json_get(e, "vapour"), a->vapour, 8);
+    a->ncone = windows(json_get(e, "cone"), a->cone, 4);
     if (a->kind == K_CREW) {
       a->jersey = assets_hex(strv(e, "jersey"));
       a->helmet = assets_hex(strv(e, "helmet"));
-      const cJSON *pz;
-      cJSON_ArrayForEach(pz, cJSON_GetObjectItemCaseSensitive(e, "poses")) {
+      const Json *pz;
+      JSON_FOR(pz, json_get(e, "poses")) {
         if (a->npose >= 8) break;
-        a->pose_t[a->npose] = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(pz, 0));
-        const char *nm = cJSON_GetStringValue(cJSON_GetArrayItem(pz, 1));
+        a->pose_t[a->npose] = (float)json_num(json_at(pz, 0));
+        const char *nm = json_str(json_at(pz, 1));
         a->pose[a->npose] = 0;
         for (int q = 0; nm && q < nposes; q++)
           if (!strcmp(pose_name[q], nm)) a->pose[a->npose] = q;
         a->npose++;
       }
     }
-    const cJSON *sh = cJSON_GetObjectItemCaseSensitive(e, "ship");
+    const Json *sh = json_get(e, "ship");
     if (sh) {
       a->sx = numv(sh, "x", 0);
       a->sz = numv(sh, "z", 0);
@@ -335,45 +335,45 @@ bool intro_init(void) {
       a->wake = numv(e, "wake", 0);
     }
     if (a->kind == K_STATIC) {
-      a->lpos = vecv(cJSON_GetObjectItemCaseSensitive(e, "pos"));
+      a->lpos = vecv(json_get(e, "pos"));
       a->lheading = numv(e, "heading", 0);
     }
-    parse_track(cJSON_GetObjectItemCaseSensitive(e, "keys"), a->kind == K_CREW ? 5 : 7, &a->tr);
+    parse_track(json_get(e, "keys"), a->kind == K_CREW ? 5 : 7, &a->tr);
     nact++;
   }
   /* statics attach to ships by id (second pass: the ship may come later) */
   int k = 0;
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(S, "actors")) {
+  JSON_FOR(e, json_get(S, "actors")) {
     if (k < nact) act[k].attach = find_actor(strv(e, "attach"));
     k++;
   }
 
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(S, "emitters")) {
+  JSON_FOR(e, json_get(S, "emitters")) {
     if (nemit >= 8 || strcmp(strv(e, "type"), "steam")) continue;
     Emitter *m = &emit[nemit++];
     m->attach = find_actor(strv(e, "attach"));
-    m->a = vecv(cJSON_GetObjectItemCaseSensitive(e, "a"));
-    m->b = vecv(cJSON_GetObjectItemCaseSensitive(e, "b"));
+    m->a = vecv(json_get(e, "a"));
+    m->b = vecv(json_get(e, "b"));
     m->t0 = numv(e, "t0", 0);
     m->t1 = numv(e, "t1", 0);
     m->rate = numv(e, "rate", 5);
   }
 
-  const cJSON *list = cJSON_GetObjectItemCaseSensitive(S, "flares");
-  nflares = cJSON_GetArraySize(list);
+  const Json *list = json_get(S, "flares");
+  nflares = json_count(list);
   flares = calloc((size_t)(nflares + 1), sizeof *flares);
   k = 0;
-  cJSON_ArrayForEach(e, list) {
+  JSON_FOR(e, list) {
     FlareDef *f = &flares[k++];
     f->t = numv(e, "t", 0);
-    f->p = vecv(cJSON_GetObjectItemCaseSensitive(e, "p"));
-    f->v = vecv(cJSON_GetObjectItemCaseSensitive(e, "v"));
+    f->p = vecv(json_get(e, "p"));
+    f->v = vecv(json_get(e, "v"));
     f->life = numv(e, "life", 2);
   }
 
-  list = cJSON_GetObjectItemCaseSensitive(S, "events");
-  events = calloc((size_t)cJSON_GetArraySize(list) + 1, sizeof *events);
-  cJSON_ArrayForEach(e, list) {
+  list = json_get(S, "events");
+  events = calloc((size_t)json_count(list) + 1, sizeof *events);
+  JSON_FOR(e, list) {
     Event *v = &events[nevents];
     const char *type = strv(e, "type"), *name = strv(e, "name");
     v->type = !strcmp(type, "explode") ? EV_EXPLODE : !strcmp(type, "kill") ? EV_KILL : !strcmp(type, "splash") ? EV_SPLASH
@@ -381,7 +381,7 @@ bool intro_init(void) {
     v->t = numv(e, "t", numv(e, "t0", 0));
     v->t1 = numv(e, "t1", v->t);
     v->actor = find_actor(strv(e, "actor"));
-    const cJSON *pos = cJSON_GetObjectItemCaseSensitive(e, "pos");
+    const Json *pos = json_get(e, "pos");
     if (pos) v->pos = vecv(pos);
     v->size = numv(e, "size", 1);
     v->sound = !strcmp(name, "klaxon") ? SND_KLAXON : !strcmp(name, "catapult") ? SND_CATAPULT : !strcmp(name, "missile") ? SND_MISSILE
@@ -391,40 +391,40 @@ bool intro_init(void) {
     nevents++;
   }
 
-  list = cJSON_GetObjectItemCaseSensitive(S, "shots");
-  shots = calloc((size_t)cJSON_GetArraySize(list) + 1, sizeof *shots);
-  cJSON_ArrayForEach(e, list) {
+  list = json_get(S, "shots");
+  shots = calloc((size_t)json_count(list) + 1, sizeof *shots);
+  JSON_FOR(e, list) {
     Shot *s = &shots[nshots];
     s->t0 = numv(e, "t0", 0);
     s->t1 = numv(e, "t1", 0);
-    const cJSON *at = cJSON_GetObjectItemCaseSensitive(e, "attach"), *hud = cJSON_GetObjectItemCaseSensitive(e, "hud");
-    const cJSON *vb = cJSON_GetObjectItemCaseSensitive(e, "vibe");
+    const Json *at = json_get(e, "attach"), *hud = json_get(e, "hud");
+    const Json *vb = json_get(e, "vibe");
     s->attach = at ? find_actor(strv(at, "actor")) : -1;
     if (at) {
-      s->off = vecv(cJSON_GetObjectItemCaseSensitive(at, "offset"));
-      s->dir = vecv(cJSON_GetObjectItemCaseSensitive(at, "dir"));
+      s->off = vecv(json_get(at, "offset"));
+      s->dir = vecv(json_get(at, "dir"));
       s->roll = numv(at, "roll", 1) != 0;
     }
     s->hud = hud ? find_actor(strv(hud, "actor")) : -1;
     s->target = hud ? find_actor(strv(hud, "target")) : -1;
-    s->guns = hud && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(hud, "guns"));
-    s->panel = hud && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(hud, "panel"));
-    const cJSON *lk = hud ? cJSON_GetObjectItemCaseSensitive(hud, "lock") : NULL;
-    s->lock0 = lk ? (float)cJSON_GetArrayItem(lk, 0)->valuedouble : -1;
-    s->lock1 = lk ? (float)cJSON_GetArrayItem(lk, 1)->valuedouble : -1;
+    s->guns = hud && json_is_true(json_get(hud, "guns"));
+    s->panel = hud && json_is_true(json_get(hud, "panel"));
+    const Json *lk = hud ? json_get(hud, "lock") : NULL;
+    s->lock0 = lk ? (float)json_at(lk, 0)->num : -1;
+    s->lock1 = lk ? (float)json_at(lk, 1)->num : -1;
     s->vibe_a = vb ? numv(vb, "a", 0) : 0;
     s->vibe_f = vb ? numv(vb, "f", 1) : 1;
-    const cJSON *in = cJSON_GetObjectItemCaseSensitive(e, "in");
+    const Json *in = json_get(e, "in");
     const char *it = in ? strv(in, "type") : "";
     s->in = !strcmp(it, "dissolve") ? IN_DISSOLVE : !strcmp(it, "whip") ? IN_WHIP : IN_CUT;
     s->in_dur = in ? numv(in, "dur", 0.5f) : 0;
     s->in_dir = in ? numv(in, "dir", 1) : 1;
-    if (parse_track(cJSON_GetObjectItemCaseSensitive(e, "cam"), 8, &s->cam)) nshots++;
+    if (parse_track(json_get(e, "cam"), 8, &s->cam)) nshots++;
   }
 
-  list = cJSON_GetObjectItemCaseSensitive(S, "cards");
-  cards = calloc((size_t)cJSON_GetArraySize(list) + 1, sizeof *cards);
-  cJSON_ArrayForEach(e, list) {
+  list = json_get(S, "cards");
+  cards = calloc((size_t)json_count(list) + 1, sizeof *cards);
+  JSON_FOR(e, list) {
     Card *c = &cards[ncards++];
     c->t0 = numv(e, "t0", 0);
     c->t1 = numv(e, "t1", 0);
@@ -437,22 +437,22 @@ bool intro_init(void) {
              : !strcmp(st, "title") ? CS_TITLE : !strcmp(st, "subtitle") ? CS_SUBTITLE : CS_PRESS;
   }
 
-  list = cJSON_GetObjectItemCaseSensitive(S, "fx");
-  fxs = calloc((size_t)cJSON_GetArraySize(list) + 1, sizeof *fxs);
-  cJSON_ArrayForEach(e, list) {
+  list = json_get(S, "fx");
+  fxs = calloc((size_t)json_count(list) + 1, sizeof *fxs);
+  JSON_FOR(e, list) {
     Fx *f = &fxs[nfx++];
     const char *type = strv(e, "type");
     f->type = !strcmp(type, "fade") ? FX_FADE : !strcmp(type, "flash") ? FX_FLASH : !strcmp(type, "letterbox") ? FX_LETTERBOX
             : !strcmp(type, "alarm") ? FX_ALARM : !strcmp(type, "radar") ? FX_RADAR : !strcmp(type, "shake") ? FX_SHAKE
             : !strcmp(type, "grade") ? FX_GRADE : !strcmp(type, "haze") ? FX_HAZE : !strcmp(type, "smoketitle") ? FX_SMOKETITLE : FX_NONE;
     snprintf(f->text, sizeof f->text, "%s", strv(e, "text"));
-    const cJSON *pp = cJSON_GetObjectItemCaseSensitive(e, "pos"), *fm = cJSON_GetObjectItemCaseSensitive(e, "form");
-    if (cJSON_GetArraySize(pp) == 3) f->pos = vecv(pp);
-    f->f0 = fm ? (float)cJSON_GetNumberValue(cJSON_GetArrayItem(fm, 0)) : f->t0;
-    f->f1 = fm ? (float)cJSON_GetNumberValue(cJSON_GetArrayItem(fm, 1)) : f->t0 + 3;
-    const cJSON *dz = cJSON_GetObjectItemCaseSensitive(e, "dissolve");
-    f->d0 = dz ? (float)cJSON_GetNumberValue(cJSON_GetArrayItem(dz, 0)) : 1e9f;
-    f->d1 = dz ? (float)cJSON_GetNumberValue(cJSON_GetArrayItem(dz, 1)) : 1e9f;
+    const Json *pp = json_get(e, "pos"), *fm = json_get(e, "form");
+    if (json_count(pp) == 3) f->pos = vecv(pp);
+    f->f0 = fm ? (float)json_num(json_at(fm, 0)) : f->t0;
+    f->f1 = fm ? (float)json_num(json_at(fm, 1)) : f->t0 + 3;
+    const Json *dz = json_get(e, "dissolve");
+    f->d0 = dz ? (float)json_num(json_at(dz, 0)) : 1e9f;
+    f->d1 = dz ? (float)json_num(json_at(dz, 1)) : 1e9f;
     f->seed = (uint32_t)numv(e, "seed", 1);
     if (f->type == FX_SMOKETITLE) dawn_title = true;
     f->warm = numv(e, "warm", 0);
@@ -462,7 +462,7 @@ bool intro_init(void) {
     f->y1 = numv(e, "y1", 1);
     f->t0 = numv(e, "t0", 0);
     f->t1 = numv(e, "t1", 0);
-    f->has_from = cJSON_GetObjectItemCaseSensitive(e, "from") != NULL;
+    f->has_from = json_get(e, "from") != NULL;
     f->from = numv(e, "from", 0);
     f->to = numv(e, "to", 0);
     f->amount = numv(e, "amount", 1);
@@ -471,14 +471,14 @@ bool intro_init(void) {
     f->contacts = (int)numv(e, "contacts", 0);
     f->bearing = numv(e, "bearing", 0);
   }
-  load_clouds(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(S, "env"), "extra_clouds"));
-  cJSON_ArrayForEach(e, cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(S, "env"), "clear_clouds")) {
+  load_clouds(json_get(json_get(S, "env"), "extra_clouds"));
+  JSON_FOR(e, json_get(json_get(S, "env"), "clear_clouds")) {
     if (nclear >= 4) break;
-    for (int q = 0; q < 3; q++) clear_sky[nclear][q] = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(e, q));
+    for (int q = 0; q < 3; q++) clear_sky[nclear][q] = (float)json_num(json_at(e, q));
     nclear++;
   }
-  cJSON_Delete(S);
-  cJSON_Delete(A);
+  json_free(S);
+  json_free(A);
   ready = nshots > 0;
   SDL_Log("intro: %d actors, %d shots, %d cards", nact, nshots, ncards);
   return ready;

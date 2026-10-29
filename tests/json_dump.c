@@ -1,11 +1,9 @@
 /* json_dump.c - writes a JSON file as a canonical text tree, one value a
- * line, for the checker's golden-data stage (tools/check). The same dump
- * from the old reader and from ours must be byte for byte the same.
+ * line, for the checker's golden-data stage (tools/check). The references
+ * were taken with the old reader; ours must give them byte for byte.
  * Original code for this project.
  *
- * usage: json_dump [--own] FILE [OPEN CLOSE]
- *   --own: read it with our own reader (src/core/json.c) instead of cJSON;
- *   the two dumps must be identical (brick 3)
+ * usage: json_dump FILE [OPEN CLOSE]
  *   OPEN CLOSE: a table inside a .js file, from the first OPEN to the last
  *   CLOSE (as assets.c reads jets_game.js and carrier_game.js)
  *
@@ -19,7 +17,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cJSON.h"
 #include "core/json.h"
 
 static void put_str(FILE *o, const char *s) {
@@ -32,29 +29,7 @@ static void put_str(FILE *o, const char *s) {
   fputc('"', o);
 }
 
-static void dump(FILE *o, const cJSON *v, int depth) {
-  for (int i = 0; i < depth; i++) fputc(' ', o);
-  if (v->string) {
-    put_str(o, v->string);
-    fputc(':', o);
-  }
-  if (cJSON_IsNull(v)) fputs("null\n", o);
-  else if (cJSON_IsTrue(v)) fputs("true\n", o);
-  else if (cJSON_IsFalse(v)) fputs("false\n", o);
-  else if (cJSON_IsNumber(v)) fprintf(o, "n %.17g\n", v->valuedouble);
-  else if (cJSON_IsString(v)) {
-    fputs("s ", o);
-    put_str(o, v->valuestring);
-    fputc('\n', o);
-  } else if (cJSON_IsArray(v) || cJSON_IsObject(v)) {
-    fprintf(o, "%c %d\n", cJSON_IsArray(v) ? '[' : '{', cJSON_GetArraySize(v));
-    const cJSON *e;
-    cJSON_ArrayForEach(e, v) dump(o, e, depth + 1);
-  } else fputs("?\n", o);
-}
-
-/* the same lines from our own tree */
-static void dump_own(FILE *o, const Json *v, int depth) {
+static void dump(FILE *o, const Json *v, int depth) {
   for (int i = 0; i < depth; i++) fputc(' ', o);
   if (v->name) {
     put_str(o, v->name);
@@ -72,18 +47,13 @@ static void dump_own(FILE *o, const Json *v, int depth) {
     break;
   default:
     fprintf(o, "%c %d\n", v->type == JSON_ARRAY ? '[' : '{', v->count);
-    JSON_EACH(e, v) dump_own(o, e, depth + 1);
+    JSON_EACH(e, v) dump(o, e, depth + 1);
   }
 }
 
 int main(int argc, char **argv) {
-  bool own = argc > 1 && !strcmp(argv[1], "--own");
-  if (own) {
-    argv++;
-    argc--;
-  }
   if (argc != 2 && argc != 4) {
-    fprintf(stderr, "usage: json_dump [--own] FILE [OPEN CLOSE]\n");
+    fprintf(stderr, "usage: json_dump FILE [OPEN CLOSE]\n");
     return 2;
   }
   FILE *f = fopen(argv[1], "rb");
@@ -112,22 +82,10 @@ int main(int argc, char **argv) {
     }
     len = (size_t)(b - a + 1);
   }
-  if (own) {
-    Json *d = json_parse(a, len, NULL);
-    if (!d) printf("invalid\n");
-    else dump_own(stdout, d, 0);
-    json_free(d);
-    free(text);
-    return 0;
-  }
-  cJSON *j = cJSON_ParseWithLength(a, len);
-  if (!j) {
-    printf("invalid\n");
-    free(text);
-    return 0;
-  }
-  dump(stdout, j, 0);
-  cJSON_Delete(j);
+  Json *d = json_parse(a, len, NULL);
+  if (!d) printf("invalid\n");
+  else dump(stdout, d, 0);
+  json_free(d);
   free(text);
   return 0;
 }

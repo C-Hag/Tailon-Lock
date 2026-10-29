@@ -14,7 +14,7 @@
 #include <string.h>
 
 #include "assets.h"
-#include "cJSON.h"
+#include "core/json.h"
 
 #define TAU 6.2831853f
 
@@ -77,9 +77,9 @@ void synth_sort(Score *s) {
   qsort(s->hits, (size_t)s->nhits, sizeof(SongHit), hit_cmp);
 }
 
-static float numi(const cJSON *a, int i, float def) {
-  const cJSON *v = cJSON_GetArrayItem(a, i);
-  return cJSON_IsNumber(v) ? (float)v->valuedouble : def;
+static float numi(const Json *a, int i, float def) {
+  const Json *v = json_at(a, i);
+  return json_is_number(v) ? (float)v->num : def;
 }
 
 int synth_inst(Score *s, const char *name) {
@@ -119,31 +119,31 @@ SongNote *synth_add_note(Score *s, float t, int inst, int midi, float dur, float
 Score *synth_load(const char *key) {
   char rel[64];
   snprintf(rel, sizeof rel, "music/%s.json", key);
-  cJSON *j = assets_json(rel);
+  Json *j = assets_json(rel);
   if (!j) return NULL;
-  const cJSON *notes = cJSON_GetObjectItemCaseSensitive(j, "notes"), *events = cJSON_GetObjectItemCaseSensitive(j, "events");
+  const Json *notes = json_get(j, "notes"), *events = json_get(j, "events");
   Score *s = calloc(1, sizeof *s);
   snprintf(s->key, sizeof s->key, "%s", key);
-  s->hits = calloc((size_t)cJSON_GetArraySize(events) + 1, sizeof(SongHit));
-  s->caph = cJSON_GetArraySize(events) + 1;
-  const cJSON *e;
+  s->hits = calloc((size_t)json_count(events) + 1, sizeof(SongHit));
+  s->caph = json_count(events) + 1;
+  const Json *e;
   /* pitched notes: [t, instrument, midi, dur, vel, bend?] */
-  cJSON_ArrayForEach(e, notes) {
-    const char *name = cJSON_GetStringValue(cJSON_GetArrayItem(e, 1));
+  JSON_FOR(e, notes) {
+    const char *name = json_str(json_at(e, 1));
     int in = name ? synth_inst(s, name) : -1;
     if (in < 0) continue;
     SongNote *n = synth_add_note(s, numi(e, 0, 0), in, (int)numi(e, 2, 60), numi(e, 3, 0.2f), numi(e, 4, 1));
     if (n) n->bend = (int8_t)numi(e, 5, 0);
   }
   /* drums and effects: [t, function, vel, ...args] */
-  cJSON_ArrayForEach(e, events) {
-    const char *fn = cJSON_GetStringValue(cJSON_GetArrayItem(e, 1));
+  JSON_FOR(e, events) {
+    const char *fn = json_str(json_at(e, 1));
     if (!fn) continue;
     SongHit v = { 0 };
     v.t = numi(e, 0, 0);
     v.vel = numi(e, 2, 1);
     if (!strcmp(fn, "drum") || !strcmp(fn, "hit")) {
-      const char *c = cJSON_GetStringValue(cJSON_GetArrayItem(e, 3));
+      const char *c = json_str(json_at(e, 3));
       if (!c) continue;
       v.effect = E_DRUM;
       snprintf(v.code, sizeof v.code, "%s", c);
@@ -168,24 +168,24 @@ Score *synth_load(const char *key) {
     s->hits[s->nhits++] = v;
   }
   /* patches someone tuned in the editor */
-  const cJSON *pt = cJSON_GetObjectItemCaseSensitive(j, "patches");
-  cJSON_ArrayForEach(e, pt) {
-    int in = synth_inst(s, e->string);
+  const Json *pt = json_get(j, "patches");
+  JSON_FOR(e, pt) {
+    int in = synth_inst(s, e->name);
     if (in < 0) continue;
     Patch *p = &s->inst[in].p;
-    const cJSON *w = cJSON_GetObjectItemCaseSensitive(e, "wave"), *f = cJSON_GetObjectItemCaseSensitive(e, "filter");
-    if (cJSON_IsNumber(w)) p->wave = (uint8_t)w->valueint;
-    if (cJSON_IsNumber(f)) p->filter = (uint8_t)f->valueint;
-#define READ(fld) { const cJSON *x = cJSON_GetObjectItemCaseSensitive(e, #fld); if (cJSON_IsNumber(x)) p->fld = (float)x->valuedouble; }
+    const Json *w = json_get(e, "wave"), *f = json_get(e, "filter");
+    if (json_is_number(w)) p->wave = (uint8_t)json_int(w, 0);
+    if (json_is_number(f)) p->filter = (uint8_t)json_int(f, 0);
+#define READ(fld) { const Json *x = json_get(e, #fld); if (json_is_number(x)) p->fld = (float)x->num; }
     PATCH_FIELDS(READ)
 #undef READ
   }
   synth_sort(s);
-  float length = (float)cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(j, "length"));
+  float length = (float)json_num(json_get(j, "length"));
   s->end = length > 3.5f ? length - 3 : length;
-  s->loop = (float)cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(j, "loop"));
+  s->loop = (float)json_num(json_get(j, "loop"));
   if (!(s->loop >= 0 && s->loop < s->end)) s->loop = 0;
-  cJSON_Delete(j);
+  json_free(j);
   SDL_Log("synth: %s, %d notes, %d hits, %.1f s, loop at %.1f s", key, s->nnotes, s->nhits, s->end, s->loop);
   return s;
 }
@@ -202,58 +202,63 @@ static const char *const HIT_FN[] = { "drum", "jet", "riser", "seaWave", "sonar"
 static double r4(double v) { return round(v * 10000) / 10000; }
 
 bool synth_save(const Score *s, const char *path) {
-  cJSON *j = cJSON_CreateObject();
-  cJSON_AddStringToObject(j, "key", s->key);
-  cJSON_AddNumberToObject(j, "length", r4(s->end + 3));
-  cJSON_AddNumberToObject(j, "loop", r4(s->loop));
-  cJSON *ev = cJSON_AddArrayToObject(j, "events");
+  JsonWriter w = { 0 };
+  json_w_open_object(&w, NULL);
+  json_w_string(&w, "key", s->key);
+  json_w_number(&w, "length", r4(s->end + 3));
+  json_w_number(&w, "loop", r4(s->loop));
+  json_w_open_array(&w, "events");
   for (int i = 0; i < s->nhits; i++) {
     const SongHit *h = &s->hits[i];
-    cJSON *a = cJSON_CreateArray();
-    cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(h->t)));
-    cJSON_AddItemToArray(a, cJSON_CreateString(HIT_FN[h->effect]));
-    cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(h->vel)));
+    json_w_open_array(&w, NULL);
+    json_w_number(&w, NULL, r4(h->t));
+    json_w_string(&w, NULL, HIT_FN[h->effect]);
+    json_w_number(&w, NULL, r4(h->vel));
     if (h->effect == E_DRUM) {
-      cJSON_AddItemToArray(a, cJSON_CreateString(h->code));
-      cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(h->a1)));
+      json_w_string(&w, NULL, h->code);
+      json_w_number(&w, NULL, r4(h->a1));
     } else if (h->effect == E_JET || h->effect == E_RISER || h->effect == E_WAVE) {
-      cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(h->a1)));
-      if (h->effect != E_WAVE) cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(h->a2)));
-      if (h->effect == E_JET) cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(h->a3)));
+      json_w_number(&w, NULL, r4(h->a1));
+      if (h->effect != E_WAVE) json_w_number(&w, NULL, r4(h->a2));
+      if (h->effect == E_JET) json_w_number(&w, NULL, r4(h->a3));
     }
-    cJSON_AddItemToArray(ev, a);
+    json_w_close(&w);
   }
-  cJSON *no = cJSON_AddArrayToObject(j, "notes");
+  json_w_close(&w);
+  json_w_open_array(&w, "notes");
   for (int i = 0; i < s->nnotes; i++) {
     const SongNote *n = &s->notes[i];
-    cJSON *a = cJSON_CreateArray();
-    cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(n->t)));
-    cJSON_AddItemToArray(a, cJSON_CreateString(s->inst[n->inst].name));
-    cJSON_AddItemToArray(a, cJSON_CreateNumber(n->midi));
-    cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(n->dur)));
-    cJSON_AddItemToArray(a, cJSON_CreateNumber(r4(n->vel)));
-    if (n->bend) cJSON_AddItemToArray(a, cJSON_CreateNumber(n->bend));
-    cJSON_AddItemToArray(no, a);
+    json_w_open_array(&w, NULL);
+    json_w_number(&w, NULL, r4(n->t));
+    json_w_string(&w, NULL, s->inst[n->inst].name);
+    json_w_number(&w, NULL, n->midi);
+    json_w_number(&w, NULL, r4(n->dur));
+    json_w_number(&w, NULL, r4(n->vel));
+    if (n->bend) json_w_number(&w, NULL, n->bend);
+    json_w_close(&w);
   }
-  cJSON *pt = cJSON_AddObjectToObject(j, "patches");
+  json_w_close(&w);
+  json_w_open_object(&w, "patches");
   for (int i = 0; i < s->ninst; i++) {
     Patch d;
     const Patch *p = &s->inst[i].p;
     if (synth_default_patch(s->inst[i].name, &d) && !memcmp(&d, p, sizeof d)) continue;
-    cJSON *o = cJSON_AddObjectToObject(pt, s->inst[i].name);
-    cJSON_AddNumberToObject(o, "wave", p->wave);
-    cJSON_AddNumberToObject(o, "filter", p->filter);
-#define WRITE(fld) cJSON_AddNumberToObject(o, #fld, r4(p->fld));
+    json_w_open_object(&w, s->inst[i].name);
+    json_w_number(&w, "wave", p->wave);
+    json_w_number(&w, "filter", p->filter);
+#define WRITE(fld) json_w_number(&w, #fld, r4(p->fld));
     PATCH_FIELDS(WRITE)
 #undef WRITE
+    json_w_close(&w);
   }
-  char *text = cJSON_PrintUnformatted(j);
-  cJSON_Delete(j);
+  json_w_close(&w);
+  json_w_close(&w);
+  char *text = json_w_finish(&w);
   if (!text) return false;
   SDL_IOStream *f = SDL_IOFromFile(path, "wb");
   bool ok = f && SDL_WriteIO(f, text, strlen(text)) == strlen(text);
   if (f) SDL_CloseIO(f);
-  cJSON_free(text);
+  free(text);
   SDL_Log("saved %s: %s", path, ok ? "ok" : SDL_GetError());
   return ok;
 }

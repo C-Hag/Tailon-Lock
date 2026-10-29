@@ -104,10 +104,43 @@ int json_int(const Json *v, int fallback);
 /* A string's text, or fallback. */
 const char *json_string(const Json *v, const char *fallback);
 
-/* Walks the members of an array or object: for each const Json *e. */
+/* Shorthands: a string or NULL, a number or NaN (a missing value is visibly not a number). */
+const char *json_str(const Json *v);
+double json_num(const Json *v);
+bool json_is_number(const Json *v);
+bool json_is_array(const Json *v);
+
+/* Walks the members of an array or object, with a const Json *e declared
+ * already (JSON_FOR) or declared by the loop (JSON_EACH). */
+#define JSON_FOR(e, parent) for ((e) = json_begin(parent); (e) && (e) != json_end(parent); (e)++)
 #define JSON_EACH(e, parent) \
   for (const Json *e = json_begin(parent), *e##_end_ = json_end(parent); e != e##_end_; e++)
 const Json *json_begin(const Json *v);
 const Json *json_end(const Json *v);
+
+/* ---- writing ------------------------------------------------------------- */
+
+/* A JSON text written front to back, compact (no spaces): open containers,
+ * add values, close them. key is the member name inside an object and NULL
+ * inside an array or at the top. Numbers are written in the shortest form
+ * that reads back to the same double; NaN and infinities become null.
+ * Strings are UTF-8, with '"', '\\' and control characters escaped. */
+typedef struct {
+  char  *buf;
+  size_t len, cap;
+  bool   failed;          /* out of memory, or containers not closed in order */
+  int    depth;
+  char   close[64];       /* the closing bracket of each open container */
+  bool   more[64];        /* that container has a member already */
+} JsonWriter;
+
+void json_w_open_object(JsonWriter *w, const char *key);
+void json_w_open_array(JsonWriter *w, const char *key);
+void json_w_close(JsonWriter *w);
+void json_w_number(JsonWriter *w, const char *key, double v);
+void json_w_string(JsonWriter *w, const char *key, const char *s);
+/* The finished text (zero-terminated, free() it), or NULL if anything failed
+ * or a container is still open; the writer is empty afterwards. */
+char *json_w_finish(JsonWriter *w);
 
 #endif
