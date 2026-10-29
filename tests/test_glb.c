@@ -1,12 +1,16 @@
 /* test_glb.c - checks for our own GLB reader (src/core/glb.c): the container
- * rules of the glTF 2.0 binary format, and files it must refuse. Original
+ * rules of the glTF 2.0 binary format, buffer views and accessors (every
+ * component type, normalized integers, matrices, strides), and files it must
+ * refuse. Original
  * code for this project, written from the Khronos glTF 2.0 specification. */
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "core/glb.h"
+#include "core/json.h"
 
 static int failures, checks;
 
@@ -22,7 +26,7 @@ static int failures, checks;
 /* ---- building test files --------------------------------------------------- */
 
 typedef struct {
-  uint8_t b[4096];
+  uint8_t b[16384];
   size_t  n;
 } Buf;
 
@@ -145,9 +149,155 @@ static void test_refused(void) {
   printf("glb files refused: %d of %d, cut short: %d of %zu\n", refused, n, cut_refused, whole.n);
 }
 
+/* ---- buffer views and accessors ------------------------------------------ */
+
+/* the BIN chunk of the accessor tests */
+static uint8_t BIN[96];
+
+static void fill_bin(void) {
+  memset(BIN, 0, sizeof BIN);
+  float f[6] = { 1.5f, -2.25f, 3.0f, 4.0f, 5.0f, -6.5f }; /* 0-23: two VEC3 floats */
+  memcpy(BIN, f, sizeof f);
+  uint16_t u16[4] = { 0, 1, 65535, 32768 };                 /* 24-31 */
+  memcpy(BIN + 24, u16, sizeof u16);
+  BIN[32] = 0;                                               /* 32-35: u8 */
+  BIN[33] = 255;
+  BIN[34] = 128;
+  BIN[35] = 7;
+  int8_t i8[4] = { -128, -127, 0, 127 };                     /* 36-39: i8 */
+  memcpy(BIN + 36, i8, sizeof i8);
+  uint32_t u32[2] = { 4000000000u, 7 };                      /* 40-47 */
+  memcpy(BIN + 40, u32, sizeof u32);
+  /* 48-55: a MAT2 of u8: columns (1,2) and (3,4), each padded to 4 bytes */
+  BIN[48] = 1, BIN[49] = 2, BIN[52] = 3, BIN[53] = 4;
+  /* 56-95: VEC2 floats with a 20-byte stride */
+  for (int i = 0; i < 2; i++) {
+    float v[2] = { 10.0f + i, 20.0f + i };
+    memcpy(BIN + 56 + 20 * i, v, sizeof v);
+  }
+}
+
+/* a model: buffer 0 of n bytes over BIN, the views and accessors given as JSON arrays */
+static int load(const char *views, const char *accessors, size_t buf_len, GlbModel *m, Buf *f, const char **err) {
+  char json[4096];
+  snprintf(json, sizeof json, "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":%zu}],\"bufferViews\":%s,\"accessors\":%s}",
+           buf_len, views, accessors);
+  *f = make(json, BIN, sizeof BIN);
+  return glb_load(f->b, f->n, m, err);
+}
+
+static const char *VIEWS = "[{\"buffer\":0,\"byteLength\":24},{\"buffer\":0,\"byteOffset\":24,\"byteLength\":8},"
+                           "{\"buffer\":0,\"byteOffset\":32,\"byteLength\":4},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":4},"
+                           "{\"buffer\":0,\"byteOffset\":40,\"byteLength\":8},{\"buffer\":0,\"byteOffset\":48,\"byteLength\":8},"
+                           "{\"buffer\":0,\"byteOffset\":56,\"byteLength\":28,\"byteStride\":20}]";
+
+static void test_accessors(void) {
+  fill_bin();
+  const char *acc = "[{\"bufferView\":0,\"componentType\":5126,\"count\":2,\"type\":\"VEC3\"},"
+                    "{\"bufferView\":1,\"componentType\":5123,\"count\":4,\"type\":\"SCALAR\"},"
+                    "{\"bufferView\":1,\"componentType\":5123,\"count\":4,\"type\":\"SCALAR\",\"normalized\":true},"
+                    "{\"bufferView\":2,\"componentType\":5121,\"count\":4,\"type\":\"SCALAR\",\"normalized\":true},"
+                    "{\"bufferView\":3,\"componentType\":5120,\"count\":4,\"type\":\"SCALAR\",\"normalized\":true},"
+                    "{\"bufferView\":4,\"componentType\":5125,\"count\":2,\"type\":\"SCALAR\"},"
+                    "{\"bufferView\":5,\"componentType\":5121,\"count\":1,\"type\":\"MAT2\"},"
+                    "{\"bufferView\":6,\"componentType\":5126,\"count\":2,\"type\":\"VEC2\"},"
+                    "{\"bufferView\":0,\"byteOffset\":12,\"componentType\":5126,\"count\":1,\"type\":\"VEC3\"},"
+                    "{\"bufferView\":3,\"componentType\":5120,\"count\":4,\"type\":\"SCALAR\"}]";
+  GlbModel m;
+  Buf f;
+  const char *err;
+  CHECK(load(VIEWS, acc, sizeof BIN, &m, &f, &err));
+  GlbAccessor a;
+  CHECK(glb_accessor(&m, 0, &a, &err) && a.count == 2 && a.comps == 3 && a.stride == 12);
+  CHECK(glb_get(&a, 0, 0) == 1.5 && glb_get(&a, 0, 1) == -2.25 && glb_get(&a, 1, 2) == -6.5);
+  CHECK(glb_get(&a, 2, 0) == 0 && glb_get(&a, 0, 3) == 0); /* past the end: 0, never a read */
+  CHECK(glb_accessor(&m, 1, &a, NULL) && glb_get(&a, 2, 0) == 65535 && glb_get(&a, 3, 0) == 32768);
+  CHECK(glb_accessor(&m, 2, &a, NULL) && glb_get(&a, 2, 0) == 1.0 && glb_get(&a, 1, 0) == 1 / 65535.0);
+  CHECK(glb_accessor(&m, 3, &a, NULL) && glb_get(&a, 1, 0) == 1.0 && glb_get(&a, 2, 0) == 128 / 255.0);
+  /* signed normalized: -128 and -127 both read as -1 */
+  CHECK(glb_accessor(&m, 4, &a, NULL) && glb_get(&a, 0, 0) == -1.0 && glb_get(&a, 1, 0) == -1.0 && glb_get(&a, 3, 0) == 1.0);
+  CHECK(glb_accessor(&m, 5, &a, NULL) && glb_get(&a, 0, 0) == 4000000000.0);
+  /* a MAT2 of bytes: column-major, each column padded to 4 bytes */
+  CHECK(glb_accessor(&m, 6, &a, NULL) && a.elem_size == 8 && glb_get(&a, 0, 0) == 1 && glb_get(&a, 0, 1) == 2 &&
+        glb_get(&a, 0, 2) == 3 && glb_get(&a, 0, 3) == 4);
+  /* a stride wider than the element */
+  CHECK(glb_accessor(&m, 7, &a, NULL) && a.stride == 20 && glb_get(&a, 1, 0) == 11 && glb_get(&a, 1, 1) == 21);
+  CHECK(glb_accessor(&m, 8, &a, NULL) && glb_get(&a, 0, 0) == 4.0);
+  CHECK(glb_accessor(&m, 9, &a, NULL) && glb_get(&a, 0, 0) == -128 && glb_get(&a, 3, 0) == 127);
+  CHECK(!glb_accessor(&m, 10, &a, &err) && err);
+  glb_close(&m);
+}
+
+static void test_accessors_refused(void) {
+  fill_bin();
+  static const char *const BAD[] = {
+    "{\"bufferView\":0,\"componentType\":5124,\"count\":1,\"type\":\"SCALAR\"}",            /* not a component type */
+    "{\"bufferView\":0,\"componentType\":5126,\"count\":1,\"type\":\"VEC5\"}",              /* not a type */
+    "{\"bufferView\":0,\"componentType\":5126,\"count\":0,\"type\":\"SCALAR\"}",            /* no elements */
+    "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}",              /* one past the view */
+    "{\"bufferView\":0,\"byteOffset\":2,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}", /* misaligned */
+    "{\"bufferView\":0,\"byteOffset\":24,\"componentType\":5121,\"count\":1,\"type\":\"SCALAR\"}", /* offset at the end */
+    "{\"bufferView\":9,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}",            /* no such view */
+    "{\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}",                             /* no view */
+    "{\"bufferView\":0,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\",\"sparse\":{}}",
+    "{\"bufferView\":0,\"componentType\":5126,\"count\":1.5,\"type\":\"SCALAR\"}",          /* not whole */
+    "{\"bufferView\":-1,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}",
+    "{\"bufferView\":0,\"componentType\":5126,\"count\":4294967295,\"type\":\"SCALAR\"}",   /* a huge count */
+    "{\"bufferView\":0,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\",\"normalized\":true}",
+    "{\"bufferView\":0,\"componentType\":5121,\"count\":1,\"type\":\"SCALAR\",\"normalized\":1}",
+    "{\"bufferView\":0,\"componentType\":5126,\"count\":2,\"type\":\"MAT3\"}",              /* 72 bytes in 24 */
+    "{\"bufferView\":0,\"componentType\":\"5126\",\"count\":1,\"type\":\"SCALAR\"}",
+    "{\"bufferView\":1,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}",            /* the view is past its buffer */
+    "{\"bufferView\":2,\"componentType\":5126,\"count\":1,\"type\":\"VEC3\"}",              /* a stride below the element */
+    "{\"bufferView\":3,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}",            /* a stride not a multiple of 4 */
+    "{\"bufferView\":4,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}",            /* buffer 1 */
+  };
+  const char *views = "[{\"buffer\":0,\"byteLength\":24},{\"buffer\":0,\"byteOffset\":90,\"byteLength\":8},"
+                      "{\"buffer\":0,\"byteLength\":24,\"byteStride\":4},{\"buffer\":0,\"byteLength\":24,\"byteStride\":6},"
+                      "{\"buffer\":1,\"byteLength\":4}]";
+  int refused = 0, n = (int)(sizeof BAD / sizeof *BAD);
+  for (int i = 0; i < n; i++) {
+    char acc[512];
+    snprintf(acc, sizeof acc, "[%s,{\"bufferView\":2,\"componentType\":5126,\"count\":1,\"type\":\"VEC3\"}]", BAD[i]);
+    GlbModel m;
+    Buf f;
+    const char *err = NULL;
+    GlbAccessor a;
+    if (!load(views, acc, sizeof BIN, &m, &f, &err)) {
+      fprintf(stderr, "  the test file did not load: %s\n", err);
+      failures++;
+      continue;
+    }
+    if (!glb_accessor(&m, 0, &a, &err) && err) refused++;
+    else fprintf(stderr, "  accessor accepted: %s\n", BAD[i]);
+    glb_close(&m);
+  }
+  CHECK(refused == n);
+  /* the buffer itself: longer than the BIN chunk, or with a uri */
+  GlbModel m;
+  Buf f;
+  const char *err;
+  GlbAccessor a;
+  CHECK(load(VIEWS, "[{\"bufferView\":0,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}]", sizeof BIN + 4, &m, &f, &err));
+  CHECK(!glb_accessor(&m, 0, &a, &err) && err && strstr(err, "longer"));
+  glb_close(&m);
+  f = make("{\"buffers\":[{\"byteLength\":96,\"uri\":\"x.bin\"}],\"bufferViews\":[{\"buffer\":0,\"byteLength\":4}],"
+           "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":1,\"type\":\"SCALAR\"}]}", BIN, sizeof BIN);
+  CHECK(glb_load(f.b, f.n, &m, &err) && !glb_accessor(&m, 0, &a, &err) && strstr(err, "uri"));
+  glb_close(&m);
+  /* a JSON chunk that is not JSON, or not an object */
+  f = make("{\"asset\":", NULL, 0);
+  CHECK(!glb_load(f.b, f.n, &m, &err) && err);
+  f = make("[1,2]", NULL, 0);
+  CHECK(!glb_load(f.b, f.n, &m, &err) && err && m.doc == NULL);
+  printf("accessors refused: %d of %d\n", refused, n);
+}
+
 int main(void) {
   test_container();
   test_refused();
+  test_accessors();
+  test_accessors_refused();
   if (failures) {
     fprintf(stderr, "%d of %d glb checks failed\n", failures, checks);
     return 1;

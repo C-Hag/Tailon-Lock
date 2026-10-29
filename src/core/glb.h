@@ -9,6 +9,15 @@
  * the JSON document; a BIN chunk, if any, comes second and holds buffer 0.
  * Chunks of other types are skipped. Every length is checked against the
  * bytes actually there, so a short or lying file is refused, never read past.
+ *
+ * Brick 6, buffer views and accessors: buffer 0 is the BIN chunk (buffers
+ * with a uri are not read). A buffer view is a byte range of a buffer, with
+ * an optional stride; an accessor is a typed array in a view: count elements
+ * of SCALAR, VEC2-4 or MAT2-4, each component a signed or unsigned 8-, 16- or
+ * 32-bit integer or a 32-bit float, read little-endian. Offsets must be
+ * aligned to the component size, matrix columns start on 4-byte boundaries,
+ * and the last element must end inside its view, which must end inside its
+ * buffer. Sparse accessors and accessors without a view are refused.
  */
 #ifndef A4C_GLB_H
 #define A4C_GLB_H
@@ -32,5 +41,36 @@ typedef struct {
  * data. Returns false, with why in *err if it is given, for anything that is
  * not a well-formed GLB file. */
 bool glb_open(const void *data, size_t n, GlbFile *out, const char **err);
+
+struct Json;
+
+enum { GLB_I8 = 5120, GLB_U8 = 5121, GLB_I16 = 5122, GLB_U16 = 5123, GLB_U32 = 5125, GLB_F32 = 5126 };
+
+typedef struct {
+  GlbFile      file;
+  struct Json *doc;  /* the JSON document */
+} GlbModel;
+
+typedef struct {
+  const uint8_t *data;       /* the first element */
+  size_t         count;
+  int            comps;      /* components an element: 1 (SCALAR) to 16 (MAT4) */
+  int            rows;       /* a matrix's rows (2-4), or 0 for scalars and vectors */
+  int            ctype;      /* GLB_I8 ... GLB_F32 */
+  int            csize;      /* bytes a component */
+  size_t         elem_size;  /* bytes an element (matrix columns padded to 4 bytes) */
+  size_t         stride;     /* bytes from one element to the next */
+  bool           normalized; /* integers read as -1..1 or 0..1 */
+} GlbAccessor;
+
+/* Opens a GLB file and parses its JSON; the model points into data, which
+ * must stay valid until glb_close. */
+bool glb_load(const void *data, size_t n, GlbModel *m, const char **err);
+void glb_close(GlbModel *m);
+/* Accessor number index of the model, checked against its view and buffer. */
+bool glb_accessor(const GlbModel *m, int index, GlbAccessor *out, const char **err);
+/* Component comp (column-major for matrices) of element i, as a double: the
+ * integer value, or the float, or the normalized value when normalized. */
+double glb_get(const GlbAccessor *a, size_t i, int comp);
 
 #endif

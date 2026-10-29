@@ -8,8 +8,11 @@
  * grown. Every input lives in a buffer of exactly its own size, so a read past
  * the end is a sanitizer error. For each accepted input it checks that the
  * chunks lie inside the header's length and inside the buffer, that the JSON
- * chunk is first and non-empty, and that a refusal says why. Exits 1 on a
- * broken rule (the input is saved to fuzz-fail.glb). */
+ * chunk is first and non-empty, and that a refusal says why. It then loads
+ * the model and reads every element of every accessor it accepts; the numbers
+ * in the JSON chunk are mutated too (digits changed in place, so the chunk
+ * keeps its length). Exits 1 on a broken rule (the input is saved to
+ * fuzz-fail.glb). */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +20,7 @@
 #include <time.h>
 
 #include "core/glb.h"
+#include "core/json.h"
 
 static uint64_t rng = 0x243F6A8885A308D3ull;
 static uint64_t next(void) {
@@ -51,7 +55,7 @@ static size_t build(uint8_t *b, const char *json, size_t bin_len) {
   return n;
 }
 
-static long accepted;
+static long accepted, accessors_read, elements_read;
 
 static int check(const uint8_t *src, size_t n) {
   uint8_t *data = malloc(n ? n : 1);
@@ -65,6 +69,26 @@ static int check(const uint8_t *src, size_t n) {
     const uint8_t *j = (const uint8_t *)g.json;
     if (err || !g.json || g.json_len == 0 || j != data + 20 || g.json_len > total - 20 || total > n) ok = 0;
     if (g.bin && (g.bin < data + 20 || g.bin + g.bin_len > data + total)) ok = 0;
+    GlbModel m;
+    if (ok && glb_load(data, n, &m, &err)) {
+      int na = json_count(json_get(m.doc, "accessors"));
+      for (int i = 0; i < na && i < 64; i++) {
+        GlbAccessor a;
+        if (!glb_accessor(&m, i, &a, &err)) {
+          if (!err) ok = 0;
+          continue;
+        }
+        accessors_read++;
+        /* the accessor lies inside the BIN chunk */
+        if (a.data < g.bin || a.data + (a.count - 1) * a.stride + a.elem_size > g.bin + g.bin_len) ok = 0;
+        double sum = 0;
+        for (size_t e = 0; e < a.count; e++)
+          for (int c = 0; c < a.comps; c++) sum += glb_get(&a, e, c);
+        elements_read += (long)a.count;
+        (void)sum;
+      }
+      glb_close(&m);
+    }
   } else if (!err) ok = 0;
   free(data);
   return ok;
@@ -83,6 +107,15 @@ int main(int argc, char **argv) {
   seed_n[ns] = build(seeds[ns], "{\"asset\":{\"version\":\"2.0\"}}", 0), ns++;
   seed_n[ns] = build(seeds[ns], "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":24}]}", 24), ns++;
   seed_n[ns] = build(seeds[ns], "{}", 4), ns++;
+  seed_n[ns] = build(seeds[ns],
+                     "{\"buffers\":[{\"byteLength\":96}],\"bufferViews\":[{\"buffer\":0,\"byteLength\":48},"
+                     "{\"buffer\":0,\"byteOffset\":48,\"byteLength\":40,\"byteStride\":20}],\"accessors\":["
+                     "{\"bufferView\":0,\"componentType\":5126,\"count\":4,\"type\":\"VEC3\"},"
+                     "{\"bufferView\":0,\"byteOffset\":4,\"componentType\":5123,\"count\":8,\"type\":\"SCALAR\"},"
+                     "{\"bufferView\":1,\"componentType\":5121,\"count\":2,\"type\":\"MAT2\",\"normalized\":true},"
+                     "{\"bufferView\":1,\"componentType\":5126,\"count\":2,\"type\":\"VEC4\"},"
+                     "{\"bufferView\":0,\"componentType\":5120,\"count\":3,\"type\":\"MAT4\"}]}",
+                     96), ns++;
   for (int i = 2; i < argc && ns < MAX_SEEDS; i++) {
     FILE *f = fopen(argv[i], "rb");
     if (!f) continue;
@@ -101,7 +134,22 @@ int main(int argc, char **argv) {
       size_t n = seed_n[s];
       memcpy(buf, seeds[s], n);
       for (int r = 1 + (int)below(3); r > 0; r--) {
-        switch (below(5)) {
+        switch (below(7)) {
+        case 5:
+        case 6: { /* a digit in the JSON chunk changed in place */
+          size_t jl = n >= 16 ? (size_t)(buf[12] | buf[13] << 8) : 0;
+          if (jl && 20 + jl <= n) {
+            for (int tries = 0; tries < 32; tries++) {
+              size_t at = 20 + below(jl);
+              if (buf[at] >= '0' && buf[at] <= '9') {
+                static const char REP[] = "0123456789-.e9";
+                buf[at] = (uint8_t)REP[below(sizeof REP - 1)];
+                break;
+              }
+            }
+          }
+          break;
+        }
         case 0: /* an edge value in a header or chunk field (or anywhere, 4-aligned) */
           if (n >= 4) put32(buf + 4 * below(n / 4 < 12 ? n / 4 : 12), EDGE[below(sizeof EDGE / sizeof *EDGE)]);
           break;
@@ -135,6 +183,7 @@ int main(int argc, char **argv) {
       }
     }
   }
-  printf("fuzz_glb: %ld inputs (%ld accepted), %d seeds, no rule broken\n", tried, accepted, ns);
+  printf("fuzz_glb: %ld inputs (%ld accepted, %ld accessors and %ld elements read), %d seeds, no rule broken\n", tried,
+         accepted, accessors_read, elements_read, ns);
   return 0;
 }
