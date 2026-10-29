@@ -4524,16 +4524,103 @@ const Intro = (() => {
     };
     const fold = (x0, y0, x1, y1, x2, y2, a = 0.5) => { c.strokeStyle = `rgba(0,0,0,${a})`; c.lineWidth = 0.018; c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo(x1, y1, x2, y2); c.stroke(); };
 
-    // a hand from the side: back of the hand, knuckles, fingers curled over (x0,y0) = wrist, k = length, curl 0..1
-    const hand = (x0, y0, k, curl, lit, dark, keyK) => {
-      const P = [[x0, y0 - 0.06 * k], [x0 - 0.18 * k, y0 - 0.1 * k], [x0 - 0.3 * k, y0 - 0.06 * k], [x0 - 0.36 * k, y0 + (0.02 + 0.06 * curl) * k], [x0 - 0.32 * k, y0 + 0.1 * k], [x0 - 0.12 * k, y0 + 0.08 * k], [x0, y0 + 0.06 * k]];
-      c.beginPath(); curve(P); c.fillStyle = rgb(...dark.map(v => v * 1.6)); c.fill();
-      c.save(); c.beginPath(); curve(P); c.clip();
-      c.fillStyle = lg(x0 - 0.36 * k, 0, x0, 0, [[0, rgb(...lit, 0.85 * keyK)], [1, rgb(...lit, 0.15)]]); c.fillRect(x0 - k, y0 - k, 2 * k, 2 * k);
-      c.strokeStyle = rgb(...dark, 0.7); c.lineWidth = 0.008;
-      for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(x0 - (0.24 + i * 0.012) * k, y0 - (0.05 - i * 0.04) * k); c.quadraticCurveTo(x0 - 0.34 * k, y0 + (-0.02 + i * 0.04) * k, x0 - (0.3 + 0.02 * curl) * k, y0 + (0.02 + i * 0.035) * k); c.stroke(); }
-      c.strokeStyle = rgb(...mix(lit, [255, 255, 255], 0.3), 0.3 * keyK); c.beginPath(); c.moveTo(x0 - 0.05 * k, y0 - 0.07 * k); c.quadraticCurveTo(x0 - 0.18 * k, y0 - 0.11 * k, x0 - 0.28 * k, y0 - 0.07 * k); c.stroke();
+    // ---- the figure engine: a skeleton with adult proportions, posed by joint angles, drawn as shaded, tapered limbs ----
+    // Units are head heights (crown to chin = 1), the units the head is drawn in. The proportions are adult means from
+    // published body measurements: shoulders 1.75 head heights across, upper arm 1.45, forearm 1.16, hand 0.83, the
+    // base of the neck 1.25 below the crown. Body space: f forward (the face's side), y down, l toward us; the body is
+    // drawn turned FIG.turn toward us, the head in profile on top of it.
+    const FIG = { nx: 0.08, ny: 1.25, sh: 0.87, shY: 0.12, upper: 1.45, fore: 1.16, palm: 0.46, fing: 0.4, rUp: 0.25, rEl: 0.2, rWr: 0.135, turn: 0.32 };
+    const vadd = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], vmul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+    const vnorm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+    const vperp = (u, w, alt) => { const d = u[0] * w[0] + u[1] * w[1] + u[2] * w[2], p = [w[0] - u[0] * d, w[1] - u[1] * d, w[2] - u[2] * d]; return Math.hypot(...p) > 1e-3 ? vnorm(p) : alt; };
+    // body space to the head's drawing: x, y and a depth (bigger is nearer us)
+    const toHead = p => [FIG.nx - p[0] * Math.cos(FIG.turn) + p[2] * Math.sin(FIG.turn), FIG.ny + p[1], p[0] * Math.sin(FIG.turn) + p[2] * Math.cos(FIG.turn)];
+    // one limb: a capsule from a to b with radii ra, rb, lit from the face's side (the screens) with a rim on its back edge
+    const limb = (a, b, ra, rb, base, lit, keyK, rim) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1e-6, nx = -dy / L, ny = dx / L, ang = Math.atan2(dy, dx);
+      c.beginPath();
+      c.moveTo(a[0] + nx * ra, a[1] + ny * ra); c.lineTo(b[0] + nx * rb, b[1] + ny * rb);
+      c.arc(b[0], b[1], rb, ang + Math.PI / 2, ang - Math.PI / 2, true);
+      c.lineTo(a[0] - nx * ra, a[1] - ny * ra);
+      c.arc(a[0], a[1], ra, ang - Math.PI / 2, ang + Math.PI / 2, true);
+      c.closePath();
+      c.fillStyle = rgb(...base.map(v => v * 0.22)); c.fill();
+      // the side toward the face (-x) takes the key light; the far edge the rim
+      const s = nx < 0 ? 1 : -1, r = Math.max(ra, rb), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      c.save(); c.clip();
+      c.fillStyle = lg(mx + nx * r * s, my + ny * r * s, mx - nx * r * s, my - ny * r * s, [[0, rgb(...mix(base, lit, 0.3), 0.95 * keyK)], [0.55, rgb(...base.map(v => v * 0.55), 0.6)], [0.85, rgb(...base.map(v => v * 0.3), 0.2)], [1, rgb(...rim, 0.55)]]);
+      c.fillRect(Math.min(a[0], b[0]) - r * 2, Math.min(a[1], b[1]) - r * 2, Math.abs(dx) + r * 4, Math.abs(dy) + r * 4);
       c.restore();
+    };
+    // the skeleton for a pose: { lean, arms: [far, near] each { flex, abd, elbow, wrist, curl } }; joints in body space
+    const rig = (P) => {
+      const cl = Math.cos(P.lean), sl = Math.sin(P.lean);
+      const tilt = q => [q[0] * cl + q[1] * sl, q[1] * cl - q[0] * sl, q[2]];   // lean the trunk forward about the neck base
+      const arms = P.arms.map((A, i) => {
+        const side = i ? 1 : -1, S = tilt([-0.04, FIG.shY, side * FIG.sh]);
+        const u = vnorm([Math.sin(A.flex) * Math.cos(A.abd), Math.cos(A.flex) * Math.cos(A.abd), side * Math.sin(A.abd)]);
+        const E = vadd(S, vmul(u, FIG.upper)), pu = vperp(u, [1, -0.3, 0], [0, -1, 0]);
+        const w = vnorm(vadd(vmul(u, Math.cos(A.elbow)), vmul(pu, Math.sin(A.elbow)))), W = vadd(E, vmul(w, FIG.fore));
+        const pw = vperp(w, [0, 1, 0], [1, 0, 0]), h = vnorm(vadd(vmul(w, Math.cos(A.wrist)), vmul(pw, Math.sin(A.wrist))));
+        return { S, E, W, h, pw, curl: A.curl, side };
+      });
+      const trunk = { front: [[0.2, -0.06, 0], [0.5, 0.32, 0], [0.64, 0.75, 0], [0.6, 1.35, 0], [0.52, 1.95, 0], [0.5, 2.6, 0]].map(tilt),
+        back: [[0.5, 2.6, 0], [-0.4, 2.6, 0], [-0.44, 1.8, 0], [-0.46, 0.9, 0], [-0.38, 0.25, 0], [-0.12, 0.0, FIG.sh * 0.9], [-0.18, -0.06, 0]].map(tilt) };
+      return { arms, trunk };
+    };
+    // draws the body of a person (in the head's units) for a pose, the uniform in colour cloth; returns the joints
+    // in the head's drawing, for things the hands hold
+    const figure = (P, clothCol, skin, lit, dark, keyK) => {
+      const R2 = rig(P), H = q => toHead(q), sleeve = clothCol, cuff = clothCol.map(v => v * 0.8);
+      const arm = A => {
+        const S = H(A.S), E = H(A.E), W = H(A.W), Wc = H(vadd(A.W, vmul(A.h, -0.06)));
+        // the muscles under the sleeve: the shoulder's cap, the upper arm full at the middle, the forearm full near
+        // the elbow and narrowing to the wrist
+        const M = H(vadd(A.S, vmul(vnorm(vadd(A.E, vmul(A.S, -1))), FIG.upper * 0.45)));
+        const Fm = H(vadd(A.E, vmul(vnorm(vadd(A.W, vmul(A.E, -1))), FIG.fore * 0.3)));
+        limb(S, M, 0.3, 0.27, sleeve, lit, keyK, P.rim);
+        limb(M, E, 0.27, FIG.rEl, sleeve, lit, keyK, P.rim);
+        limb(E, Fm, FIG.rEl, 0.215, sleeve, lit, keyK, P.rim);
+        limb(Fm, Wc, 0.215, FIG.rWr + 0.02, sleeve, lit, keyK, P.rim);
+        // the sleeve's creases: across the inside of the elbow, and loose folds down the upper arm and forearm
+        const ae = Math.atan2(S[1] - E[1], S[0] - E[0]);
+        c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 0.016;
+        c.beginPath(); c.arc(E[0], E[1], FIG.rEl * 0.75, ae - 0.7, ae + 0.7); c.stroke();
+        c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 0.012;
+        for (const [p0, p1, k] of [[S, E, 0.35], [S, E, 0.7], [E, W, 0.4]]) {
+          const mx = p0[0] + (p1[0] - p0[0]) * k, my = p0[1] + (p1[1] - p0[1]) * k, L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+          const nx = -(p1[1] - p0[1]) / L * 0.16, ny = (p1[0] - p0[0]) / L * 0.16;
+          c.beginPath(); c.moveTo(mx + nx, my + ny); c.quadraticCurveTo(mx + (p1[0] - p0[0]) / L * 0.06, my + (p1[1] - p0[1]) / L * 0.06, mx - nx * 0.6, my - ny * 0.6); c.stroke();
+        }
+        limb(Wc, H(vadd(A.W, vmul(A.h, 0.02))), FIG.rWr + 0.03, FIG.rWr + 0.03, cuff, lit, keyK, P.rim);
+        // the hand from the side: the thumb behind, the palm along h, the fingers together, curling in two joints
+        const K = vadd(A.W, vmul(A.h, FIG.palm)), Kh = H(K);
+        const T0 = vadd(A.W, vmul(A.h, 0.14)), T1 = vadd(T0, vmul(vnorm(vadd(A.h, vmul(A.pw, -0.7))), 0.3));
+        limb(H(T0), H(T1), 0.075, 0.055, skin, lit, keyK, P.rim);
+        limb(H(A.W), Kh, FIG.rWr, 0.14, skin, lit, keyK, P.rim);
+        const d1 = vnorm(vadd(vmul(A.h, Math.cos(A.curl * 0.9)), vmul(A.pw, Math.sin(A.curl * 0.9)))), F1 = vadd(K, vmul(d1, FIG.fing * 0.55));
+        const d2 = vnorm(vadd(vmul(A.h, Math.cos(A.curl * 1.9)), vmul(A.pw, Math.sin(A.curl * 1.9)))), F2 = vadd(F1, vmul(d2, FIG.fing * 0.45));
+        limb(Kh, H(F1), 0.12, 0.1, skin, lit, keyK, P.rim);
+        limb(H(F1), H(F2), 0.1, 0.075, skin, lit, keyK, P.rim);
+        // the gaps between the fingers, and the knuckles catching the light
+        c.strokeStyle = rgb(...dark, 0.55); c.lineWidth = 0.008;
+        for (const k of [-0.045, 0, 0.045]) {
+          const q0 = H(vadd(K, vmul(A.pw, k))), q1 = H(vadd(F1, vmul(A.pw, k * 0.9))), q2 = H(vadd(F2, vmul(A.pw, k * 0.7)));
+          c.beginPath(); c.moveTo(q0[0], q0[1]); c.quadraticCurveTo(q1[0], q1[1], q2[0], q2[1]); c.stroke();
+        }
+        c.strokeStyle = rgb(...mix(lit, [255, 255, 255], 0.3), 0.3 * keyK); c.lineWidth = 0.012;
+        c.beginPath(); c.moveTo(...H(vadd(A.W, vmul(A.h, 0.1))).slice(0, 2)); c.lineTo(...Kh.slice(0, 2)); c.stroke();
+      };
+      // far arm behind the trunk, the near one in front of it
+      arm(R2.arms[0]);
+      const outline = [...R2.trunk.front, ...R2.trunk.back].map(q => H(q).slice(0, 2));
+      cloth(outline, clothCol, lit, dark, keyK, P.rim);
+      // the neck, from under the jaw to the collar
+      limb([0.02, 0.98], [FIG.nx, FIG.ny], 0.25, 0.27, skin, lit, keyK, P.rim);
+      const J = { hand: R2.arms.map(A => H(vadd(A.W, vmul(A.h, FIG.palm)))), wrist: R2.arms.map(A => H(A.W)), elbow: R2.arms.map(A => H(A.E)) };
+      if (P.held) P.held(J);   // what the near hand holds sits between the trunk and that hand
+      arm(R2.arms[1]);
+      return J;
     };
     const blueRim = alert ? mix([90, 150, 230], [255, 70, 60], gq * 0.5) : [90, 150, 230];
     const redK = alert ? gq * 0.25 : 0;
@@ -4546,19 +4633,23 @@ const Intro = (() => {
       hair: [[-0.33, 0.15], [-0.34, 0.07], [-0.2, -0.025], [0.03, -0.03], [0.27, 0.035], [0.4, 0.16], [0.435, 0.36], [0.415, 0.56], [0.36, 0.66], [0.25, 0.62], [0.19, 0.52], [0.12, 0.42], [0.05, 0.45], [0.035, 0.53], [0.0, 0.53], [-0.06, 0.36], [-0.2, 0.22]],
       body: (lit, dark) => {
         const kh = [150, 125, 85];
-        cloth([[-0.22, 1.06], [0.2, 1.0], [0.55, 1.1], [0.72, 1.4], [0.76, 2.2], [0.72, 3.4], [-0.6, 3.4], [-0.64, 2.2], [-0.56, 1.5], [-0.38, 1.18]], kh, lit, dark, 0.8, blueRim);
+        // standing, the far arm at his side, the near one holding the clipboard against his chest
+        figure({ lean: 0.02, rim: blueRim, arms: [{ flex: 0.08, abd: 0.1, elbow: 0.3, wrist: 0.1, curl: 0.5 }, { flex: 0.22, abd: 0.22, elbow: 1.95, wrist: 0.25, curl: 0.95 }],
+          held: J => {
+            // the clipboard edge-on in his near hand, paper catching the screen light, the steel clip
+            const [hx, hy] = J.hand[1];
+            c.save(); c.translate(hx - 0.1, hy - 0.45); c.rotate(-0.12);
+            c.fillStyle = '#2a2016'; c.fillRect(-0.16, -0.5, 0.3, 1.02);
+            c.fillStyle = rgb(...mix([225, 225, 215], lit, 0.45).map(v => v * 0.75)); c.fillRect(-0.13, -0.46, 0.24, 0.94);
+            c.strokeStyle = 'rgba(40,50,60,0.45)'; c.lineWidth = 0.008;
+            for (let i = 0; i < 9; i++) { c.beginPath(); c.moveTo(-0.11, -0.34 + i * 0.09); c.lineTo(0.09, -0.34 + i * 0.09); c.stroke(); }
+            c.fillStyle = '#8c949a'; c.fillRect(-0.08, -0.53, 0.14, 0.08);
+            c.restore();
+          } }, kh, [190, 140, 110], lit, dark, 0.8);
         c.fillStyle = 'rgba(225,222,212,0.35)'; c.beginPath(); c.moveTo(-0.3, 1.1); c.lineTo(-0.12, 1.3); c.lineTo(0.05, 1.08); c.fill();   // T-shirt at the open collar
         c.strokeStyle = 'rgba(0,0,0,0.6)'; c.lineWidth = 0.02; c.beginPath(); c.moveTo(-0.42, 1.12); c.lineTo(-0.14, 1.42); c.lineTo(0.12, 1.06); c.stroke();
         c.fillStyle = '#d8b14a'; c.beginPath(); c.moveTo(-0.4, 1.22); c.lineTo(-0.34, 1.33); c.lineTo(-0.28, 1.22); c.closePath(); c.fill();   // chief's anchor
-        fold(-0.3, 1.6, -0.2, 2.2, -0.3, 2.9); fold(0.45, 1.6, 0.5, 2.2, 0.42, 2.9, 0.35);
-        cloth([[0.1, 1.2], [0.5, 1.25], [0.56, 1.8], [0.42, 2.3], [0.1, 2.45], [-0.42, 2.3], [-0.46, 2.15], [-0.05, 2.1], [0.1, 1.8], [0.0, 1.4]], kh, lit, dark, 0.8, blueRim);
-        fold(0.2, 2.0, 0.05, 2.25, -0.1, 2.3, 0.45);
-        // clipboard edge-on, paper catching the screen light, the steel clip
-        c.fillStyle = '#2a2016'; c.beginPath(); c.moveTo(-0.72, 1.66); c.lineTo(-0.42, 1.6); c.lineTo(-0.34, 2.62); c.lineTo(-0.62, 2.7); c.fill();
-        c.fillStyle = rgb(...mix([225, 225, 215], lit, 0.45).map(v => v * 0.75)); c.beginPath(); c.moveTo(-0.69, 1.7); c.lineTo(-0.45, 1.65); c.lineTo(-0.38, 2.58); c.lineTo(-0.6, 2.65); c.fill();
-        c.strokeStyle = 'rgba(40,50,60,0.45)'; c.lineWidth = 0.008; for (let i = 0; i < 9; i++) { const f = 0.12 + i * 0.09; c.beginPath(); c.moveTo(-0.67 + f * 0.08, 1.7 + f * 0.95); c.lineTo(-0.47 + f * 0.08, 1.66 + f * 0.92); c.stroke(); }
-        c.fillStyle = '#8c949a'; c.beginPath(); c.moveTo(-0.64, 1.64); c.lineTo(-0.5, 1.61); c.lineTo(-0.49, 1.7); c.lineTo(-0.63, 1.73); c.fill();
-        hand(-0.36, 2.22, 0.55, 1, lit, dark, 0.8);
+        fold(-0.3, 1.9, -0.2, 2.4, -0.3, 2.9);
       }
     });
 
@@ -4624,13 +4715,12 @@ const Intro = (() => {
       hair: [[-0.34, 0.15], [-0.35, 0.07], [-0.2, -0.03], [0.03, -0.04], [0.27, 0.035], [0.41, 0.17], [0.445, 0.37], [0.425, 0.58], [0.35, 0.72], [0.27, 0.72], [0.2, 0.58], [0.12, 0.42], [0.05, 0.46], [0.035, 0.58], [0.0, 0.58], [-0.06, 0.37], [-0.2, 0.22]],
       body: (lit, dark) => {
         const blue = [42, 60, 92];
-        cloth([[-0.18, 1.08], [0.22, 1.02], [0.6, 1.12], [0.95, 1.3], [1.12, 1.7], [1.15, 2.4], [1.1, 3.3], [-0.3, 3.3], [-0.45, 2.4], [-0.42, 1.6], [-0.3, 1.2]], blue, lit, dark, 1, blueRim);
-        fold(0.55, 1.5, 0.75, 2.1, 0.7, 2.9); fold(0.95, 1.6, 1.0, 2.2, 0.98, 2.9, 0.35);
+        // seated, leaning in to the scope, both hands forward on the keyboard and the trackball
+        figure({ lean: 0.26, rim: blueRim, arms: [{ flex: 1.05, abd: -0.08, elbow: 0.7, wrist: -0.15, curl: 0.5 }, { flex: 0.95, abd: 0.22, elbow: 0.85, wrist: -0.25, curl: 0.65 }] },
+          blue, [205, 160, 128], lit, dark, 1);
         cloth([[-0.24, 1.0], [-0.05, 1.13], [0.24, 1.1], [0.32, 0.97], [0.36, 1.12], [0.12, 1.24], [-0.26, 1.17]], blue.map(v => v * 0.8), lit, dark, 1, blueRim);   // collar
-        cloth([[0.2, 1.25], [0.55, 1.3], [0.64, 1.7], [0.52, 2.15], [0.22, 2.36], [-0.3, 2.43], [-0.66, 2.43], [-0.68, 2.27], [-0.3, 2.2], [0.04, 2.05], [0.08, 1.6]], blue, lit, dark, 1, blueRim);
-        fold(0.5, 1.95, 0.3, 2.2, 0.05, 2.25, 0.5); fold(-0.1, 2.25, -0.3, 2.32, -0.5, 2.3, 0.35);
-        c.fillStyle = 'rgba(15,22,34,0.9)'; c.fillRect(0.36, 1.42, 0.2, 0.14); c.strokeStyle = rgb(...blueRim, 0.35); c.lineWidth = 0.01; c.strokeRect(0.36, 1.42, 0.2, 0.14);   // shoulder patch
-        hand(-0.64, 2.33, 0.6, 0.7, lit, dark, 1);
+        fold(0.4, 1.7, 0.5, 2.2, 0.42, 2.8, 0.4);
+        c.fillStyle = 'rgba(15,22,34,0.9)'; c.fillRect(0.3, 1.5, 0.18, 0.13); c.strokeStyle = rgb(...blueRim, 0.35); c.lineWidth = 0.01; c.strokeRect(0.3, 1.5, 0.18, 0.13);   // shoulder patch
       },
       extra: (lit, dark) => {
         // headset: band over the crown, padded earcup, boom mic to the corner of the mouth, transmit light
@@ -4659,20 +4749,17 @@ const Intro = (() => {
       open: o3, blink: blinkAt(0.1), age: 1, look: turn, browUp: 0, iris: [70, 80, 90], hairCol: [140, 138, 134], stubble: true,
       hair: [[-0.06, 0.3], [0.2, 0.28], [0.4, 0.3], [0.43, 0.5], [0.36, 0.7], [0.26, 0.72], [0.2, 0.55], [0.12, 0.42], [0.05, 0.45], [0.035, 0.55], [0.0, 0.55], [-0.06, 0.38]],
       body: (lit, dark) => {
-        const kh = [160, 135, 92], lift = ease(clamp((t - L3[0]) / 0.4, 0, 1)) * 0.12;
-        cloth([[-0.22, 1.06], [0.2, 1.0], [0.6, 1.1], [0.85, 1.35], [0.95, 2.0], [0.9, 3.2], [-0.55, 3.2], [-0.62, 2.2], [-0.54, 1.5], [-0.38, 1.16]], kh, lit, dark, 0.85, blueRim);
+        const kh = [160, 135, 92], g = ease(clamp((t - L3[0]) / 0.4, 0, 1));
+        // in his chair, the far forearm on the armrest; giving the order, the near hand comes up and opens toward the deck
+        figure({ lean: -0.08, rim: blueRim, arms: [{ flex: 0.05, abd: 0.08, elbow: 1.5, wrist: 0.1, curl: 0.6 },
+          { flex: -0.05 + 0.4 * g, abd: 0.25, elbow: 1.45 + 0.55 * g, wrist: 0.1 - 0.35 * g, curl: 0.6 - 0.45 * g }] }, kh, [196, 150, 120], lit, dark, 0.85);
         c.fillStyle = 'rgba(230,226,215,0.4)'; c.beginPath(); c.moveTo(-0.3, 1.08); c.lineTo(-0.1, 1.3); c.lineTo(0.08, 1.05); c.fill();
         c.strokeStyle = 'rgba(0,0,0,0.6)'; c.lineWidth = 0.02; c.beginPath(); c.moveTo(-0.42, 1.1); c.lineTo(-0.12, 1.42); c.lineTo(0.16, 1.05); c.stroke();
         // silver oak leaf on the collar point
         c.fillStyle = '#c9ced4'; c.beginPath(); c.ellipse(-0.36, 1.25, 0.05, 0.028, -0.6, 0, Math.PI * 2); c.fill();
         c.strokeStyle = 'rgba(60,64,70,0.8)'; c.lineWidth = 0.006; c.beginPath(); c.moveTo(-0.4, 1.28); c.lineTo(-0.32, 1.22); c.stroke();
-        fold(-0.2, 1.6, -0.05, 2.2, -0.15, 2.9); fold(0.55, 1.45, 0.65, 2.0, 0.6, 2.8, 0.35);
-        c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 0.015; c.strokeRect(-0.42, 1.7, 0.3, 0.3);   // shirt pocket, pen
-        c.fillStyle = '#16181c'; c.fillRect(-0.38, 1.57, 0.028, 0.16); c.fillStyle = '#b8bcc0'; c.fillRect(-0.38, 1.57, 0.028, 0.03);
-        cloth([[0.15, 1.22], [0.55, 1.28], [0.6, 1.8], [0.45, 2.25], [-0.1, 2.42 - lift], [-0.56, 2.38 - lift], [-0.58, 2.22 - lift], [-0.1, 2.18], [0.1, 1.9], [0.0, 1.4]], kh, lit, dark, 0.85, blueRim);
-        fold(0.35, 1.95, 0.15, 2.22, -0.1, 2.28, 0.45);
-        c.fillStyle = '#9ea3a8'; c.fillRect(-0.6, 2.24 - lift, 0.07, 0.13);   // watch
-        hand(-0.6, 2.3 - lift, 0.62, 0.35 - lift * 2, lit, dark, 0.85);
+        c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 0.015; c.strokeRect(-0.5, 1.75, 0.3, 0.3);   // shirt pocket, pen
+        c.fillStyle = '#16181c'; c.fillRect(-0.46, 1.62, 0.028, 0.16); c.fillStyle = '#b8bcc0'; c.fillRect(-0.46, 1.62, 0.028, 0.03);
       },
       extra: (lit, dark) => {
         // ball cap: navy, the gold oak leaves on the bill, the ship's number in gold thread

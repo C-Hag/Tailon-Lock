@@ -80,6 +80,14 @@ whole ship stays in. `tools/frame_check.js --strict` checks every shot, and the 
 is now wide: water, the whole carrier and the horizon stay in the frame from a kilometre out until we pass the bow.
 On the control room's scope the two contacts close from the rim toward the ship over the shot, each sweep leaving an
 echo of where they were.
+The people in the control room have bodies from a small figure engine (`figure()` in the browser game, the same in
+`src/cic.c`). It is a skeleton with adult proportions from published body measurements, in head heights: shoulders
+1.75 across, upper arm 1.45, forearm 1.16, hand 0.83, the neck's base 1.25 below the crown. Each person is posed by
+joint angles (trunk lean; shoulder flex and spread, elbow, wrist and finger curl for each arm). It is drawn as shaded,
+tapered limbs under the uniform: the shoulder's cap, the upper arm and forearm muscles, creases at the elbow, the
+cuff, and a hand with thumb, palm and curling fingers. The operator leans in with both hands at the keyboard. The
+supervisor holds the clipboard against his chest. The commander rests his forearm on the armrest and raises his hand
+as he gives the order.
 
 The opening (2026-10-29, the same in the browser game and the C port) starts with a fast flyby: in from high off
 the carrier's stern, down her port side, turning to hold the whole ship as we pass the bow (`sunrise`, 0 - 5.2 s).

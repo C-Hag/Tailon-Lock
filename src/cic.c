@@ -147,33 +147,6 @@ static void fold(float x0, float y0, float x1, float y1, float x2, float y2, flo
   p_quad(P, x1, y1, x2, y2);
   stroke_c(RGBA(0, 0, 0, a), 0.018f);
 }
-/* a hand from the side: (x0, y0) the wrist, k its length, curl 0-1 */
-static void hand(float x0, float y0, float k, float curl, V3 lit, V3 dark, float key_k) {
-  float Pt[7][2] = { { x0, y0 - 0.06f * k }, { x0 - 0.18f * k, y0 - 0.1f * k }, { x0 - 0.3f * k, y0 - 0.06f * k },
-                     { x0 - 0.36f * k, y0 + (0.02f + 0.06f * curl) * k }, { x0 - 0.32f * k, y0 + 0.1f * k }, { x0 - 0.12f * k, y0 + 0.08f * k },
-                     { x0, y0 + 0.06f * k } };
-  p_begin(P);
-  curve((const float(*)[2])Pt, 7, true);
-  fill_c(C(mul(dark, 1.6f), 1));
-  p_save(P);
-  p_begin(P);
-  curve((const float(*)[2])Pt, 7, true);
-  p_clip(P);
-  Paint g = LG(x0 - 0.36f * k, 0, x0, 0, S_(0, C(lit, 0.85f * key_k)), S_(1, C(lit, 0.15f)));
-  p_fill_rect(P, x0 - k, y0 - k, 2 * k, 2 * k, &g);
-  for (int i = 0; i < 3; i++) {
-    p_begin(P);
-    p_move(P, x0 - (0.24f + i * 0.012f) * k, y0 - (0.05f - i * 0.04f) * k);
-    p_quad(P, x0 - 0.34f * k, y0 + (-0.02f + i * 0.04f) * k, x0 - (0.3f + 0.02f * curl) * k, y0 + (0.02f + i * 0.035f) * k);
-    stroke_c(C(dark, 0.7f), 0.008f);
-  }
-  p_begin(P);
-  p_move(P, x0 - 0.05f * k, y0 - 0.07f * k);
-  p_quad(P, x0 - 0.18f * k, y0 - 0.11f * k, x0 - 0.28f * k, y0 - 0.07f * k);
-  stroke_c(C(mix(lit, v3c(255, 255, 255), 0.3f), 0.3f * key_k), 0.008f);
-  p_restore(P);
-}
-
 static V3 blue_rim;
 static float red_k, L1[2] = { 5.6f, 7.0f }, L2[2] = { 7.05f, 8.05f }, L3[2] = { 8.1f, 9.2f };
 
@@ -383,12 +356,206 @@ static void person(const Person *o) {
   p_restore(P);
 }
 
+/* ---- the figure engine: a skeleton with adult proportions, posed by joint angles, drawn as shaded, tapered limbs ----
+ * Units are head heights (crown to chin = 1), the units the head is drawn in. The proportions are adult means from
+ * published body measurements: shoulders 1.75 head heights across, upper arm 1.45, forearm 1.16, hand 0.83, the base
+ * of the neck 1.25 below the crown. Body space: f forward (the face's side), y down, l toward us; the body is drawn
+ * turned FIG_TURN toward us, the head in profile on top of it. The same as the browser game's figure(). */
+#define FIG_NX 0.08f
+#define FIG_NY 1.25f
+#define FIG_SH 0.87f
+#define FIG_SHY 0.12f
+#define FIG_UPPER 1.45f
+#define FIG_FORE 1.16f
+#define FIG_PALM 0.46f
+#define FIG_FING 0.4f
+#define FIG_REL 0.2f
+#define FIG_RWR 0.135f
+#define FIG_TURN 0.32f
+
+typedef struct { float v[3]; } F3;
+static F3 f3(float a, float b, float c) { return (F3){ { a, b, c } }; }
+static F3 fadd(F3 a, F3 b) { return f3(a.v[0] + b.v[0], a.v[1] + b.v[1], a.v[2] + b.v[2]); }
+static F3 fmul(F3 a, float k) { return f3(a.v[0] * k, a.v[1] * k, a.v[2] * k); }
+static F3 fnorm(F3 a) {
+  float l = sqrtf(a.v[0] * a.v[0] + a.v[1] * a.v[1] + a.v[2] * a.v[2]);
+  if (l == 0) l = 1;
+  return fmul(a, 1 / l);
+}
+static F3 fperp(F3 u, F3 w, F3 alt) {
+  float d = u.v[0] * w.v[0] + u.v[1] * w.v[1] + u.v[2] * w.v[2];
+  F3 p = f3(w.v[0] - u.v[0] * d, w.v[1] - u.v[1] * d, w.v[2] - u.v[2] * d);
+  return sqrtf(p.v[0] * p.v[0] + p.v[1] * p.v[1] + p.v[2] * p.v[2]) > 1e-3f ? fnorm(p) : alt;
+}
+typedef struct { float x, y; } F2;
+/* body space to the head's drawing */
+static F2 to_head(F3 p) {
+  return (F2){ FIG_NX - p.v[0] * cosf(FIG_TURN) + p.v[2] * sinf(FIG_TURN), FIG_NY + p.v[1] };
+}
+
+/* the outline of a capsule from a to b with radii ra, rb, as one closed path */
+static void capsule_path(F2 a, F2 b, float ra, float rb) {
+  float dx = b.x - a.x, dy = b.y - a.y, L = sqrtf(dx * dx + dy * dy);
+  if (L < 1e-6f) L = 1e-6f;
+  float nx = -dy / L, ny = dx / L, ang = atan2f(dy, dx);
+  p_begin(P);
+  p_move(P, a.x - nx * ra, a.y - ny * ra);
+  p_line(P, b.x - nx * rb, b.y - ny * rb);
+  for (int i = 1; i <= 12; i++) { /* round the end at b, through the far tip */
+    float t = ang - PI_F / 2 + PI_F * i / 12;
+    p_line(P, b.x + cosf(t) * rb, b.y + sinf(t) * rb);
+  }
+  p_line(P, a.x + nx * ra, a.y + ny * ra);
+  for (int i = 1; i <= 12; i++) { /* and round the end at a */
+    float t = ang + PI_F / 2 + PI_F * i / 12;
+    p_line(P, a.x + cosf(t) * ra, a.y + sinf(t) * ra);
+  }
+  p_close(P);
+}
+
+/* one limb: a capsule lit from the face's side (the screens), with a rim on its back edge */
+static void limb(F2 a, F2 b, float ra, float rb, V3 base, V3 lit, float key_k, V3 rim) {
+  capsule_path(a, b, ra, rb);
+  fill_c(C(mul(base, 0.22f), 1));
+  float dx = b.x - a.x, dy = b.y - a.y, L = sqrtf(dx * dx + dy * dy);
+  if (L < 1e-6f) L = 1e-6f;
+  float nx = -dy / L, ny = dx / L, sg = nx < 0 ? 1.0f : -1.0f, r = ra > rb ? ra : rb, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  p_save(P);
+  capsule_path(a, b, ra, rb);
+  p_clip(P);
+  Paint g = LG(mx + nx * r * sg, my + ny * r * sg, mx - nx * r * sg, my - ny * r * sg, S_(0, C(mix(base, lit, 0.3f), 0.95f * key_k)),
+               S_(0.55f, C(mul(base, 0.55f), 0.6f)), S_(0.85f, C(mul(base, 0.3f), 0.2f)), S_(1, C(rim, 0.55f)));
+  p_fill_rect(P, fminf(a.x, b.x) - r * 2, fminf(a.y, b.y) - r * 2, fabsf(dx) + r * 4, fabsf(dy) + r * 4, &g);
+  p_restore(P);
+}
+
+typedef struct { float flex, abd, elbow, wrist, curl; } ArmPose;
+typedef struct { F3 S, E, W, h, pw; float curl; } Arm;
+typedef struct { F2 hand[2], wrist[2], elbow[2]; } Joints;
+
+static F3 tilt(F3 q, float lean) {
+  float cl = cosf(lean), sl = sinf(lean);
+  return f3(q.v[0] * cl + q.v[1] * sl, q.v[1] * cl - q.v[0] * sl, q.v[2]);
+}
+
+static Arm arm_rig(const ArmPose *A, float side, float lean) {
+  Arm a;
+  a.S = tilt(f3(-0.04f, FIG_SHY, side * FIG_SH), lean);
+  F3 u = fnorm(f3(sinf(A->flex) * cosf(A->abd), cosf(A->flex) * cosf(A->abd), side * sinf(A->abd)));
+  a.E = fadd(a.S, fmul(u, FIG_UPPER));
+  F3 pu = fperp(u, f3(1, -0.3f, 0), f3(0, -1, 0));
+  F3 w = fnorm(fadd(fmul(u, cosf(A->elbow)), fmul(pu, sinf(A->elbow))));
+  a.W = fadd(a.E, fmul(w, FIG_FORE));
+  a.pw = fperp(w, f3(0, 1, 0), f3(1, 0, 0));
+  a.h = fnorm(fadd(fmul(w, cosf(A->wrist)), fmul(a.pw, sinf(A->wrist))));
+  a.curl = A->curl;
+  return a;
+}
+
+static void crease(F2 p0, F2 p1, float k, float w, float a) {
+  float mx = p0.x + (p1.x - p0.x) * k, my = p0.y + (p1.y - p0.y) * k, L = sqrtf((p1.x - p0.x) * (p1.x - p0.x) + (p1.y - p0.y) * (p1.y - p0.y));
+  if (L < 1e-6f) L = 1e-6f;
+  float nx = -(p1.y - p0.y) / L * 0.16f, ny = (p1.x - p0.x) / L * 0.16f;
+  p_begin(P);
+  p_move(P, mx + nx, my + ny);
+  p_quad(P, mx + (p1.x - p0.x) / L * 0.06f, my + (p1.y - p0.y) / L * 0.06f, mx - nx * 0.6f, my - ny * 0.6f);
+  stroke_c(RGBA(0, 0, 0, a), w);
+}
+
+static void draw_arm(const Arm *A, V3 sleeve, V3 skin, V3 lit, V3 dark, float key_k, V3 rim) {
+  F2 S = to_head(A->S), E = to_head(A->E), W = to_head(A->W), Wc = to_head(fadd(A->W, fmul(A->h, -0.06f)));
+  /* the muscles under the sleeve: the shoulder's cap, the upper arm full at the middle, the forearm full near the
+   * elbow and narrowing to the wrist */
+  F2 M = to_head(fadd(A->S, fmul(fnorm(fadd(A->E, fmul(A->S, -1))), FIG_UPPER * 0.45f)));
+  F2 Fm = to_head(fadd(A->E, fmul(fnorm(fadd(A->W, fmul(A->E, -1))), FIG_FORE * 0.3f)));
+  limb(S, M, 0.3f, 0.27f, sleeve, lit, key_k, rim);
+  limb(M, E, 0.27f, FIG_REL, sleeve, lit, key_k, rim);
+  limb(E, Fm, FIG_REL, 0.215f, sleeve, lit, key_k, rim);
+  limb(Fm, Wc, 0.215f, FIG_RWR + 0.02f, sleeve, lit, key_k, rim);
+  /* the sleeve's creases: across the inside of the elbow, and loose folds down the upper arm and forearm */
+  float ae = atan2f(S.y - E.y, S.x - E.x);
+  p_begin(P);
+  p_ellipse(P, E.x, E.y, FIG_REL * 0.75f, FIG_REL * 0.75f, 0, ae - 0.7f, ae + 0.7f);
+  stroke_c(RGBA(0, 0, 0, 0.45f), 0.016f);
+  crease(S, E, 0.35f, 0.012f, 0.28f);
+  crease(S, E, 0.7f, 0.012f, 0.28f);
+  crease(E, W, 0.4f, 0.012f, 0.28f);
+  limb(Wc, to_head(fadd(A->W, fmul(A->h, 0.02f))), FIG_RWR + 0.03f, FIG_RWR + 0.03f, mul(sleeve, 0.8f), lit, key_k, rim); /* the cuff */
+  /* the hand from the side: the thumb behind, the palm along h, the fingers together, curling in two joints */
+  F3 K = fadd(A->W, fmul(A->h, FIG_PALM));
+  F2 Kh = to_head(K);
+  F3 T0 = fadd(A->W, fmul(A->h, 0.14f)), T1 = fadd(T0, fmul(fnorm(fadd(A->h, fmul(A->pw, -0.7f))), 0.3f));
+  limb(to_head(T0), to_head(T1), 0.075f, 0.055f, skin, lit, key_k, rim);
+  limb(W, Kh, FIG_RWR, 0.14f, skin, lit, key_k, rim);
+  F3 d1 = fnorm(fadd(fmul(A->h, cosf(A->curl * 0.9f)), fmul(A->pw, sinf(A->curl * 0.9f)))), F1 = fadd(K, fmul(d1, FIG_FING * 0.55f));
+  F3 d2 = fnorm(fadd(fmul(A->h, cosf(A->curl * 1.9f)), fmul(A->pw, sinf(A->curl * 1.9f)))), Fe = fadd(F1, fmul(d2, FIG_FING * 0.45f));
+  limb(Kh, to_head(F1), 0.12f, 0.1f, skin, lit, key_k, rim);
+  limb(to_head(F1), to_head(Fe), 0.1f, 0.075f, skin, lit, key_k, rim);
+  /* the gaps between the fingers, and the knuckles catching the light */
+  static const float GAP[3] = { -0.045f, 0, 0.045f };
+  for (int i = 0; i < 3; i++) {
+    F2 q0 = to_head(fadd(K, fmul(A->pw, GAP[i]))), q1 = to_head(fadd(F1, fmul(A->pw, GAP[i] * 0.9f))), q2 = to_head(fadd(Fe, fmul(A->pw, GAP[i] * 0.7f)));
+    p_begin(P);
+    p_move(P, q0.x, q0.y);
+    p_quad(P, q1.x, q1.y, q2.x, q2.y);
+    stroke_c(C(dark, 0.55f), 0.008f);
+  }
+  F2 k0 = to_head(fadd(A->W, fmul(A->h, 0.1f)));
+  p_begin(P);
+  p_move(P, k0.x, k0.y);
+  p_line(P, Kh.x, Kh.y);
+  stroke_c(C(mix(lit, v3c(255, 255, 255), 0.3f), 0.3f * key_k), 0.012f);
+}
+
+typedef void (*HeldFn)(const Joints *J, V3 lit);
+
+/* draws the body of a person (in the head's units) for a pose, the uniform in colour cl; held draws what the near
+ * hand holds, between the trunk and that hand */
+static void figure(float lean, const ArmPose arms[2], V3 cl, V3 skin, V3 lit, V3 dark, float key_k, HeldFn held) {
+  Arm A[2] = { arm_rig(&arms[0], -1, lean), arm_rig(&arms[1], 1, lean) };
+  draw_arm(&A[0], cl, skin, lit, dark, key_k, blue_rim); /* the far arm behind the trunk */
+  static const float TR[13][3] = { { 0.2f, -0.06f, 0 }, { 0.5f, 0.32f, 0 }, { 0.64f, 0.75f, 0 }, { 0.6f, 1.35f, 0 }, { 0.52f, 1.95f, 0 },
+                                   { 0.5f, 2.6f, 0 }, { 0.5f, 2.6f, 0 }, { -0.4f, 2.6f, 0 }, { -0.44f, 1.8f, 0 }, { -0.46f, 0.9f, 0 },
+                                   { -0.38f, 0.25f, 0 }, { -0.12f, 0.0f, FIG_SH * 0.9f }, { -0.18f, -0.06f, 0 } };
+  float out[13][2];
+  for (int i = 0; i < 13; i++) {
+    F2 q = to_head(tilt(f3(TR[i][0], TR[i][1], TR[i][2]), lean));
+    out[i][0] = q.x, out[i][1] = q.y;
+  }
+  cloth((const float(*)[2])out, 13, cl, lit, dark, key_k, blue_rim);
+  limb((F2){ 0.02f, 0.98f }, (F2){ FIG_NX, FIG_NY }, 0.25f, 0.27f, skin, lit, key_k, blue_rim); /* the neck */
+  Joints J;
+  for (int i = 0; i < 2; i++) {
+    J.hand[i] = to_head(fadd(A[i].W, fmul(A[i].h, FIG_PALM)));
+    J.wrist[i] = to_head(A[i].W);
+    J.elbow[i] = to_head(A[i].E);
+  }
+  if (held) held(&J, lit);
+  draw_arm(&A[1], cl, skin, lit, dark, key_k, blue_rim);
+}
+
+/* the clipboard edge-on in the supervisor's near hand, paper catching the screen light, the steel clip */
+static void clipboard(const Joints *J, V3 lit) {
+  p_save(P);
+  p_translate(P, J->hand[1].x - 0.1f, J->hand[1].y - 0.45f);
+  p_rotate(P, -0.12f);
+  rect_c(-0.16f, -0.5f, 0.3f, 1.02f, HEX(0x2a2016));
+  rect_c(-0.13f, -0.46f, 0.24f, 0.94f, C(mul(mix(v3c(225, 225, 215), lit, 0.45f), 0.75f), 1));
+  for (int i = 0; i < 9; i++) {
+    p_begin(P);
+    p_move(P, -0.11f, -0.34f + i * 0.09f);
+    p_line(P, 0.09f, -0.34f + i * 0.09f);
+    stroke_c(RGBA(40, 50, 60, 0.45f), 0.008f);
+  }
+  rect_c(-0.08f, -0.53f, 0.14f, 0.08f, HEX(0x8c949a));
+  p_restore(P);
+}
+
 static void body(const Person *o, V3 lit, V3 dark) {
   if (o->who == SUPERVISOR) {
-    V3 kh = v3c(150, 125, 85);
-    static const float B1[10][2] = { { -0.22f, 1.06f }, { 0.2f, 1.0f }, { 0.55f, 1.1f }, { 0.72f, 1.4f }, { 0.76f, 2.2f },
-                                     { 0.72f, 3.4f }, { -0.6f, 3.4f }, { -0.64f, 2.2f }, { -0.56f, 1.5f }, { -0.38f, 1.18f } };
-    cloth(B1, 10, kh, lit, dark, 0.8f, blue_rim);
+    /* standing, the far arm at his side, the near one holding the clipboard against his chest */
+    static const ArmPose ARMS[2] = { { 0.08f, 0.1f, 0.3f, 0.1f, 0.5f }, { 0.22f, 0.22f, 1.95f, 0.25f, 0.95f } };
+    figure(0.02f, ARMS, v3c(150, 125, 85), o->skin, lit, dark, 0.8f, clipboard);
     p_begin(P); /* the T-shirt at the open collar */
     p_move(P, -0.3f, 1.1f), p_line(P, -0.12f, 1.3f), p_line(P, 0.05f, 1.08f);
     fill_c(RGBA(225, 222, 212, 0.35f));
@@ -398,53 +565,22 @@ static void body(const Person *o, V3 lit, V3 dark) {
     p_begin(P); /* the chief's anchor */
     p_move(P, -0.4f, 1.22f), p_line(P, -0.34f, 1.33f), p_line(P, -0.28f, 1.22f), p_close(P);
     fill_c(HEX(0xd8b14a));
-    fold(-0.3f, 1.6f, -0.2f, 2.2f, -0.3f, 2.9f, 0.5f);
-    fold(0.45f, 1.6f, 0.5f, 2.2f, 0.42f, 2.9f, 0.35f);
-    static const float B2[10][2] = { { 0.1f, 1.2f }, { 0.5f, 1.25f }, { 0.56f, 1.8f }, { 0.42f, 2.3f }, { 0.1f, 2.45f },
-                                     { -0.42f, 2.3f }, { -0.46f, 2.15f }, { -0.05f, 2.1f }, { 0.1f, 1.8f }, { 0.0f, 1.4f } };
-    cloth(B2, 10, kh, lit, dark, 0.8f, blue_rim);
-    fold(0.2f, 2.0f, 0.05f, 2.25f, -0.1f, 2.3f, 0.45f);
-    /* the clipboard edge-on, its paper catching the screen light, the steel clip */
-    p_begin(P);
-    p_move(P, -0.72f, 1.66f), p_line(P, -0.42f, 1.6f), p_line(P, -0.34f, 2.62f), p_line(P, -0.62f, 2.7f);
-    fill_c(HEX(0x2a2016));
-    p_begin(P);
-    p_move(P, -0.69f, 1.7f), p_line(P, -0.45f, 1.65f), p_line(P, -0.38f, 2.58f), p_line(P, -0.6f, 2.65f);
-    fill_c(C(mul(mix(v3c(225, 225, 215), lit, 0.45f), 0.75f), 1));
-    for (int i = 0; i < 9; i++) {
-      float f = 0.12f + i * 0.09f;
-      p_begin(P);
-      p_move(P, -0.67f + f * 0.08f, 1.7f + f * 0.95f);
-      p_line(P, -0.47f + f * 0.08f, 1.66f + f * 0.92f);
-      stroke_c(RGBA(40, 50, 60, 0.45f), 0.008f);
-    }
-    p_begin(P);
-    p_move(P, -0.64f, 1.64f), p_line(P, -0.5f, 1.61f), p_line(P, -0.49f, 1.7f), p_line(P, -0.63f, 1.73f);
-    fill_c(HEX(0x8c949a));
-    hand(-0.36f, 2.22f, 0.55f, 1, lit, dark, 0.8f);
+    fold(-0.3f, 1.9f, -0.2f, 2.4f, -0.3f, 2.9f, 0.5f);
   } else if (o->who == OPERATOR) {
     V3 blue = v3c(42, 60, 92);
-    static const float B1[11][2] = { { -0.18f, 1.08f }, { 0.22f, 1.02f }, { 0.6f, 1.12f }, { 0.95f, 1.3f }, { 1.12f, 1.7f }, { 1.15f, 2.4f },
-                                     { 1.1f, 3.3f }, { -0.3f, 3.3f }, { -0.45f, 2.4f }, { -0.42f, 1.6f }, { -0.3f, 1.2f } };
-    cloth(B1, 11, blue, lit, dark, 1, blue_rim);
-    fold(0.55f, 1.5f, 0.75f, 2.1f, 0.7f, 2.9f, 0.5f);
-    fold(0.95f, 1.6f, 1.0f, 2.2f, 0.98f, 2.9f, 0.35f);
+    /* seated, leaning in to the scope, both hands forward on the keyboard and the trackball */
+    static const ArmPose ARMS[2] = { { 1.05f, -0.08f, 0.7f, -0.15f, 0.5f }, { 0.95f, 0.22f, 0.85f, -0.25f, 0.65f } };
+    figure(0.26f, ARMS, blue, o->skin, lit, dark, 1, NULL);
     static const float COL[7][2] = { { -0.24f, 1.0f }, { -0.05f, 1.13f }, { 0.24f, 1.1f }, { 0.32f, 0.97f }, { 0.36f, 1.12f }, { 0.12f, 1.24f }, { -0.26f, 1.17f } };
     cloth(COL, 7, mul(blue, 0.8f), lit, dark, 1, blue_rim); /* the collar */
-    static const float B2[11][2] = { { 0.2f, 1.25f }, { 0.55f, 1.3f }, { 0.64f, 1.7f }, { 0.52f, 2.15f }, { 0.22f, 2.36f }, { -0.3f, 2.43f },
-                                     { -0.66f, 2.43f }, { -0.68f, 2.27f }, { -0.3f, 2.2f }, { 0.04f, 2.05f }, { 0.08f, 1.6f } };
-    cloth(B2, 11, blue, lit, dark, 1, blue_rim);
-    fold(0.5f, 1.95f, 0.3f, 2.2f, 0.05f, 2.25f, 0.5f);
-    fold(-0.1f, 2.25f, -0.3f, 2.32f, -0.5f, 2.3f, 0.35f);
-    rect_c(0.36f, 1.42f, 0.2f, 0.14f, RGBA(15, 22, 34, 0.9f)); /* the shoulder patch */
-    stroke_rect(0.36f, 1.42f, 0.2f, 0.14f, C(blue_rim, 0.35f), 0.01f);
-    hand(-0.64f, 2.33f, 0.6f, 0.7f, lit, dark, 1);
+    fold(0.4f, 1.7f, 0.5f, 2.2f, 0.42f, 2.8f, 0.4f);
+    rect_c(0.3f, 1.5f, 0.18f, 0.13f, RGBA(15, 22, 34, 0.9f)); /* the shoulder patch */
+    stroke_rect(0.3f, 1.5f, 0.18f, 0.13f, C(blue_rim, 0.35f), 0.01f);
   } else {
-    V3 kh = v3c(160, 135, 92);
-    float lift = ease(clampf_((T - L3[0]) / 0.4f, 0, 1)) * 0.12f;
-    static const float B1[10][2] = { { -0.22f, 1.06f }, { 0.2f, 1.0f }, { 0.6f, 1.1f }, { 0.85f, 1.35f }, { 0.95f, 2.0f },
-                                     { 0.9f, 3.2f }, { -0.55f, 3.2f }, { -0.62f, 2.2f }, { -0.54f, 1.5f }, { -0.38f, 1.16f } };
-    cloth(B1, 10, kh, lit, dark, 0.85f, blue_rim);
+    float g = ease(clampf_((T - L3[0]) / 0.4f, 0, 1));
+    /* in his chair, the far forearm on the armrest; giving the order, the near hand comes up and opens toward the deck */
+    ArmPose arms[2] = { { 0.05f, 0.08f, 1.5f, 0.1f, 0.6f }, { -0.05f + 0.4f * g, 0.25f, 1.45f + 0.55f * g, 0.1f - 0.35f * g, 0.6f - 0.45f * g } };
+    figure(-0.08f, arms, v3c(160, 135, 92), o->skin, lit, dark, 0.85f, NULL);
     p_begin(P);
     p_move(P, -0.3f, 1.08f), p_line(P, -0.1f, 1.3f), p_line(P, 0.08f, 1.05f);
     fill_c(RGBA(230, 226, 215, 0.4f));
@@ -457,17 +593,9 @@ static void body(const Person *o, V3 lit, V3 dark) {
     p_begin(P);
     p_move(P, -0.4f, 1.28f), p_line(P, -0.32f, 1.22f);
     stroke_c(RGBA(60, 64, 70, 0.8f), 0.006f);
-    fold(-0.2f, 1.6f, -0.05f, 2.2f, -0.15f, 2.9f, 0.5f);
-    fold(0.55f, 1.45f, 0.65f, 2.0f, 0.6f, 2.8f, 0.35f);
-    stroke_rect(-0.42f, 1.7f, 0.3f, 0.3f, RGBA(0, 0, 0, 0.5f), 0.015f); /* the shirt pocket and a pen */
-    rect_c(-0.38f, 1.57f, 0.028f, 0.16f, HEX(0x16181c));
-    rect_c(-0.38f, 1.57f, 0.028f, 0.03f, HEX(0xb8bcc0));
-    float B2[10][2] = { { 0.15f, 1.22f }, { 0.55f, 1.28f }, { 0.6f, 1.8f }, { 0.45f, 2.25f }, { -0.1f, 2.42f - lift },
-                        { -0.56f, 2.38f - lift }, { -0.58f, 2.22f - lift }, { -0.1f, 2.18f }, { 0.1f, 1.9f }, { 0.0f, 1.4f } };
-    cloth((const float(*)[2])B2, 10, kh, lit, dark, 0.85f, blue_rim);
-    fold(0.35f, 1.95f, 0.15f, 2.22f, -0.1f, 2.28f, 0.45f);
-    rect_c(-0.6f, 2.24f - lift, 0.07f, 0.13f, HEX(0x9ea3a8)); /* the watch */
-    hand(-0.6f, 2.3f - lift, 0.62f, 0.35f - lift * 2, lit, dark, 0.85f);
+    stroke_rect(-0.5f, 1.75f, 0.3f, 0.3f, RGBA(0, 0, 0, 0.5f), 0.015f); /* the shirt pocket and a pen */
+    rect_c(-0.46f, 1.62f, 0.028f, 0.16f, HEX(0x16181c));
+    rect_c(-0.46f, 1.62f, 0.028f, 0.03f, HEX(0xb8bcc0));
   }
 }
 
