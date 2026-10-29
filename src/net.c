@@ -4,7 +4,6 @@
 #endif
 #include "net.h"
 
-#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -216,7 +215,7 @@ static struct {
 
 static void say(const char *fmt, const char *arg) {
   snprintf(N.status, sizeof N.status, fmt, arg ? arg : "");
-  SDL_Log("net: %s", N.status);
+  plat_log("net: %s", N.status);
 }
 
 static void send_raw(const Addr *a, const uint8_t *b, int n) {
@@ -328,7 +327,7 @@ bool net_init(void) { return true; }
 
 void net_close(void) {
   if (N.rx_ok + N.rx_refused && getenv("A4C_PLANES"))
-    SDL_Log("net: %d packets taken, %d refused", N.rx_ok, N.rx_refused);
+    plat_log("net: %d packets taken, %d refused", N.rx_ok, N.rx_refused);
   N.rx_ok = N.rx_refused = 0;
   if (N.phase != PH_IDLE && N.s != BADSOCK) {
     Buf p;
@@ -391,7 +390,7 @@ bool net_host(const NetMatch *m, const char *name, const char *relay) {
   N.phase = PH_WAIT;
   N.since_rx = N.beacon_t = 0;
   say(N.via_relay ? "REGISTERING THE GAME WITH THE RELAY...%s" : "WAITING FOR A PLAYER WITH THE CODE (LAN, OR UDP PORT 27960)%s", "");
-  if (getenv("A4C_PLANES")) SDL_Log("net: game code %s", N.pin); /* tests only: the code is a secret */
+  if (getenv("A4C_PLANES")) plat_log("net: game code %s", N.pin); /* tests only: the code is a secret */
   return true;
 }
 

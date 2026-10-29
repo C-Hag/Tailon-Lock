@@ -398,22 +398,24 @@ drawing a frame.
 
 ```
 src/
-  main.c            SDL3 window, fixed 60 Hz loop, present
+  main.c            the game's side of the loop: fixed 60 Hz update, render, flow
   raster.c          software framebuffer, fills (later polygons, depth buffer)
   render3d.c        camera, near clip, sky/ground, per-view draw
   gpu.c             modern renderer: SDL3 GPU, shadows, sea, fog, bloom
   gpu_shaders.h     compiled shaders (SPIR-V + DXIL), made by tools/build_shaders.sh
   hud.c  ui.c       cockpit, radar, bitmap text; in-game menus
-  input.c           keyboard seats and SDL3 gamepads
+  input.c           keyboard seats and gamepads
   config.c          settings.ini
   sfx.c  music.c    sound effects and mixer; theme choice and levels
   synth.c           SID-style synthesizer playing the scores in assets/music
   net.c             UDP online play
-  core/             game rules without SDL: mathx.h, world, mesh, game, sim, ai
-  platform/         plat_posix.c / plat_win32.c (config folder, sockets)
+  core/             game rules, no platform: mathx.h, world, mesh, game, sim, ai
+  platform/         plat.h, everything from the computer: loop, window, input, sound;
+                    plat_sdl.c (today's backend, on SDL3), plat_posix.c / plat_win32.c
+                    (config folder, sockets, paths), plat_common.c (files)
 shaders/            HLSL sources for the modern renderer
 relay/              matchmaking and forwarding server for online play
-tests/              core unit tests
+tests/              unit tests (core, JSON, GLB, crypto, plat.h)
 intro.c             the opening cinematic (assets/intro/INTRO.md)
 assets.c            loads jets, carrier, maps and intro from assets/
 assets/             game data: jets, carrier, maps, intro (see assets/README.md)

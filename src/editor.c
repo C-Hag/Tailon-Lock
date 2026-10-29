@@ -252,8 +252,7 @@ static void save(void) {
   }
 #ifdef A4C_SOURCE_DIR
   snprintf(path, sizeof path, "%s/assets/music/%s.json", A4C_SOURCE_DIR, sc->key);
-  SDL_PathInfo info;
-  if (SDL_GetPathInfo(path, &info)) ok += synth_save(sc, path);
+  if (plat_is_file(path)) ok += synth_save(sc, path);
 #endif
   dirty = !ok;
   snprintf(m, sizeof m, ok ? "SAVED %s" : "COULD NOT SAVE %s", sc->key);
@@ -313,7 +312,7 @@ static int   drag;
 static float mx0, my0, mx, my;
 static float *orig;      /* t, midi, dur per note at the drag start */
 static int   knob_drag, knob_acc;
-static Uint64 last_click;
+static uint64_t last_click;
 
 static int note_at(float x, float y) {
   for (int i = sc->nnotes - 1; i >= 0; i--) {
@@ -343,7 +342,7 @@ static void clear_sel(void) {
 static void mouse_down(int button, float x, float y, bool shift) {
   mx0 = mx = x;
   my0 = my = y;
-  Uint64 now = SDL_GetTicks();
+  uint64_t now = plat_ms();
   bool dbl = now - last_click < 350;
   last_click = now;
   /* tool buttons */
@@ -357,7 +356,7 @@ static void mouse_down(int button, float x, float y, bool shift) {
     int cx, cy, cw;
     cell_rect(i, &cx, &cy, &cw);
     if (x >= cx && x < cx + cw && y >= cy && y < cy + 10) {
-      if (i < 2) knob_turn(i, button == SDL_BUTTON_RIGHT ? -1 : 1);
+      if (i < 2) knob_turn(i, button == PBTN_RIGHT ? -1 : 1);
       else {
         drag = DRAG_KNOB;
         knob_drag = i;
@@ -402,13 +401,13 @@ static void mouse_down(int button, float x, float y, bool shift) {
   float t = fmaxf(0, snap(t_of(x)));
   if (track < 0) { /* drum lane */
     int h = hit_at(x, y);
-    if (button == SDL_BUTTON_RIGHT && h >= 0) {
+    if (button == PBTN_RIGHT && h >= 0) {
       push_undo();
       sfx_lock();
       sc->hits[h] = sc->hits[--sc->nhits];
       resync();
       sfx_unlock();
-    } else if (button == SDL_BUTTON_LEFT && h < 0 && dbl) {
+    } else if (button == PBTN_LEFT && h < 0 && dbl) {
       int row = (int)((y - roll_y() - 10) / 9);
       if (row >= 0 && row < NDRUMS) {
         push_undo();
@@ -431,7 +430,7 @@ static void mouse_down(int button, float x, float y, bool shift) {
     return;
   }
   int i = note_at(x, y);
-  if (button == SDL_BUTTON_RIGHT) {
+  if (button == PBTN_RIGHT) {
     if (i >= 0) {
       push_undo();
       sfx_lock();
@@ -533,37 +532,37 @@ static void mouse_up(void) {
 }
 
 /* ---- keys ------------------------------------------------------------------------- */
-static void key_down(const SDL_KeyboardEvent *k) {
-  bool ctrl = k->mod & SDL_KMOD_CTRL, shift = k->mod & SDL_KMOD_SHIFT;
+static void key_down(const PlatKey *k) {
+  bool ctrl = k->mod & PMOD_CTRL, shift = k->mod & PMOD_SHIFT;
   if (!sc) return;
   switch (k->key) {
-  case SDLK_SPACE: play_toggle(); break;
-  case SDLK_HOME: playhead = t_left = 0; break;
-  case SDLK_TAB:
+  case ' ': play_toggle(); break;
+  case PKEY_OTHER + PK_HOME: playhead = t_left = 0; break;
+  case '	':
     track = track + 1 >= sc->ninst ? -1 : track + 1;
     sfx_lock();
     clear_sel();
     sfx_unlock();
     break;
-  case SDLK_LEFTBRACKET:
-  case SDLK_RIGHTBRACKET: load_theme((theme + (k->key == SDLK_RIGHTBRACKET ? 1 : MUSIC_THEMES - 1)) % MUSIC_THEMES); break;
-  case SDLK_G: {
+  case '[':
+  case ']': load_theme((theme + (k->key == ']' ? 1 : MUSIC_THEMES - 1)) % MUSIC_THEMES); break;
+  case 'g': {
     float base = compose_step(sc);
     grid = grid > base * 1.5f ? base / 2 : grid < base * 0.75f ? base : base * 2;
     say(grid > base * 1.5f ? "GRID 1/8" : grid < base * 0.75f ? "GRID 1/32" : "GRID 1/16");
     break;
   }
-  case SDLK_Z: if (ctrl) pop_undo(); break;
-  case SDLK_S: if (ctrl) save(); break;
-  case SDLK_A:
+  case 'z': if (ctrl) pop_undo(); break;
+  case 's': if (ctrl) save(); break;
+  case 'a':
     if (ctrl) {
       sfx_lock();
       for (int i = 0; i < sc->nnotes; i++) sc->notes[i].sel = sc->notes[i].inst == track;
       sfx_unlock();
     }
     break;
-  case SDLK_DELETE:
-  case SDLK_BACKSPACE:
+  case 127:
+  case '':
     if (nsel()) {
       push_undo();
       sfx_lock();
@@ -575,40 +574,40 @@ static void key_down(const SDL_KeyboardEvent *k) {
       sfx_unlock();
     }
     break;
-  case SDLK_UP:
-  case SDLK_DOWN:
+  case PKEY_OTHER + PK_UP:
+  case PKEY_OTHER + PK_DOWN:
     if (nsel()) {
       push_undo();
       sfx_lock();
-      compose_transpose(sc, (k->key == SDLK_UP ? 1 : -1) * (shift ? 12 : 1));
+      compose_transpose(sc, (k->key == PKEY_OTHER + PK_UP ? 1 : -1) * (shift ? 12 : 1));
       sfx_unlock();
-    } else midi_top += k->key == SDLK_UP ? 3 : -3;
+    } else midi_top += k->key == PKEY_OTHER + PK_UP ? 3 : -3;
     break;
-  case SDLK_LEFT:
-  case SDLK_RIGHT:
+  case PKEY_OTHER + PK_LEFT:
+  case PKEY_OTHER + PK_RIGHT:
     if (nsel()) {
       push_undo();
       sfx_lock();
       for (int i = 0; i < sc->nnotes; i++)
-        if (sc->notes[i].sel) sc->notes[i].t = fmaxf(0, sc->notes[i].t + (k->key == SDLK_RIGHT ? grid : -grid));
+        if (sc->notes[i].sel) sc->notes[i].t = fmaxf(0, sc->notes[i].t + (k->key == PKEY_OTHER + PK_RIGHT ? grid : -grid));
       resync();
       sfx_unlock();
-    } else t_left = fmaxf(0, t_left + (k->key == SDLK_RIGHT ? 2 : -2));
+    } else t_left = fmaxf(0, t_left + (k->key == PKEY_OTHER + PK_RIGHT ? 2 : -2));
     break;
-  case SDLK_C: tool(B_COMPOSE); break;
-  case SDLK_V: if (!ctrl) tool(B_VARY); break;
-  case SDLK_H: tool(B_HARM); break;
-  case SDLK_M: tool(B_MODE); break;
-  case SDLK_U: tool(B_HUMAN); break;
-  case SDLK_R: tool(B_ARP); break;
+  case 'c': tool(B_COMPOSE); break;
+  case 'v': if (!ctrl) tool(B_VARY); break;
+  case 'h': tool(B_HARM); break;
+  case 'm': tool(B_MODE); break;
+  case 'u': tool(B_HUMAN); break;
+  case 'r': tool(B_ARP); break;
   default: break;
   }
 }
 
-bool editor_event(const SDL_Event *ev, float kx, float ky) {
+bool editor_event(const PlatEvent *ev, float kx, float ky) {
   switch (ev->type) {
-  case SDL_EVENT_KEY_DOWN:
-    if (ev->key.key == SDLK_ESCAPE) {
+  case PE_KEY_DOWN:
+    if (ev->key.key == 27) {
       if (playing) music_play(-1);
       playing = false;
       if (dirty) say("UNSAVED CHANGES STAY UNTIL YOU QUIT (CTRL+S SAVES)");
@@ -616,30 +615,30 @@ bool editor_event(const SDL_Event *ev, float kx, float ky) {
     }
     key_down(&ev->key);
     break;
-  case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    if (sc) mouse_down(ev->button.button, ev->button.x * kx, ev->button.y * ky, (SDL_GetModState() & SDL_KMOD_SHIFT) != 0);
+  case PE_MOUSE_DOWN:
+    if (sc) mouse_down(ev->mouse.button, ev->mouse.x * kx, ev->mouse.y * ky, (plat_mods() & PMOD_SHIFT) != 0);
     break;
-  case SDL_EVENT_MOUSE_MOTION:
-    if (sc) mouse_move(ev->motion.x * kx, ev->motion.y * ky);
+  case PE_MOUSE_MOVE:
+    if (sc) mouse_move(ev->mouse.x * kx, ev->mouse.y * ky);
     break;
-  case SDL_EVENT_MOUSE_BUTTON_UP:
+  case PE_MOUSE_UP:
     mouse_up();
     break;
-  case SDL_EVENT_MOUSE_WHEEL: {
-    SDL_Keymod mod = SDL_GetModState();
-    float wy = ev->wheel.y;
-    float x = ev->wheel.mouse_x * kx, y = ev->wheel.mouse_y * ky;
+  case PE_WHEEL: {
+    int mod = plat_mods();
+    float wy = ev->wheel.dy;
+    float x = ev->wheel.x * kx, y = ev->wheel.y * ky;
     if (sc && y >= H - PANEL_H && track >= 0) {
       for (int i = 0; i < NKNOBS + 2; i++) {
         int cx, cy, cw;
         cell_rect(i, &cx, &cy, &cw);
         if (x >= cx && x < cx + cw && y >= cy && y < cy + 10) knob_turn(i, wy > 0 ? 1 : -1);
       }
-    } else if (mod & SDL_KMOD_CTRL) {
+    } else if (mod & PMOD_CTRL) {
       float t = t_of(x);
       pps = fminf(800, fmaxf(4, pps * (wy > 0 ? 1.25f : 0.8f)));
       t_left = fmaxf(0, t - (x - roll_x()) / pps);
-    } else if (mod & SDL_KMOD_SHIFT) {
+    } else if (mod & PMOD_SHIFT) {
       t_left = fmaxf(0, t_left - wy * 40 / pps);
     } else {
       midi_top += wy > 0 ? 2 : -2;

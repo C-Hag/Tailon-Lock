@@ -8,6 +8,7 @@
 #include <bcrypt.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "brand.h"
 
@@ -53,4 +54,36 @@ void plat_net_quit(void) { WSACleanup(); }
 
 int plat_random(void *buf, size_t size) {
   return BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)size, BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+}
+
+const char *plat_base_path(void) {
+  static char base[MAX_PATH + 1];
+  if (base[0]) return base;
+  DWORD n = GetModuleFileNameA(NULL, base, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) return base[0] = 0, NULL;
+  char *slash = strrchr(base, '\\');
+  if (!slash) return base[0] = 0, NULL;
+  slash[1] = 0;
+  return base;
+}
+
+bool plat_is_file(const char *path) {
+  DWORD a = path ? GetFileAttributesA(path) : INVALID_FILE_ATTRIBUTES;
+  return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+bool plat_make_dir(const char *path) {
+  char p[1024];
+  int n = snprintf(p, sizeof p, "%s", path);
+  if (n <= 0 || (size_t)n >= sizeof p) return false;
+  for (char *c = p + 1; *c; c++) /* the folders above it first; skip the drive's own "C:\" */
+    if ((*c == '\\' || *c == '/') && c[-1] != ':') {
+      char was = *c;
+      *c = 0;
+      CreateDirectoryA(p, NULL);
+      *c = was;
+    }
+  CreateDirectoryA(p, NULL);
+  DWORD a = GetFileAttributesA(p);
+  return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }

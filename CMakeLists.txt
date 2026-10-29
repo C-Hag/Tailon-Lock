@@ -86,6 +86,8 @@ add_executable(tailonlock
   src/main.c
   src/assets.c
   src/intro.c
+  src/platform/plat_common.c
+  src/platform/plat_sdl.c
   src/cic.c
   src/paint.c
   src/command.c
@@ -169,6 +171,12 @@ if(A4C_BUILD_TESTS)
   # the checker's golden-data dumper (tools/check, stage 3)
   add_executable(json_dump tests/json_dump.c)
   target_link_libraries(json_dump PRIVATE a4c_core)
+  # the brick 9 audit of plat.h: the callback loop, and several fingers of touch with their ids
+  add_executable(test_plat tests/test_plat.c src/platform/plat_sdl.c src/platform/plat_common.c)
+  target_link_libraries(test_plat PRIVATE a4c_core SDL3::SDL3-static)
+  target_include_directories(test_plat PRIVATE src)
+  add_test(NAME plat COMMAND test_plat)
+  set_tests_properties(plat PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=dummy" TIMEOUT 30)
   # the checker's picture and sound comparisons (tools/check, stages 7-8)
   add_executable(check_cmp tests/check_cmp.c)
   target_link_libraries(check_cmp PRIVATE a4c_flags $<$<NOT:$<BOOL:${WIN32}>>:m>)

@@ -193,7 +193,7 @@ typedef struct {
   bool  cap_run;
 } Defense;
 
-/* Sounds the core asks for; the SDL side drains and plays them. */
+/* Sounds the core asks for; the sound side (sfx.c) drains and plays them. */
 typedef enum { SND_NOISE, SND_SQUARE, SND_SINE } SoundKind;
 typedef struct { SoundKind kind; float f0, f1, dur, vol; } SoundReq;
 

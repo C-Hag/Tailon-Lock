@@ -5,10 +5,12 @@
  * sound, but the game no longer ships them. */
 #include "music.h"
 
-#include <SDL3/SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "assets.h"
+#include "platform/plat.h"
 #include "sfx.h"
 #include "synth.h"
 
@@ -55,33 +57,27 @@ static bool load_recording(int theme) {
   if (rec_tried[theme]) return rec[theme] != NULL;
   rec_tried[theme] = true;
   char rel[64];
-  SDL_snprintf(rel, sizeof rel, "music/%s.wav", THEMES[theme].key);
-  SDL_AudioSpec spec, want = { SDL_AUDIO_F32, 2, SYNTH_RATE };
-  Uint8 *buf = NULL, *out = NULL;
-  Uint32 len = 0;
-  int outlen = 0;
-  if (!SDL_LoadWAV(assets_path(rel), &spec, &buf, &len)) return false;
-  bool ok = SDL_ConvertAudioSamples(&spec, buf, (int)len, &want, &out, &outlen);
-  SDL_free(buf);
-  if (!ok) return false;
-  rec[theme] = (float *)out;
-  rec_n[theme] = (size_t)outlen / (2 * sizeof(float));
-  SDL_snprintf(rel, sizeof rel, "music/%s.loop", THEMES[theme].key);
+  snprintf(rel, sizeof rel, "music/%s.wav", THEMES[theme].key);
+  const char *path = assets_path(rel);
+  rec[theme] = path ? plat_load_wav(path, SYNTH_RATE, &rec_n[theme]) : NULL;
+  if (!rec[theme]) return false;
+  snprintf(rel, sizeof rel, "music/%s.loop", THEMES[theme].key);
   size_t sz = 0;
-  char *txt = SDL_LoadFile(assets_path(rel), &sz);
+  path = assets_path(rel);
+  char *txt = path ? plat_load_file(path, &sz) : NULL;
   if (txt) {
     unsigned long a = 0, b = 0;
-    if (SDL_sscanf(txt, "%lu %lu", &a, &b) == 2 && a < b && b <= rec_n[theme]) {
+    if (sscanf(txt, "%lu %lu", &a, &b) == 2 && a < b && b <= rec_n[theme]) {
       rec_a[theme] = a;
       rec_b[theme] = b;
     }
-    SDL_free(txt);
+    free(txt);
   }
   if (rec_b[theme])
-    SDL_Log("music: %s, a recording, %.1f s, loop %.1f-%.1f s", THEMES[theme].key, rec_n[theme] / (double)SYNTH_RATE,
+    plat_log("music: %s, a recording, %.1f s, loop %.1f-%.1f s", THEMES[theme].key, rec_n[theme] / (double)SYNTH_RATE,
             rec_a[theme] / (double)SYNTH_RATE, rec_b[theme] / (double)SYNTH_RATE);
   else
-    SDL_Log("music: %s, a recording, %.1f s, played once", THEMES[theme].key, rec_n[theme] / (double)SYNTH_RATE);
+    plat_log("music: %s, a recording, %.1f s, played once", THEMES[theme].key, rec_n[theme] / (double)SYNTH_RATE);
   return true;
 }
 
@@ -183,12 +179,12 @@ void music_level(bool in_game) {
 
 void music_render(float *out, int n) {
   /* test hook: A4C_MUSIC_DUMP=file.raw writes the music as it is played (float stereo, 48 kHz) */
-  static SDL_IOStream *dump;
+  static FILE *dump;
   static bool dump_tried;
   if (!dump_tried) {
     dump_tried = true;
-    const char *p = SDL_getenv("A4C_MUSIC_DUMP");
-    if (p) dump = SDL_IOFromFile(p, "wb");
+    const char *p = getenv("A4C_MUSIC_DUMP");
+    if (p) dump = fopen(p, "wb");
   }
   float *start = out;
   int frames = n;
@@ -201,9 +197,9 @@ void music_render(float *out, int n) {
       out[2 * i] += stream[2 * stream_pos] * gain;
       out[2 * i + 1] += stream[2 * stream_pos + 1] * gain;
     }
-    if (dump) SDL_WriteIO(dump, start, (size_t)frames * 2 * sizeof(float));
+    if (dump) fwrite(start, sizeof(float) * 2, (size_t)frames, dump), fflush(dump);
     return;
   }
   synth_render(out, n, gain);
-  if (dump) SDL_WriteIO(dump, start, (size_t)frames * 2 * sizeof(float));
+  if (dump) fwrite(start, sizeof(float) * 2, (size_t)frames, dump), fflush(dump);
 }

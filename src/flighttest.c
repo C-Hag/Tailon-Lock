@@ -6,7 +6,6 @@
  * are no longer square, a live jet under the ground. */
 #include "flighttest.h"
 
-#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

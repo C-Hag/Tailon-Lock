@@ -1,10 +1,13 @@
 /* plat_posix.c - Linux (and other POSIX) side of plat.h. */
+#define _POSIX_C_SOURCE 200809L /* readlink */
 #include "platform/plat.h"
 
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "brand.h"
 
@@ -57,3 +60,34 @@ int plat_random(void *buf, size_t size) {
 
 int  plat_net_init(void) { return 1; }
 void plat_net_quit(void) {}
+
+const char *plat_base_path(void) {
+  static char base[1024];
+  if (base[0]) return base;
+  ssize_t n = readlink("/proc/self/exe", base, sizeof base - 1);
+  if (n <= 0) return base[0] = 0, NULL;
+  base[n] = 0;
+  char *slash = strrchr(base, '/');
+  if (!slash) return base[0] = 0, NULL;
+  slash[1] = 0;
+  return base;
+}
+
+bool plat_is_file(const char *path) {
+  struct stat st;
+  return path && stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+bool plat_make_dir(const char *path) {
+  char p[1024];
+  int n = snprintf(p, sizeof p, "%s", path);
+  if (n <= 0 || (size_t)n >= sizeof p) return false;
+  for (char *c = p + 1; *c; c++) /* the folders above it first */
+    if (*c == '/') {
+      *c = 0;
+      mkdir(p, 0755);
+      *c = '/';
+    }
+  struct stat st;
+  return mkdir(p, 0755) == 0 || (stat(p, &st) == 0 && S_ISDIR(st.st_mode));
+}

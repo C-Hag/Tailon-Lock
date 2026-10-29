@@ -7,7 +7,7 @@ R=$(cd "$(dirname "$0")/../.." && pwd)
 B=$R/build/p5bench
 OUT=$B/cg
 mkdir -p "$OUT"
-export A4C_ROOT=$R GLIBC_TUNABLES=glibc.cpu.hwcaps=-SSE2,-SSE,-SSE3,-SSSE3,-SSE4_1,-SSE4_2,-AVX,-AVX2,-FMA,-AVX512F
+export GLIBC_TUNABLES=glibc.cpu.hwcaps=-SSE2,-SSE,-SSE3,-SSSE3,-SSE4_1,-SSE4_2,-AVX,-AVX2,-FMA,-AVX512F
 CG="valgrind --tool=callgrind --toggle-collect=bench_* --cache-sim=yes --I1=8192,2,32 --D1=8192,2,32 --LL=262144,4,32"
 FR=${FRAMES:-4}
 for s in dogfight deck cic; do

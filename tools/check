@@ -57,7 +57,8 @@ JOBS = str(os.cpu_count() or 4)
 # names: patterns that may appear in the sources while the entry is here; include: headers; cmake: what
 # CMake fetches or builds; dir: where it is vendored. Delete an entry in the brick that removes the library.
 ALLOW = {
-    'SDL3': dict(brick=20, names=[r'\bSDL', r'libdecor'], include=[r'^SDL3/'], cmake=['SDL3'], dir=None),
+    'SDL3': dict(brick=20, names=[r'\bSDL', r'libdecor'], include=[r'^SDL3/'], cmake=['SDL3'], dir=None,
+                 inside=['src/platform/plat_sdl.c', 'src/platform/plat.h', 'src/gpu.c', 'src/gpu.h', 'src/gpu_shaders.h']),
 }
 # never allowed: other projects' names
 FOREIGN = [r'cJSON', r'(?i)monocypher', r'cgltf', r'\bstb_[a-z]', r'miniaudio', r'\bglfw', r'raylib', r'\bsokol_', r'lodepng', r'tinyobj',
@@ -491,6 +492,13 @@ def stage_cleanroom():
         hits = grep('|'.join(e['names']), exclude=vendored + NAMES_DOCS)
         files = sorted({p for p, _, _ in hits})
         say('    %s names: %d lines in %d files (allow-listed until brick %d)' % (k, len(hits), len(files), e['brick']))
+        # since brick 9 the game reaches it only through the platform backend and the GPU renderer
+        inside = e.get('inside')
+        if inside:
+            out = sorted({p for p, _, _ in hits if p.startswith('src/') and p not in inside})
+            say('    %s names in src/ outside %s: %d files%s' % (k, ', '.join(inside), len(out),
+                                                            ('   ' + ', '.join(out[:6])) if out else ''))
+            ok_all &= not out
     # licence headers outside the vendored code
     hits = grep(LICENCE, exclude=vendored + ['tools/check'])
     say('    licence headers outside third_party/: %d' % len(hits))

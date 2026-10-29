@@ -31,8 +31,8 @@ in `build/check/<date>-<commit>.txt`).
 | 5-8 | our own GLB loader (glTF 2.0); the game loads its meshes from .glb | done | 479daf4 ... 2f44c99 |
 | 21 | our own crypto: X25519, ChaCha20-Poly1305, BLAKE2b, Elligator 2 | done | 8233598 |
 | 22 | online play on our own crypto (network version 4); Monocypher deleted | done | (this commit) |
-| 9 | the `plat.h` interface (touch, callback-driven loop) | next | |
-| R0 | the FreeDOS benchmark test: tools/p5bench built with DJGPP (test only), run in Bochs and DOSBox | after brick 9 | |
+| 9 | the `plat.h` interface (touch, callback-driven loop); SDL3 only in `plat_sdl.c` and the GPU renderer | done | (this commit) |
+| R0 | the FreeDOS benchmark test: tools/p5bench built with DJGPP (test only), run in Bochs and DOSBox | next | |
 | 25-29 | touch controls, scaling, Android | planned | |
 | 10-20 | our own desktop platform layer; SDL3 deleted | planned | |
 | 23-24 | the last downloaded library gone; final audit | planned | |

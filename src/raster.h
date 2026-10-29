@@ -1,6 +1,6 @@
 /* raster.h - the software framebuffer and everything that draws into it.
- * Replaces the JS Canvas 2D fills and lines. No SDL in here: pixels are
- * packed 0xAARRGGBB (SDL_PIXELFORMAT_XRGB8888 when uploaded). Every
+ * Replaces the JS Canvas 2D fills and lines. No platform calls in here: pixels are
+ * packed 0xAARRGGBB (shown as 0xXXRRGGBB by plat_present). Every
  * primitive clips to the current clip rectangle, and optionally to a circle
  * (the radar scope and attitude ball). */
 #ifndef A4C_RASTER_H

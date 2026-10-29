@@ -1,5 +1,5 @@
 /* sfx.c - sound effects (JS sNoise, sTone, enginesStart/Update; lines
- * 308-362) as a small voice pool mixed on SDL's audio thread. A noise voice
+ * 308-362) as a small voice pool mixed on the sound thread. A noise voice
  * is white noise through a swept two-pole low-pass; a tone voice is a square
  * or sine with an exponential pitch sweep; both decay exponentially to
  * 0.0008, like the Web Audio ramps. An engine drone is a sawtooth through a
@@ -8,8 +8,9 @@
 
 #include "music.h"
 
-#include <SDL3/SDL.h>
 #include <string.h>
+
+#include "platform/plat.h"
 
 #define RATE      48000
 #define MAX_VOICE 40
@@ -25,7 +26,7 @@ typedef struct {
   float freq, gain, tfreq, tgain, phase, lp;
 } Engine;
 
-static SDL_AudioStream *stream;
+static bool stream; /* the sound device is open */
 static Voice voices[MAX_VOICE];
 static Engine engines[2];
 static bool enabled = true, music_on = true;
@@ -38,81 +39,70 @@ static float white(void) {
   return (float)(int32_t)noise / 2147483648.0f;
 }
 
-static void SDLCALL mix(void *ud, SDL_AudioStream *s, int additional, int total) {
+/* The sound thread asks for n stereo frames, at most 512 at a time. */
+static void mix(float *buf, int n, void *ud) {
   (void)ud;
-  (void)total;
-  float buf[512 * 2], mus[512 * 2];
-  int frames = additional / (int)(sizeof(float) * 2);
+  float mus[512 * 2];
   const float dt = 1.0f / RATE;
-  while (frames > 0) {
-    int n = frames > 512 ? 512 : frames;
-    memset(mus, 0, sizeof mus);
-    if (enabled && music_on) music_render(mus, n);
-    for (int i = 0; i < n; i++) {
-      float out = 0;
-      for (int v = 0; v < MAX_VOICE; v++) {
-        Voice *V = &voices[v];
-        if (!V->active) continue;
-        float k = V->t / V->dur;
-        float f = V->f0 * powf(V->f1 / V->f0, k);
-        float g = V->vol * powf(0.0008f / V->vol, k);
-        float x;
-        if (V->kind == SND_NOISE) {
-          float a = 1 - expf(-6.2831853f * f / RATE);
-          V->lp1 += (white() - V->lp1) * a;
-          V->lp2 += (V->lp1 - V->lp2) * a;
-          x = V->lp2 * 1.6f;
-        } else {
-          V->phase += f * dt;
-          V->phase -= floorf(V->phase);
-          x = V->kind == SND_SQUARE ? (V->phase < 0.5f ? 0.5f : -0.5f) : sinf(V->phase * 6.2831853f);
-        }
-        out += x * g;
-        V->t += dt;
-        if (V->t >= V->dur) V->active = false;
+  memset(mus, 0, sizeof mus);
+  if (enabled && music_on) music_render(mus, n);
+  for (int i = 0; i < n; i++) {
+    float out = 0;
+    for (int v = 0; v < MAX_VOICE; v++) {
+      Voice *V = &voices[v];
+      if (!V->active) continue;
+      float k = V->t / V->dur;
+      float f = V->f0 * powf(V->f1 / V->f0, k);
+      float g = V->vol * powf(0.0008f / V->vol, k);
+      float x;
+      if (V->kind == SND_NOISE) {
+        float a = 1 - expf(-6.2831853f * f / RATE);
+        V->lp1 += (white() - V->lp1) * a;
+        V->lp2 += (V->lp1 - V->lp2) * a;
+        x = V->lp2 * 1.6f;
+      } else {
+        V->phase += f * dt;
+        V->phase -= floorf(V->phase);
+        x = V->kind == SND_SQUARE ? (V->phase < 0.5f ? 0.5f : -0.5f) : sinf(V->phase * 6.2831853f);
       }
-      for (int e = 0; e < 2; e++) {
-        Engine *E = &engines[e];
-        E->freq += (E->tfreq - E->freq) * (dt / 0.1f);
-        E->gain += (E->tgain - E->gain) * (dt / 0.15f);
-        if (E->gain < 1e-5f && E->tgain == 0) continue;
-        E->phase += E->freq * dt;
-        E->phase -= floorf(E->phase);
-        float saw = E->phase * 2 - 1;
-        E->lp += (saw - E->lp) * (1 - expf(-6.2831853f * 380 / RATE));
-        out += E->lp * E->gain;
-      }
-      out *= enabled ? MASTER : 0;
-      for (int c = 0; c < 2; c++) {
-        float v = out + mus[2 * i + c];
-        buf[2 * i + c] = v > 1 ? 1 : v < -1 ? -1 : v;
-      }
+      out += x * g;
+      V->t += dt;
+      if (V->t >= V->dur) V->active = false;
     }
-    SDL_PutAudioStreamData(s, buf, n * (int)sizeof(float) * 2);
-    frames -= n;
+    for (int e = 0; e < 2; e++) {
+      Engine *E = &engines[e];
+      E->freq += (E->tfreq - E->freq) * (dt / 0.1f);
+      E->gain += (E->tgain - E->gain) * (dt / 0.15f);
+      if (E->gain < 1e-5f && E->tgain == 0) continue;
+      E->phase += E->freq * dt;
+      E->phase -= floorf(E->phase);
+      float saw = E->phase * 2 - 1;
+      E->lp += (saw - E->lp) * (1 - expf(-6.2831853f * 380 / RATE));
+      out += E->lp * E->gain;
+    }
+    out *= enabled ? MASTER : 0;
+    for (int c = 0; c < 2; c++) {
+      float v = out + mus[2 * i + c];
+      buf[2 * i + c] = v > 1 ? 1 : v < -1 ? -1 : v;
+    }
   }
 }
 
 bool sfx_init(void) {
-  SDL_AudioSpec spec = { SDL_AUDIO_F32, 2, RATE };
-  stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, mix, NULL);
-  if (!stream) {
-    SDL_Log("audio: %s", SDL_GetError());
-    return false;
-  }
-  SDL_ResumeAudioStreamDevice(stream);
-  return true;
+  stream = plat_audio_open(RATE, mix, NULL);
+  if (!stream) plat_log("audio: %s", plat_error());
+  return stream;
 }
 
 void sfx_quit(void) {
-  if (stream) SDL_DestroyAudioStream(stream);
-  stream = NULL;
+  if (stream) plat_audio_close();
+  stream = false;
 }
 
 void sfx_enable(bool on) { enabled = on; }
 void sfx_music(bool on) { music_on = on; }
-void sfx_lock(void) { if (stream) SDL_LockAudioStream(stream); }
-void sfx_unlock(void) { if (stream) SDL_UnlockAudioStream(stream); }
+void sfx_lock(void) { if (stream) plat_audio_lock(); }
+void sfx_unlock(void) { if (stream) plat_audio_unlock(); }
 
 static void start_voice(const SoundReq *r) {
   int slot = -1;
@@ -136,23 +126,23 @@ void sfx_drain(Game *g) {
     g->nsounds = 0;
     return;
   }
-  SDL_LockAudioStream(stream);
+  plat_audio_lock();
   for (int i = 0; i < g->nsounds; i++) start_voice(&g->sounds[i]);
-  SDL_UnlockAudioStream(stream);
+  plat_audio_unlock();
   g->nsounds = 0;
 }
 
 void sfx_play(SoundKind kind, float f0, float f1, float dur, float vol) {
   if (!stream || !enabled) return;
   SoundReq r = { kind, f0, f1, dur, vol };
-  SDL_LockAudioStream(stream);
+  plat_audio_lock();
   start_voice(&r);
-  SDL_UnlockAudioStream(stream);
+  plat_audio_unlock();
 }
 
 void sfx_engines(const Game *g, bool paused) {
   if (!stream) return;
-  SDL_LockAudioStream(stream);
+  plat_audio_lock();
   int n = g ? g->nlocals : 0;
   for (int e = 0; e < 2; e++) {
     Engine *E = &engines[e];
@@ -166,5 +156,5 @@ void sfx_engines(const Game *g, bool paused) {
     if (E->freq == 0) E->freq = E->tfreq;
     E->tgain = on ? 0.05f / n + 0.015f : 0;
   }
-  SDL_UnlockAudioStream(stream);
+  plat_audio_unlock();
 }

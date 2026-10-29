@@ -3,7 +3,6 @@
  * the maps and the intro. */
 #include "assets.h"
 
-#include <SDL3/SDL.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,14 +12,14 @@
 #include "core/glb.h"
 #include "core/jets.h"
 #include "core/json.h"
+#include "platform/plat.h"
 
 static char dir[1024];
 
 static bool is_dir_with(const char *d, const char *file) {
   char p[2100];
   snprintf(p, sizeof p, "%.1000s%.1000s", d, file);
-  SDL_PathInfo info;
-  return SDL_GetPathInfo(p, &info) && info.type == SDL_PATHTYPE_FILE;
+  return plat_is_file(p);
 }
 
 const char *assets_path(const char *rel) {
@@ -35,14 +34,14 @@ Json *assets_json(const char *rel) {
   const char *p = assets_path(rel);
   if (!p) return NULL;
   size_t n = 0;
-  char *text = SDL_LoadFile(p, &n);
+  char *text = plat_load_file(p, &n);
   if (!text) {
-    SDL_Log("assets: cannot read %s", p);
+    plat_log("assets: cannot read %s", p);
     return NULL;
   }
   Json *j = json_parse(text, n, NULL);
-  SDL_free(text);
-  if (!j) SDL_Log("assets: %s is not valid JSON", p);
+  free(text);
+  if (!j) plat_log("assets: %s is not valid JSON", p);
   return j;
 }
 
@@ -91,12 +90,12 @@ static Json *json_in_js(const char *rel, char open, char close) {
   const char *p = assets_path(rel);
   if (!p) return NULL;
   size_t n = 0;
-  char *text = SDL_LoadFile(p, &n);
+  char *text = plat_load_file(p, &n);
   if (!text) return NULL;
   char *a = strchr(text, open), *b = strrchr(text, close);
   Json *j = a && b && b > a ? json_parse(a, (size_t)(b - a + 1), NULL) : NULL;
-  SDL_free(text);
-  if (!j) SDL_Log("assets: cannot parse %s", p);
+  free(text);
+  if (!j) plat_log("assets: cannot parse %s", p);
   return j;
 }
 
@@ -248,14 +247,14 @@ static bool glb_mesh_file(const char *rel, Mesh *m) {
   const char *p = assets_path(rel);
   if (!p) return false;
   size_t n = 0;
-  void *data = SDL_LoadFile(p, &n);
+  void *data = plat_load_file(p, &n);
   if (!data) return false;
   GlbModel g;
   const char *err = NULL;
   bool ok = glb_load(data, n, &g, &err) && glb_mesh(&g, m, &err);
   if (g.doc) glb_close(&g);
-  SDL_free(data);
-  if (!ok) SDL_Log("assets: %s: %s", p, err ? err : "not readable");
+  free(data);
+  if (!ok) plat_log("assets: %s: %s", p, err ? err : "not readable");
   return ok;
 }
 
@@ -296,7 +295,7 @@ static void load_jets(void) {
   }
   json_free(root);
   load_specs();
-  SDL_Log("assets: %d jets (%d meshes from .glb)", NJETS, meshes_from_glb);
+  plat_log("assets: %d jets (%d meshes from .glb)", NJETS, meshes_from_glb);
 }
 
 /* ---- maps --------------------------------------------------------------- */
@@ -360,23 +359,23 @@ static bool load_map(int idx, Map *m) {
   float scale = num(hm, "scale", 0.1f);
   snprintf(rel, sizeof rel, "maps/%s", str(hm, "file"));
   size_t n = 0;
-  uint8_t *raw = SDL_LoadFile(assets_path(rel), &n);
+  uint8_t *raw = plat_load_file(assets_path(rel), &n);
   if (!raw || n < MAP_SAMPLES * MAP_SAMPLES * 2) {
-    SDL_free(raw);
+    free(raw);
     json_free(j);
     return false;
   }
   for (int i = 0; i < MAP_SAMPLES * MAP_SAMPLES; i++) m->h[i] = (float)(int16_t)(raw[2 * i] | raw[2 * i + 1] << 8) * scale;
-  SDL_free(raw);
+  free(raw);
   snprintf(rel, sizeof rel, "maps/%s", str(json_get(j, "surface"), "file"));
-  raw = SDL_LoadFile(assets_path(rel), &n);
+  raw = plat_load_file(assets_path(rel), &n);
   if (!raw || n < MAP_CELLS * MAP_CELLS) {
-    SDL_free(raw);
+    free(raw);
     json_free(j);
     return false;
   }
   memcpy(m->mat, raw, MAP_CELLS * MAP_CELLS);
-  SDL_free(raw);
+  free(raw);
 
   const Json *e;
   JSON_FOR(e, json_get(j, "palette")) {
@@ -510,7 +509,7 @@ static bool load_map(int idx, Map *m) {
     if (!L->color) L->color = 0xffffff;
   }
   json_free(j);
-  SDL_Log("map %s: %d targets, %d carriers, %d lights", m->id, m->ntargets, m->ncarriers, m->nlights);
+  plat_log("map %s: %d targets, %d carriers, %d lights", m->id, m->ntargets, m->ncarriers, m->nlights);
   return true;
 }
 
@@ -531,12 +530,12 @@ const Map *assets_map(int i) {
 static void load_carrier(void) {
   Json *root = json_in_js("jets/carrier_game.js", '{', '}');
   if (root && source_mesh(str(root, "id"), json_get(root, "mesh"), &MESH_CARRIER))
-    SDL_Log("assets: carrier, %d faces", MESH_CARRIER.nf);
+    plat_log("assets: carrier, %d faces", MESH_CARRIER.nf);
   json_free(root);
 }
 
 bool assets_init(void) {
-  const char *base = SDL_GetBasePath();
+  const char *base = plat_base_path();
   char cand[3][1024];
   int n = 0;
   if (base) snprintf(cand[n++], sizeof cand[0], "%sassets/", base);
@@ -550,10 +549,10 @@ bool assets_init(void) {
       break;
     }
   if (!dir[0]) {
-    SDL_Log("assets: no assets folder found; flying the built-in jet only");
+    plat_log("assets: no assets folder found; flying the built-in jet only");
     return false;
   }
-  SDL_Log("assets: %s", dir);
+  plat_log("assets: %s", dir);
   load_jets();
   load_carrier();
   load_map_index();

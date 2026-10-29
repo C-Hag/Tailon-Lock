@@ -1,5 +1,6 @@
-/* main.c - SDL3 window, fixed 60 Hz update with an accumulator, render,
- * present, and the menu / play / pause / game-over flow. Replaces the JS
+/* main.c - the game's side of the main loop (plat.h calls init, event and
+ * frame): a fixed 60 Hz update with an accumulator, render, present, and
+ * the menu / play / pause / game-over flow. Replaces the JS
  * frame() loop and flow code (the browser game, web/index.html).
  *
  * Everything is drawn into a framebuffer at 1/SCALE of the window size and
@@ -30,9 +31,7 @@
  *   --click F:X:Y     at frame F, move the mouse to window (X, Y) and click (menu tests;
  *                     R:F:X:Y the right button, W:F:X:Y the wheel up); repeatable
  */
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_main.h>
-
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,9 +69,6 @@
 typedef enum { ST_INTRO, ST_MENU, ST_PLAY, ST_PAUSE, ST_OVER, ST_EDITOR } State;
 
 typedef struct {
-  SDL_Window   *window;
-  SDL_Renderer *renderer;
-  SDL_Texture  *texture;
   Framebuffer   fb;
   int           scale;
   uint32_t      tick;
@@ -92,29 +88,23 @@ typedef struct {
 
 static uint32_t next_seed(App *app) {
   if (app->seed) return app->seed++;
-  return (uint32_t)SDL_GetPerformanceCounter() ^ 0x9E3779B9u;
+  return (uint32_t)plat_counter() ^ 0x9E3779B9u;
 }
 
 static int app_fit_framebuffer(App *app) {
   int ww, wh;
-  SDL_GetWindowSizeInPixels(app->window, &ww, &wh);
+  plat_window_pixels(&ww, &wh);
   /* the modern renderer draws the HUD and panels at full resolution */
   int sc = app->scale ? app->scale : gpu_active() ? 1 : 2;
   int w = ww / sc, h = wh / sc;
   if (w < 240) w = 240;
   if (h < 160) h = 160;
-  if (gpu_active()) return fb_resize(&app->fb, w, h); /* the GPU uploads it itself */
-  if (app->texture && app->fb.w == w && app->fb.h == h) return 1;
-
   if (!fb_resize(&app->fb, w, h)) return 0;
-  if (app->texture) SDL_DestroyTexture(app->texture);
-  app->texture = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_XRGB8888,
-                                   SDL_TEXTUREACCESS_STREAMING, w, h);
-  if (!app->texture) {
-    SDL_Log("SDL_CreateTexture: %s", SDL_GetError());
+  if (gpu_active()) return 1; /* the GPU uploads it itself */
+  if (!plat_present_open(w, h)) {
+    plat_log("present: %s", plat_error());
     return 0;
   }
-  SDL_SetTextureScaleMode(app->texture, SDL_SCALEMODE_NEAREST);
   return 1;
 }
 
@@ -263,9 +253,9 @@ static void intro_to_menu(App *app) {
 /* Test log (A4C_PLANES=1): how a match stands when it ends. */
 static void log_match(const Game *g, const char *why) {
   if (!getenv("A4C_PLANES")) return;
-  SDL_Log("%s at %.0f: winner %d, %s", why, g->time, g->winner, g->over ? g->reason : "");
+  plat_log("%s at %.0f: winner %d, %s", why, g->time, g->winner, g->over ? g->reason : "");
   for (int i = 0; i < g->nplanes; i++)
-    SDL_Log("  %s kills %d targets %d lives %d score %d", g->planes[i].name, g->planes[i].kills, g->planes[i].tkills,
+    plat_log("  %s kills %d targets %d lives %d score %d", g->planes[i].name, g->planes[i].kills, g->planes[i].tkills,
             g->planes[i].lives, plane_score(&g->planes[i]));
 }
 
@@ -346,7 +336,7 @@ static void physics_check(const Game *g) {
     if (bad < 0 || (seen[i] & (1u << bad))) continue;
     seen[i] |= 1u << bad;
     physics_faults++;
-    SDL_Log("PHYSICS %s: %s at t=%.1f pos %.0f %.0f %.0f speed %.0f", p->name, WHAT[bad], g->time, p->pos.x, p->pos.y, p->pos.z,
+    plat_log("PHYSICS %s: %s at t=%.1f pos %.0f %.0f %.0f speed %.0f", p->name, WHAT[bad], g->time, p->pos.x, p->pos.y, p->pos.z,
             p->speed);
   }
 }
@@ -355,13 +345,13 @@ static void app_render(App *app) {
   if (app->test_pattern) {
     fb_test_pattern(&app->fb, app->tick);
   } else {
-    uint64_t t0 = SDL_GetPerformanceCounter();
+    uint64_t t0 = plat_counter();
     if (app->state == ST_EDITOR) editor_draw(&app->fb);
     else if (app->state == ST_MENU && ui_hangar_jet(&app->settings) >= 0)
       render_hangar(&app->fb, ui_hangar_jet(&app->settings), app->settings.load[ui_hangar_seat()], app->uitime);
     else if (app->intro_bg && (app->state == ST_INTRO || app->state == ST_MENU)) intro_render(&app->fb);
     else render_game(&app->fb, &app->game);
-    render_ticks += SDL_GetPerformanceCounter() - t0;
+    render_ticks += plat_counter() - t0;
     if (app->state == ST_MENU) ui_draw(&app->fb, SCREEN_MENU, &app->settings, &app->game, app->uitime);
     else if (app->state == ST_PAUSE) ui_draw(&app->fb, SCREEN_PAUSE, &app->settings, &app->game, app->uitime);
     else if (app->state == ST_OVER) ui_draw(&app->fb, SCREEN_OVER, &app->settings, &app->game, app->uitime);
@@ -370,10 +360,7 @@ static void app_render(App *app) {
     gpu_present(&app->fb);
     return;
   }
-  SDL_UpdateTexture(app->texture, NULL, app->fb.px, app->fb.w * (int)sizeof(uint32_t));
-  SDL_RenderClear(app->renderer);
-  SDL_RenderTexture(app->renderer, app->texture, NULL, NULL);
-  SDL_RenderPresent(app->renderer);
+  plat_present(app->fb.px, app->fb.w, app->fb.h);
 }
 
 /* JS musicUpdate: the chosen theme loops while sound and music are on;
@@ -460,41 +447,37 @@ static bool screen_of(const App *app, Screen *s) {
   }
 }
 
-static void on_key(App *app, const SDL_KeyboardEvent *k) {
+static void on_key(App *app, const PlatKey *k) {
   if (app->state == ST_INTRO) {
     if (!k->repeat && intro_time() > 0.5f) intro_to_menu(app);
     return;
   }
-  if (k->key == SDLK_RETURN && (k->mod & SDL_KMOD_ALT)) {
-    SDL_SetWindowFullscreen(app->window, !(SDL_GetWindowFlags(app->window) & SDL_WINDOW_FULLSCREEN));
-    return;
-  }
-  if (k->key == SDLK_F11) {
-    SDL_SetWindowFullscreen(app->window, !(SDL_GetWindowFlags(app->window) & SDL_WINDOW_FULLSCREEN));
+  if ((k->key == '\r' && (k->mod & PMOD_ALT)) || k->key == PKEY_F(11)) {
+    plat_fullscreen_toggle();
     return;
   }
   if (app->state == ST_PLAY && command_active(&app->game) && !k->repeat) {
     /* player 2 at the carrier's screens */
-    static const struct { SDL_Scancode sc; CmdAction a; } CMD_KEYS[] = {
-      { SDL_SCANCODE_UP, CA_UP }, { SDL_SCANCODE_I, CA_UP }, { SDL_SCANCODE_DOWN, CA_DOWN }, { SDL_SCANCODE_K, CA_DOWN },
-      { SDL_SCANCODE_LEFT, CA_LEFT }, { SDL_SCANCODE_J, CA_LEFT }, { SDL_SCANCODE_RIGHT, CA_RIGHT }, { SDL_SCANCODE_L, CA_RIGHT },
-      { SDL_SCANCODE_RETURN, CA_ORDER }, { SDL_SCANCODE_KP_0, CA_ORDER }, { SDL_SCANCODE_APOSTROPHE, CA_MODE },
-      { SDL_SCANCODE_KP_PERIOD, CA_MODE }, { SDL_SCANCODE_RSHIFT, CA_MAN }, { SDL_SCANCODE_KP_ENTER, CA_MAN },
-      { SDL_SCANCODE_P, CA_LAUNCH }, { SDL_SCANCODE_KP_PLUS, CA_LAUNCH },
+    static const struct { int sc; CmdAction a; } CMD_KEYS[] = {
+      { PK_UP, CA_UP }, { PK_I, CA_UP }, { PK_DOWN, CA_DOWN }, { PK_K, CA_DOWN },
+      { PK_LEFT, CA_LEFT }, { PK_J, CA_LEFT }, { PK_RIGHT, CA_RIGHT }, { PK_L, CA_RIGHT },
+      { PK_RETURN, CA_ORDER }, { PK_KP_0, CA_ORDER }, { PK_APOSTROPHE, CA_MODE },
+      { PK_KP_PERIOD, CA_MODE }, { PK_RSHIFT, CA_MAN }, { PK_KP_ENTER, CA_MAN },
+      { PK_P, CA_LAUNCH }, { PK_KP_PLUS, CA_LAUNCH },
     };
     for (size_t i = 0; i < sizeof CMD_KEYS / sizeof CMD_KEYS[0]; i++)
-      if (k->scancode == CMD_KEYS[i].sc) {
+      if (k->code == CMD_KEYS[i].sc) {
         command_action(&app->game, CMD_KEYS[i].a);
         return;
       }
   }
   if (app->state == ST_PLAY) {
-    if (k->key == SDLK_ESCAPE || k->key == SDLK_F1) pause_game(app);
-    else if (k->key == SDLK_F2 && !k->repeat) to_menu(app); /* classic classic rules: F2 quits */
-    else if (k->key == SDLK_TAB && !k->repeat) {
+    if (k->key == 27 || k->key == PKEY_F(1)) pause_game(app);
+    else if (k->key == PKEY_F(2) && !k->repeat) to_menu(app); /* classic classic rules: F2 quits */
+    else if (k->key == '\t' && !k->repeat) {
       for (int i = 0; i < app->game.nplanes; i++)
         if (!app->game.planes[i].is_ai) app->game.planes[i].chase = !app->game.planes[i].chase;
-    } else if (k->key == SDLK_M && !k->repeat && !app->game.classic) { /* M banks in the classic keys */
+    } else if (k->key == 'm' && !k->repeat && !app->game.classic) { /* M banks in the classic keys */
       app->settings.sound = !app->settings.sound;
       config_save(&app->settings);
     }
@@ -504,30 +487,30 @@ static void on_key(App *app, const SDL_KeyboardEvent *k) {
   if (!screen_of(app, &s)) return;
   int size;
   if (s == SCREEN_MENU && ui_text_field(&app->settings, &size)) { /* typing: only arrows and Enter move */
-    if (k->key == SDLK_BACKSPACE) {
+    if (k->key == '\b') {
       ui_text(&app->settings, "\b");
       return;
     }
-    if (k->scancode == SDL_SCANCODE_W || k->scancode == SDL_SCANCODE_A || k->scancode == SDL_SCANCODE_S ||
-        k->scancode == SDL_SCANCODE_D || k->scancode == SDL_SCANCODE_SPACE)
+    if (k->code == PK_W || k->code == PK_A || k->code == PK_S ||
+        k->code == PK_D || k->code == PK_SPACE)
       return;
-    if (k->key == SDLK_V && (k->mod & SDL_KMOD_CTRL)) {
-      char *clip = SDL_GetClipboardText();
+    if (k->key == 'v' && (k->mod & PMOD_CTRL)) {
+      char *clip = plat_clipboard();
       if (clip) ui_text(&app->settings, clip);
-      SDL_free(clip);
+      free(clip);
       return;
     }
   }
-  if (k->key == SDLK_ESCAPE) {
+  if (k->key == 27) {
     if (s != SCREEN_MENU) ui_action(app, s, NAV_BACK);
     return;
   }
-  switch (k->scancode) {
-  case SDL_SCANCODE_UP: case SDL_SCANCODE_W:       ui_action(app, s, NAV_UP); break;
-  case SDL_SCANCODE_DOWN: case SDL_SCANCODE_S:     ui_action(app, s, NAV_DOWN); break;
-  case SDL_SCANCODE_LEFT: case SDL_SCANCODE_A:     ui_action(app, s, NAV_LEFT); break;
-  case SDL_SCANCODE_RIGHT: case SDL_SCANCODE_D:    ui_action(app, s, NAV_RIGHT); break;
-  case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: case SDL_SCANCODE_SPACE:
+  switch (k->code) {
+  case PK_UP: case PK_W:       ui_action(app, s, NAV_UP); break;
+  case PK_DOWN: case PK_S:     ui_action(app, s, NAV_DOWN); break;
+  case PK_LEFT: case PK_A:     ui_action(app, s, NAV_LEFT); break;
+  case PK_RIGHT: case PK_D:    ui_action(app, s, NAV_RIGHT); break;
+  case PK_RETURN: case PK_KP_ENTER: case PK_SPACE:
     if (!k->repeat) ui_action(app, s, NAV_OK);
     break;
   default: break;
@@ -536,38 +519,38 @@ static void on_key(App *app, const SDL_KeyboardEvent *k) {
 
 /* The mouse on the menu, pause and game over: pointing selects, a click
  * acts, the right button and the wheel step a value back and on. */
-static void on_mouse(App *app, const SDL_Event *ev) {
+static void on_mouse(App *app, const PlatEvent *ev) {
   Screen s;
   if (!screen_of(app, &s)) return;
   int ww, wh;
-  SDL_GetWindowSize(app->window, &ww, &wh);
+  plat_window_size(&ww, &wh);
   float kx = (float)app->fb.w / (ww > 0 ? ww : 1), ky = (float)app->fb.h / (wh > 0 ? wh : 1);
   Nav n;
-  if (ev->type == SDL_EVENT_MOUSE_MOTION) ui_point(ev->motion.x * kx, ev->motion.y * ky);
-  else if (ev->type == SDL_EVENT_MOUSE_WHEEL) {
-    if (ev->wheel.y != 0 && ui_click(ev->wheel.mouse_x * kx, ev->wheel.mouse_y * ky, ev->wheel.y > 0 ? 1 : -1, &n)) ui_action(app, s, n);
-  } else if (ev->button.button == SDL_BUTTON_LEFT || ev->button.button == SDL_BUTTON_RIGHT) {
-    if (ui_click(ev->button.x * kx, ev->button.y * ky, ev->button.button == SDL_BUTTON_LEFT ? 0 : -1, &n)) ui_action(app, s, n);
+  if (ev->type == PE_MOUSE_MOVE) ui_point(ev->mouse.x * kx, ev->mouse.y * ky);
+  else if (ev->type == PE_WHEEL) {
+    if (ev->wheel.dy != 0 && ui_click(ev->wheel.x * kx, ev->wheel.y * ky, ev->wheel.dy > 0 ? 1 : -1, &n)) ui_action(app, s, n);
+  } else if (ev->mouse.button == PBTN_LEFT || ev->mouse.button == PBTN_RIGHT) {
+    if (ui_click(ev->mouse.x * kx, ev->mouse.y * ky, ev->mouse.button == PBTN_LEFT ? 0 : -1, &n)) ui_action(app, s, n);
   }
 }
 
-static void on_pad_button(App *app, const SDL_GamepadButtonEvent *b) {
+static void on_pad_button(App *app, int which, int button) {
   if (app->state == ST_INTRO) {
     if (intro_time() > 0.5f) intro_to_menu(app);
     return;
   }
   if (app->state == ST_PLAY) {
-    if (b->button == SDL_GAMEPAD_BUTTON_START) pause_game(app);
-    else if (command_active(&app->game) && input_pad_seat(b->which) == 1) {
-      switch (b->button) {
-      case SDL_GAMEPAD_BUTTON_DPAD_UP:    command_action(&app->game, CA_UP); break;
-      case SDL_GAMEPAD_BUTTON_DPAD_DOWN:  command_action(&app->game, CA_DOWN); break;
-      case SDL_GAMEPAD_BUTTON_DPAD_LEFT:  command_action(&app->game, CA_LEFT); break;
-      case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: command_action(&app->game, CA_RIGHT); break;
-      case SDL_GAMEPAD_BUTTON_SOUTH:      if (app->game.def.cmd_state != CMD_TURRET) command_action(&app->game, CA_ORDER); break;
-      case SDL_GAMEPAD_BUTTON_WEST:       command_action(&app->game, CA_MODE); break;
-      case SDL_GAMEPAD_BUTTON_EAST:       command_action(&app->game, CA_MAN); break;
-      case SDL_GAMEPAD_BUTTON_NORTH:      command_action(&app->game, CA_LAUNCH); break;
+    if (button == PPAD_START) pause_game(app);
+    else if (command_active(&app->game) && input_pad_seat(which) == 1) {
+      switch (button) {
+      case PPAD_DUP:    command_action(&app->game, CA_UP); break;
+      case PPAD_DDOWN:  command_action(&app->game, CA_DOWN); break;
+      case PPAD_DLEFT:  command_action(&app->game, CA_LEFT); break;
+      case PPAD_DRIGHT: command_action(&app->game, CA_RIGHT); break;
+      case PPAD_SOUTH:      if (app->game.def.cmd_state != CMD_TURRET) command_action(&app->game, CA_ORDER); break;
+      case PPAD_WEST:       command_action(&app->game, CA_MODE); break;
+      case PPAD_EAST:       command_action(&app->game, CA_MAN); break;
+      case PPAD_NORTH:      command_action(&app->game, CA_LAUNCH); break;
       default: break;
       }
     }
@@ -575,17 +558,17 @@ static void on_pad_button(App *app, const SDL_GamepadButtonEvent *b) {
   }
   Screen s;
   if (!screen_of(app, &s)) return;
-  switch (b->button) {
-  case SDL_GAMEPAD_BUTTON_DPAD_UP:    ui_action(app, s, NAV_UP); break;
-  case SDL_GAMEPAD_BUTTON_DPAD_DOWN:  ui_action(app, s, NAV_DOWN); break;
-  case SDL_GAMEPAD_BUTTON_DPAD_LEFT:  ui_action(app, s, NAV_LEFT); break;
-  case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: ui_action(app, s, NAV_RIGHT); break;
-  case SDL_GAMEPAD_BUTTON_SOUTH:      ui_action(app, s, NAV_OK); break;
-  case SDL_GAMEPAD_BUTTON_START:
+  switch (button) {
+  case PPAD_DUP:    ui_action(app, s, NAV_UP); break;
+  case PPAD_DDOWN:  ui_action(app, s, NAV_DOWN); break;
+  case PPAD_DLEFT:  ui_action(app, s, NAV_LEFT); break;
+  case PPAD_DRIGHT: ui_action(app, s, NAV_RIGHT); break;
+  case PPAD_SOUTH:      ui_action(app, s, NAV_OK); break;
+  case PPAD_START:
     if (s == SCREEN_PAUSE) app->state = ST_PLAY;
     else ui_action(app, s, NAV_OK);
     break;
-  case SDL_GAMEPAD_BUTTON_EAST:
+  case PPAD_EAST:
     if (s != SCREEN_MENU) ui_action(app, s, NAV_BACK);
     break;
   default: break;
@@ -593,22 +576,19 @@ static void on_pad_button(App *app, const SDL_GamepadButtonEvent *b) {
 }
 
 static void save_screenshot(App *app, const char *path) {
-  SDL_Surface *s = SDL_CreateSurfaceFrom(app->fb.w, app->fb.h, SDL_PIXELFORMAT_XRGB8888, app->fb.px,
-                                         app->fb.w * (int)sizeof(uint32_t));
-  if (!s || !SDL_SaveBMP(s, path)) SDL_Log("screenshot: %s", SDL_GetError());
-  else SDL_Log("saved %s", path);
-  SDL_DestroySurface(s);
+  if (!plat_save_bmp(path, app->fb.px, app->fb.w, app->fb.h)) plat_log("screenshot: %s", plat_error());
+  else plat_log("saved %s", path);
 }
 
 /* Renders a theme offline into a 16-bit stereo WAV (one pass plus its tail). */
 static int render_music(const char *key, const char *path) {
-  if (!SDL_Init(0)) return 1;
+  if (!plat_init(0, NULL, NULL, NULL)) return 1;
   assets_init();
   int th_i = music_theme_index(key);
   if (!strcmp(THEMES[th_i].key, key) && music_recorded(th_i)) {
     /* a recording: render it through the player (A4C_MUSIC_S seconds, default 330: the loop comes round) */
-    const char *env = SDL_getenv("A4C_MUSIC_S");
-    double secs = env ? SDL_atof(env) : 330;
+    const char *env = getenv("A4C_MUSIC_S");
+    double secs = env ? atof(env) : 330;
     music_play(th_i);
     music_level(false);
     music_render((float[2]){ 0, 0 }, 1);                          /* settle the level glide */
@@ -616,17 +596,17 @@ static int render_music(const char *key, const char *path) {
     music_level(false);
     enum { RC = 4800 };
     static float rb[RC * 2];
-    SDL_IOStream *rf = SDL_IOFromFile(path, "wb");
+    FILE *rf = fopen(path, "wb");
     if (!rf) return 1;
     uint8_t rh[44] = { 0 };
-    SDL_WriteIO(rf, rh, 44);
+    fwrite(rh, 1, 44, rf);
     uint32_t rframes = 0;
     while (rframes < secs * SYNTH_RATE) {
       memset(rb, 0, sizeof rb);
       music_render(rb, RC);
       int16_t pcm[RC * 2];
       for (int i = 0; i < RC * 2; i++) pcm[i] = (int16_t)(rb[i] > 1 ? 32767 : rb[i] < -1 ? -32767 : rb[i] * 32767);
-      SDL_WriteIO(rf, pcm, sizeof pcm);
+      fwrite(pcm, 1, sizeof pcm, rf);
       rframes += RC;
     }
     uint32_t rdata = rframes * 4, w32;
@@ -638,25 +618,25 @@ static int render_music(const char *key, const char *path) {
     w32 = SYNTH_RATE; memcpy(rh + 24, &w32, 4); w32 = SYNTH_RATE * 4; memcpy(rh + 28, &w32, 4);
     w16 = 4; memcpy(rh + 32, &w16, 2); w16 = 16; memcpy(rh + 34, &w16, 2);
     memcpy(rh + 36, "data", 4); memcpy(rh + 40, &rdata, 4);
-    SDL_SeekIO(rf, 0, SDL_IO_SEEK_SET);
-    SDL_WriteIO(rf, rh, 44);
-    SDL_CloseIO(rf);
-    SDL_Log("%s: %s (a recording), %.1f s", path, key, rframes / (double)SYNTH_RATE);
-    SDL_Quit();
+    fseek(rf, 0, SEEK_SET);
+    fwrite(rh, 1, 44, rf);
+    fclose(rf);
+    plat_log("%s: %s (a recording), %.1f s", path, key, rframes / (double)SYNTH_RATE);
+    plat_quit();
     return 0;
   }
   Score *sc = synth_load(key);
   if (!sc) {
-    SDL_Log("no score for %s", key);
+    plat_log("no score for %s", key);
     return 1;
   }
   synth_start(sc);
   enum { CHUNK = 4800 };
   static float buf[CHUNK * 2];
-  SDL_IOStream *f = SDL_IOFromFile(path, "wb");
+  FILE *f = fopen(path, "wb");
   if (!f) return 1;
   uint8_t hdr[44] = { 0 };
-  SDL_WriteIO(f, hdr, 44);
+  fwrite(hdr, 1, 44, f);
   uint32_t frames = 0;
   float peak = 0;
   double sum = 0;
@@ -672,7 +652,7 @@ static int render_music(const char *key, const char *path) {
       sum += (double)v * v;
       pcm[i] = (int16_t)(v > 1 ? 32767 : v < -1 ? -32767 : v * 32767);
     }
-    SDL_WriteIO(f, pcm, sizeof pcm);
+    fwrite(pcm, 1, sizeof pcm, f);
     frames += CHUNK;
     /* stop after the first pass: the clock wraps back to the loop point */
     (void)before;
@@ -689,17 +669,17 @@ static int render_music(const char *key, const char *path) {
   P32(16, 16); P16(20, 1); P16(22, 2); P32(24, SYNTH_RATE); P32(28, SYNTH_RATE * 4); P16(32, 4); P16(34, 16);
   memcpy(h + 36, "data", 4);
   P32(40, data);
-  SDL_SeekIO(f, 0, SDL_IO_SEEK_SET);
-  SDL_WriteIO(f, h, 44);
-  SDL_CloseIO(f);
-  SDL_Log("%s: %.1f s, peak %.2f, rms %.3f", path, frames / (double)SYNTH_RATE, peak, sqrt(sum / (frames * 2.0)));
-  SDL_Quit();
+  fseek(f, 0, SEEK_SET);
+  fwrite(h, 1, 44, f);
+  fclose(f);
+  plat_log("%s: %.1f s, peak %.2f, rms %.3f", path, frames / (double)SYNTH_RATE, peak, sqrt(sum / (frames * 2.0)));
+  plat_quit();
   return 0;
 }
 
 /* Test hook: runs every rewrite tool on a theme and saves the result. */
 static int compose_test(const char *key, const char *path) {
-  if (!SDL_Init(0)) return 1;
+  if (!plat_init(0, NULL, NULL, NULL)) return 1;
   assets_init();
   for (int i = 0; i < MUSIC_THEMES; i++) {
     Score *o = synth_load(THEMES[i].key);
@@ -728,37 +708,80 @@ static int compose_test(const char *key, const char *path) {
          compose_humanize(s, 5), compose_arpeggiate(s));
   bool ok = synth_save(s, path);
   synth_free(s);
-  SDL_Quit();
+  plat_quit();
   return ok && made > 0 && inkey == sel ? 0 : 1;
 }
 
-int main(int argc, char **argv) {
+/* ---- the main loop: plat.h calls init once, event for each event, frame once per frame, then quit ---- */
+
+static App app; /* the Game struct is large; keep it off the stack */
+/* what the command line asked the loop for */
+static bool        checking;          /* A4C_CHECK: look for broken physics every tick */
+static long        every, max_frames = -1;
+static const char *shot, *clicks[16];
+static int         nclicks;
+static double      seconds;
+/* the loop's clock */
+static uint64_t freq, loop_t0, step, prev, acc;
+static long     frames;
+static int      ok;
+
+/* test hook: the --click events for one frame, handed out before that frame's update */
+static void push_clicks(long frame) {
+  for (int c = 0; c < nclicks; c++) {
+    const char *a = clicks[c];
+    int how = *a == 'R' ? -1 : *a == 'W' ? 1 : 0;
+    if (how) a += 2;
+    long f;
+    float x, y;
+    if (sscanf(a, "%ld:%f:%f", &f, &x, &y) != 3 || f != frame) continue;
+    PlatEvent e = { 0 };
+    e.type = PE_MOUSE_MOVE;
+    e.mouse.x = x;
+    e.mouse.y = y;
+    plat_push(&e);
+    memset(&e, 0, sizeof e);
+    if (how == 1) {
+      e.type = PE_WHEEL;
+      e.wheel.dy = 1;
+      e.wheel.x = x;
+      e.wheel.y = y;
+    } else {
+      e.type = PE_MOUSE_DOWN;
+      e.mouse.button = how ? PBTN_RIGHT : PBTN_LEFT;
+      e.mouse.x = x;
+      e.mouse.y = y;
+    }
+    plat_push(&e);
+  }
+}
+
+static bool loop_init(int argc, char **argv, int *exit_code) {
   for (int i = 1; i + 2 < argc; i++)
-    if (!strcmp(argv[i], "--compose-test")) return compose_test(argv[i + 1], argv[i + 2]);
+    if (!strcmp(argv[i], "--compose-test")) return *exit_code = compose_test(argv[i + 1], argv[i + 2]), false;
   for (int i = 1; i + 2 < argc; i++)
-    if (!strcmp(argv[i], "--render-music")) return render_music(argv[i + 1], argv[i + 2]);
+    if (!strcmp(argv[i], "--render-music")) return *exit_code = render_music(argv[i + 1], argv[i + 2]), false;
   for (int i = 1; i + 1 < argc; i++) /* tests (tools/check): the source meshes as dumps, or as .glb files */
     if (!strcmp(argv[i], "--dump-meshes") || !strcmp(argv[i], "--export-glb")) {
-      if (!SDL_Init(0)) return 1;
+      *exit_code = 1;
+      if (!plat_init(0, NULL, NULL, NULL)) return false;
       assets_init();
       int n = assets_export_meshes(argv[i + 1], !strcmp(argv[i], "--export-glb"));
-      SDL_Log("%s: %d meshes into %s", argv[i], n, argv[i + 1]);
-      SDL_Quit();
-      return n > 0 ? 0 : 1;
+      plat_log("%s: %d meshes into %s", argv[i], n, argv[i + 1]);
+      plat_quit();
+      *exit_code = n > 0 ? 0 : 1;
+      return false;
     }
-  static App app; /* the Game struct is large; keep it off the stack */
   app.scale = 0; /* auto */
-  bool checking = getenv("A4C_CHECK") != NULL;
-  long every = getenv("A4C_EVERY") ? strtol(getenv("A4C_EVERY"), NULL, 10) : 0;
-  long max_frames = -1;
-  const char *play = NULL, *shot = NULL;
+  checking = getenv("A4C_CHECK") != NULL;
+  every = getenv("A4C_EVERY") ? strtol(getenv("A4C_EVERY"), NULL, 10) : 0;
+  const char *play = NULL;
   bool chase = false, editor = false, classic = false;
-  const char *sets[16], *clicks[16];
-  int nsets = 0, nclicks = 0;
+  const char *sets[16];
+  int nsets = 0;
   const char *map = NULL, *jet = NULL, *tod = NULL, *wx = NULL, *cmd = NULL, *renderer = NULL;
   int gfx = -1;
   const char *host = NULL, *join = NULL, *code = NULL;
-  double seconds = 0;
 
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--frames") && i + 1 < argc) {
@@ -814,44 +837,37 @@ int main(int argc, char **argv) {
       app.test_pattern = true;
     } else if (!strcmp(argv[i], "--version")) {
       printf(GAME_ID " %s\n", A4C_VERSION);
-      return 0;
+      *exit_code = 0;
+      return false;
     }
   }
 
-  SDL_SetAppMetadata(GAME_TITLE, A4C_VERSION, GAME_APP_ID);
-  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
-    SDL_Log("SDL_Init: %s", SDL_GetError());
-    return 1;
+  *exit_code = 1;
+  if (!plat_init(PLAT_VIDEO | PLAT_AUDIO | PLAT_PADS, GAME_TITLE, A4C_VERSION, GAME_APP_ID)) {
+    plat_log("platform start-up: %s", plat_error());
+    return false;
   }
-  if (!plat_net_init()) SDL_Log("network init failed; online play disabled");
+  if (!plat_net_init()) plat_log("network init failed; online play disabled");
 
   /* settings first: they pick the renderer */
   world_init();
   assets_init();
   jets_finish();
   for (int i = 1; i < argc; i++)
-    if (!strcmp(argv[i], "--flight-test")) return flight_test();
-    else if (!strcmp(argv[i], "--audit")) return audit(argc - i - 1, argv + i + 1);
+    if (!strcmp(argv[i], "--flight-test")) return *exit_code = flight_test(), false;
+    else if (!strcmp(argv[i], "--audit")) return *exit_code = audit(argc - i - 1, argv + i + 1), false;
   config_load(&app.settings);
   if (renderer) app.settings.modern = !strcmp(renderer, "modern");
   if (gfx >= 0) app.settings.gfx = gfx;
-  app.window = SDL_CreateWindow(GAME_TITLE ": " GAME_SUBTITLE_TEXT, 1280, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-  if (!app.window) {
-    SDL_Log("SDL_CreateWindow: %s", SDL_GetError());
-    SDL_Quit();
-    return 1;
+  if (!plat_window_open(GAME_TITLE ": " GAME_SUBTITLE_TEXT, 1280, 720)) {
+    plat_log("window: %s", plat_error());
+    plat_quit();
+    return false;
   }
-  if (!(app.settings.modern && gpu_init(app.window, app.settings.gfx))) {
-    app.renderer = SDL_CreateRenderer(app.window, NULL);
-    if (!app.renderer) {
-      SDL_Log("SDL_CreateRenderer: %s", SDL_GetError());
-      SDL_Quit();
-      return 1;
-    }
-    SDL_SetRenderVSync(app.renderer, 1);
-  }
-  SDL_Log(GAME_ID " %s, video %s, renderer %s", A4C_VERSION, SDL_GetCurrentVideoDriver(),
-          gpu_active() ? gpu_driver() : SDL_GetRendererName(app.renderer));
+  if (app.settings.modern) gpu_init(plat_native_window(), app.settings.gfx);
+  /* the picture now (the software one makes its renderer here), so the log can name what draws it */
+  ok = app_fit_framebuffer(&app);
+  plat_log(GAME_ID " %s, video %s, renderer %s", A4C_VERSION, plat_video_driver(), gpu_active() ? gpu_driver() : plat_renderer_name());
 
   if (map) app.settings.map = assets_map_find(map);
   if (classic) app.settings.classic = true;
@@ -943,149 +959,125 @@ int main(int argc, char **argv) {
   }
   for (int i = 0; chase && i < app.game.nplanes; i++) app.game.planes[i].chase = !app.game.planes[i].is_ai;
 
-  int ok = app_fit_framebuffer(&app);
-  const uint64_t freq = SDL_GetPerformanceFrequency();
-  const uint64_t loop_t0 = SDL_GetPerformanceCounter(); /* for --frames: the whole frame, GPU waits included */
-  const uint64_t step = freq / TICK_HZ;
-  const float dt = 1.0f / TICK_HZ;
-  uint64_t prev = SDL_GetPerformanceCounter(), acc = 0;
-  long frames = 0;
+  freq = plat_counter_hz();
+  loop_t0 = plat_counter(); /* for --frames: the whole frame, GPU waits included */
+  step = freq / TICK_HZ;
+  prev = plat_counter();
   app.running = ok;
+  push_clicks(0);
+  *exit_code = 0;
+  return true;
+}
 
-  while (app.running) {
-    SDL_Event ev;
-    for (int c = 0; c < nclicks; c++) { /* test hook: mouse clicks at given frames */
-      const char *a = clicks[c];
-      int how = *a == 'R' ? -1 : *a == 'W' ? 1 : 0;
-      if (how) a += 2;
-      long f;
-      float x, y;
-      if (sscanf(a, "%ld:%f:%f", &f, &x, &y) != 3 || f != frames) continue;
-      SDL_Event e = { 0 };
-      e.type = SDL_EVENT_MOUSE_MOTION;
-      e.motion.x = x;
-      e.motion.y = y;
-      SDL_PushEvent(&e);
-      SDL_zero(e);
-      if (how == 1) {
-        e.type = SDL_EVENT_MOUSE_WHEEL;
-        e.wheel.y = 1;
-        e.wheel.mouse_x = x;
-        e.wheel.mouse_y = y;
-      } else {
-        e.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
-        e.button.button = how ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
-        e.button.down = true;
-        e.button.x = x;
-        e.button.y = y;
-      }
-      SDL_PushEvent(&e);
+static void loop_event(const PlatEvent *ev) {
+  if (app.state == ST_EDITOR && ev->type != PE_QUIT && ev->type != PE_RESIZED) {
+    int ww, wh;
+    plat_window_size(&ww, &wh);
+    if (!editor_event(ev, (float)app.fb.w / (ww > 0 ? ww : 1), (float)app.fb.h / (wh > 0 ? wh : 1))) {
+      to_menu(&app);
+      ui_open(SCREEN_MENU);
     }
-    while (SDL_PollEvent(&ev)) {
-      if (app.state == ST_EDITOR && ev.type != SDL_EVENT_QUIT && ev.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-        int ww, wh;
-        SDL_GetWindowSize(app.window, &ww, &wh);
-        if (!editor_event(&ev, (float)app.fb.w / (ww > 0 ? ww : 1), (float)app.fb.h / (wh > 0 ? wh : 1))) {
-          to_menu(&app);
-          ui_open(SCREEN_MENU);
-        }
-        continue;
-      }
-      switch (ev.type) {
-      case SDL_EVENT_QUIT:
-        app.running = false;
-        break;
-      case SDL_EVENT_KEY_DOWN:
-        on_key(&app, &ev.key);
-        break;
-      case SDL_EVENT_TEXT_INPUT:
-        if (app.state == ST_MENU) ui_text(&app.settings, ev.text.text);
-        break;
-      case SDL_EVENT_GAMEPAD_ADDED:
-      case SDL_EVENT_GAMEPAD_REMOVED:
-        input_event(&ev);
-        break;
-      case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-        on_pad_button(&app, &ev.gbutton);
-        break;
-      case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (app.state == ST_INTRO) {
-          if (intro_time() > 0.5f) intro_to_menu(&app);
-          break;
-        }
-        on_mouse(&app, &ev);
-        break;
-      case SDL_EVENT_MOUSE_MOTION:
-      case SDL_EVENT_MOUSE_WHEEL:
-        on_mouse(&app, &ev);
-        break;
-      case SDL_EVENT_WINDOW_FOCUS_LOST:
-        if (!app.fixed) pause_game(&app); /* --frames runs are tests: a headless window has no focus */
-        break;
-      case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-        if (!app_fit_framebuffer(&app)) app.running = false;
-        break;
-      default:
-        break;
-      }
+    return;
+  }
+  switch (ev->type) {
+  case PE_QUIT:
+    app.running = false;
+    break;
+  case PE_KEY_DOWN:
+    on_key(&app, &ev->key);
+    break;
+  case PE_TEXT:
+    if (app.state == ST_MENU) ui_text(&app.settings, ev->text.text);
+    break;
+  case PE_PAD_ADDED:
+  case PE_PAD_REMOVED:
+    input_event(ev);
+    break;
+  case PE_PAD_DOWN:
+    on_pad_button(&app, ev->pad.id, ev->pad.button);
+    break;
+  case PE_MOUSE_DOWN:
+    if (app.state == ST_INTRO) {
+      if (intro_time() > 0.5f) intro_to_menu(&app);
+      break;
     }
+    on_mouse(&app, ev);
+    break;
+  case PE_MOUSE_MOVE:
+  case PE_WHEEL:
+    on_mouse(&app, ev);
+    break;
+  case PE_FOCUS_LOST:
+  case PE_PAUSE:
+    if (!app.fixed) pause_game(&app); /* --frames runs are tests: a headless window has no focus */
+    break;
+  case PE_RESIZED:
+    if (!app_fit_framebuffer(&app)) app.running = false;
+    break;
+  default:
+    break;
+  }
+}
 
-    if (max_frames >= 0) {
+static bool loop_frame(void) {
+  if (!ok) return false;
+  const float dt = 1.0f / TICK_HZ;
+  if (max_frames >= 0) {
+    app_update(&app, dt);
+    if (checking) physics_check(&app.game);
+  } else {
+    uint64_t now = plat_counter();
+    acc += now - prev;
+    prev = now;
+    if (acc > step * MAX_STEPS) acc = step * MAX_STEPS;
+    while (acc >= step) {
       app_update(&app, dt);
-      if (checking) physics_check(&app.game);
-    } else {
-      uint64_t now = SDL_GetPerformanceCounter();
-      acc += now - prev;
-      prev = now;
-      if (acc > step * MAX_STEPS) acc = step * MAX_STEPS;
-      while (acc >= step) {
-        app_update(&app, dt);
-        acc -= step;
-      }
+      acc -= step;
     }
-
-    music_update(&app);
-    /* the network page: hear LAN games, and take typing in its text fields */
-    int tsize;
-    net_scan(app.state == ST_MENU && ui_net_page() && app.settings.net_join && app.settings.net_via == NV_LAN);
-    bool typing = app.state == ST_MENU && ui_text_field(&app.settings, &tsize) != NULL;
-    if (typing != SDL_TextInputActive(app.window)) {
-      if (typing) SDL_StartTextInput(app.window);
-      else SDL_StopTextInput(app.window);
-    }
-    if (seconds > 0 && SDL_GetTicks() > (uint64_t)(seconds * 1000)) app.running = false;
-    if (shot && every <= 0 && gpu_active() && max_frames >= 0 && frames + 1 >= max_frames) gpu_screenshot(shot);
-    /* A4C_EVERY=n with --frames: also save every nth frame, the --screenshot name with the frame number in it
-     * (a %ld in the name), to make a film of the intro */
-    char every_path[512] = "";
-    if (shot && every > 0 && max_frames >= 0 && frames % every == 0) {
-      snprintf(every_path, sizeof every_path, shot, frames);
-      if (gpu_active()) gpu_screenshot(every_path);
-    }
-    app_render(&app);
-    if (every_path[0] && !gpu_active()) save_screenshot(&app, every_path);
-    ++frames;
-    if (max_frames >= 0 && frames >= max_frames) app.running = false;
   }
 
+  music_update(&app);
+  /* the network page: hear LAN games, and take typing in its text fields */
+  int tsize;
+  net_scan(app.state == ST_MENU && ui_net_page() && app.settings.net_join && app.settings.net_via == NV_LAN);
+  bool typing = app.state == ST_MENU && ui_text_field(&app.settings, &tsize) != NULL;
+  if (typing != plat_text_input_on()) plat_text_input(typing);
+  if (seconds > 0 && plat_ms() > (uint64_t)(seconds * 1000)) app.running = false;
+  if (shot && every <= 0 && gpu_active() && max_frames >= 0 && frames + 1 >= max_frames) gpu_screenshot(shot);
+  /* A4C_EVERY=n with --frames: also save every nth frame, the --screenshot name with the frame number in it
+   * (a %ld in the name), to make a film of the intro */
+  char every_path[512] = "";
+  if (shot && every > 0 && max_frames >= 0 && frames % every == 0) {
+    snprintf(every_path, sizeof every_path, shot, frames);
+    if (gpu_active()) gpu_screenshot(every_path);
+  }
+  app_render(&app);
+  if (every_path[0] && !gpu_active()) save_screenshot(&app, every_path);
+  ++frames;
+  if (max_frames >= 0 && frames >= max_frames) app.running = false;
+  push_clicks(frames);
+  return app.running;
+}
+
+static int loop_quit(void) {
   bool timed = max_frames >= 0 || seconds > 0;
   if (timed && getenv("A4C_PLANES")) /* test: where everyone ended up */
     for (int i = 0; i < app.game.nplanes; i++) {
       const Plane *p = &app.game.planes[i];
-      SDL_Log("plane %s: alive %d taxi %d cat %d pos %.0f %.0f %.0f speed %.0f ap %d score %d kills %d lives %d hp %.0f%s", p->name,
+      plat_log("plane %s: alive %d taxi %d cat %d pos %.0f %.0f %.0f speed %.0f ap %d score %d kills %d lives %d hp %.0f%s", p->name,
               p->alive, p->taxi, p->oncat, p->pos.x, p->pos.y, p->pos.z, p->speed, p->autopilot, plane_score(p), p->kills, p->lives,
               p->health, p->remote ? " (remote)" : "");
     }
-  if (max_frames >= 0 && checking) SDL_Log("physics faults: %d", physics_faults);
+  if (max_frames >= 0 && checking) plat_log("physics faults: %d", physics_faults);
   if (timed && getenv("A4C_PLANES"))
-    SDL_Log("game: time %.0f over %d winner %d reason %s", app.game.time, app.game.over, app.game.winner, app.game.reason);
+    plat_log("game: time %.0f over %d winner %d reason %s", app.game.time, app.game.over, app.game.winner, app.game.reason);
   if (seconds > 0 && max_frames < 0) /* test: the frame rate over the run, uncapped where the driver allows */
-    SDL_Log("ran %ld frames in %.1f s: %.0f fps, %.2f ms per frame drawn", frames, SDL_GetTicks() / 1000.0,
-            frames / (SDL_GetTicks() / 1000.0), frames ? (double)render_ticks * 1000.0 / (double)freq / (double)frames : 0.0);
+    plat_log("ran %ld frames in %.1f s: %.0f fps, %.2f ms per frame drawn", frames, plat_ms() / 1000.0,
+            frames / (plat_ms() / 1000.0), frames ? (double)render_ticks * 1000.0 / (double)freq / (double)frames : 0.0);
   if (max_frames >= 0)
-    SDL_Log("ran %ld frames, %u ticks, %.3f ms per frame drawn, %.3f ms per frame in all", frames, (unsigned)app.tick,
+    plat_log("ran %ld frames, %u ticks, %.3f ms per frame drawn, %.3f ms per frame in all", frames, (unsigned)app.tick,
             frames ? (double)render_ticks * 1000.0 / (double)freq / (double)frames : 0.0,
-            frames ? (double)(SDL_GetPerformanceCounter() - loop_t0) * 1000.0 / (double)freq / (double)frames : 0.0);
+            frames ? (double)(plat_counter() - loop_t0) * 1000.0 / (double)freq / (double)frames : 0.0);
   if (shot && !gpu_active() && every <= 0) save_screenshot(&app, shot);
 
   net_quit();
@@ -1093,11 +1085,15 @@ int main(int argc, char **argv) {
   music_quit();
   sfx_quit();
   fb_free(&app.fb);
-  if (app.texture) SDL_DestroyTexture(app.texture);
-  if (app.renderer) SDL_DestroyRenderer(app.renderer);
+  plat_present_close();
   gpu_quit();
-  SDL_DestroyWindow(app.window);
+  plat_window_close();
   plat_net_quit();
-  SDL_Quit();
+  plat_quit();
   return ok ? 0 : 1;
+}
+
+const PlatApp *plat_app(void) {
+  static const PlatApp GAME = { loop_init, loop_event, loop_frame, loop_quit };
+  return &GAME;
 }

@@ -1,6 +1,6 @@
 /* p5bench.c - how much work the game's software renderer, flight sim and
  * synth do per frame and per second of audio, built as a plain static
- * 32-bit x87 program (-march=pentium, no MMX or SSE) and run under
+ * 32-bit x87 program (-march=pentium, no MMX or SSE, no platform backend) and run under
  * valgrind's callgrind, to estimate what an old Pentium would make of it.
  * Test tool only, never shipped. Original code for this project.
  *
@@ -15,8 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <SDL3/SDL.h>
-
 #include "assets.h"
 #include "core/game.h"
 #include "core/map.h"
@@ -27,6 +25,8 @@
 #include "render3d.h"
 #include "sfx.h"
 #include "synth.h"
+
+void p5_pull_audio(int frames); /* stubs.c: n frames of the sound-effect mix */
 
 static Framebuffer fb;
 static Game game;
@@ -173,7 +173,7 @@ static int synth(const char *key, float seconds) {
 int main(int argc, char **argv) {
   world_init();
   if (!assets_init()) {
-    fprintf(stderr, "no assets (set A4C_ROOT to the repository)\n");
+    fprintf(stderr, "no assets (run it from the repository)\n");
     return 1;
   }
   if (argc >= 7 && !strcmp(argv[1], "scene"))

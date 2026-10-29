@@ -3,15 +3,15 @@
 #ifndef A4C_EDITOR_H
 #define A4C_EDITOR_H
 
-#include <SDL3/SDL.h>
 #include <stdbool.h>
 
+#include "platform/plat.h"
 #include "raster.h"
 
 void editor_open(int theme);
 /* Mouse positions come in window coordinates; kx, ky turn them into
  * framebuffer pixels. Returns false when the editor is closed. */
-bool editor_event(const SDL_Event *ev, float kx, float ky);
+bool editor_event(const PlatEvent *ev, float kx, float ky);
 void editor_update(float dt);
 void editor_draw(Framebuffer *fb);
 

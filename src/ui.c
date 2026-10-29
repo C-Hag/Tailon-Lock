@@ -10,8 +10,8 @@
 #include "intro.h"
 #include "music.h"
 #include "net.h"
+#include "platform/plat.h"
 
-#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -137,9 +137,10 @@ void ui_text(Settings *st, const char *utf8) {
   }
   for (const char *c = utf8; *c && n < size - 1; c++) {
     char ch = *c;
-    if (sel == ROW_NNAME) ch = (char)SDL_toupper(ch);
+    if (sel == ROW_NNAME && ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
+    bool alnum = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
     bool ok = sel == ROW_NCODE ? (ch >= '0' && ch <= '9') : sel == ROW_NNAME ? (ch > ' ' && ch < 127)
-                                                                      : (SDL_isalnum(ch) || ch == '.' || ch == ':' || ch == '-' || ch == '[' || ch == ']');
+                                                                      : (alnum || ch == '.' || ch == ':' || ch == '-' || ch == '[' || ch == ']');
     if (ok) {
       f[n++] = ch;
       f[n] = 0;

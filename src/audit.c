@@ -16,7 +16,6 @@
  *        [--json FILE]. Returns non-zero when a check failed. */
 #include "audit.h"
 
-#include <SDL3/SDL.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +27,7 @@
 #include "core/jets.h"
 #include "core/sim.h"
 #include "core/world.h"
+#include "platform/plat.h"
 
 #define DT (1.0f / 60)
 #define KT 1.944f
@@ -1496,12 +1496,12 @@ static void sorties_part(int n, const char *only) {
     if (only && strcmp(only, JETS[jet].id) != 0) continue;
     Tally t;
     memset(&t, 0, sizeof t);
-    uint64_t t0 = SDL_GetTicks();
+    uint64_t t0 = plat_ms();
     for (int k = first_sortie; k < first_sortie + n; k++) sortie(jet, k, &t, seed_base + (uint32_t)(jet * 7919 + k * 104729));
     printf("%-6s %-9s %d matches (%d over, %d timeouts) in %.0f game minutes (%.1f s): won %d, lost %d, drawn %d; "
            "%d kills, %d deaths (%d shot down, %d crashed, %d collisions); %d rounds, %d missiles, %d decoys, %d locks, "
            "%d take-offs, %d refuels, %d G-LOCs, %d stalls; cobras %d, flips %d, J-turns %d; %d faults\n",
-           JETS[jet].id, JETS[jet].name, t.sorties, t.done, t.timeouts, t.minutes, (SDL_GetTicks() - t0) / 1000.0, t.wins, t.losses, t.draws,
+           JETS[jet].id, JETS[jet].name, t.sorties, t.done, t.timeouts, t.minutes, (plat_ms() - t0) / 1000.0, t.wins, t.losses, t.draws,
            t.kills, t.deaths, t.shotdown, t.crashes, t.collisions, t.shots, t.msl, t.flares, t.locks, t.takeoffs, t.refuels, t.glocs,
            t.stalls, t.stunts[1], t.stunts[2], t.stunts[3], t.faults);
     for (int f = 0; f < t.nfault; f++) printf("    fault: %s\n", t.fault[f]);

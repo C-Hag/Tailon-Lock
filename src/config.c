@@ -4,7 +4,6 @@
 #include "config.h"
 #include "brand.h"
 
-#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,7 +51,7 @@ void config_defaults(Settings *s) {
 static bool ini_path(char *buf, size_t n, bool create) {
   char dir[512];
   if (!plat_config_dir(dir, sizeof dir)) return false;
-  if (create) SDL_CreateDirectory(dir);
+  if (create) plat_make_dir(dir);
   int k = snprintf(buf, n, "%s/settings.ini", dir);
   return k > 0 && (size_t)k < n;
 }

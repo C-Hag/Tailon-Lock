@@ -5,7 +5,6 @@
 #ifndef A4C_GPU_H
 #define A4C_GPU_H
 
-#include <SDL3/SDL.h>
 #include <stdbool.h>
 
 #include "core/map.h"
@@ -16,7 +15,7 @@ enum { GQ_LOW, GQ_MEDIUM, GQ_HIGH, GQ_ULTRA, GQ_COUNT };
 
 /* Opens the device on the window. False (and the game stays on the
  * software renderer) if there is no usable GPU. */
-bool gpu_init(SDL_Window *win, int quality);
+bool gpu_init(void *window, int quality); /* window: plat_native_window() */
 void gpu_quit(void);
 bool gpu_active(void);
 const char *gpu_driver(void);

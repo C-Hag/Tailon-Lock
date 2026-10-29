@@ -13,6 +13,8 @@
  * its texels, so it does not shimmer. */
 #include "gpu.h"
 
+#include <SDL3/SDL.h>
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -342,7 +344,8 @@ void gpu_set_quality(int q) {
   ensure_shadow();
 }
 
-bool gpu_init(SDL_Window *w, int q) {
+bool gpu_init(void *window, int q) {
+  SDL_Window *w = window;
   win = w;
   quality = q < 0 || q >= GQ_COUNT ? GQ_HIGH : q;
   /* Direct3D 12 first on Windows, Vulkan everywhere else (and as Windows' fallback) */

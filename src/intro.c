@@ -10,7 +10,6 @@
 #include "intro.h"
 #include "brand.h"
 
-#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +24,7 @@
 #include "music.h"
 #include "render3d.h"
 #include "sfx.h"
+#include "platform/plat.h"
 
 #define D2R (PI_F / 180)
 
@@ -486,7 +486,7 @@ bool intro_init(void) {
   json_free(S);
   json_free(A);
   ready = nshots > 0;
-  SDL_Log("intro: %d actors, %d shots, %d cards", nact, nshots, ncards);
+  plat_log("intro: %d actors, %d shots, %d cards", nact, nshots, ncards);
   return ready;
 }
 

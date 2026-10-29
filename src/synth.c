@@ -7,7 +7,6 @@
  * plus a small stereo room so it does not sound bone dry. */
 #include "synth.h"
 
-#include <SDL3/SDL.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +14,7 @@
 
 #include "assets.h"
 #include "core/json.h"
+#include "platform/plat.h"
 
 #define TAU 6.2831853f
 
@@ -186,7 +186,7 @@ Score *synth_load(const char *key) {
   s->loop = (float)json_num(json_get(j, "loop"));
   if (!(s->loop >= 0 && s->loop < s->end)) s->loop = 0;
   json_free(j);
-  SDL_Log("synth: %s, %d notes, %d hits, %.1f s, loop at %.1f s", key, s->nnotes, s->nhits, s->end, s->loop);
+  plat_log("synth: %s, %d notes, %d hits, %.1f s, loop at %.1f s", key, s->nnotes, s->nhits, s->end, s->loop);
   return s;
 }
 
@@ -255,11 +255,11 @@ bool synth_save(const Score *s, const char *path) {
   json_w_close(&w);
   char *text = json_w_finish(&w);
   if (!text) return false;
-  SDL_IOStream *f = SDL_IOFromFile(path, "wb");
-  bool ok = f && SDL_WriteIO(f, text, strlen(text)) == strlen(text);
-  if (f) SDL_CloseIO(f);
+  FILE *f = fopen(path, "wb");
+  bool ok = f && fwrite(text, 1, strlen(text), f) == strlen(text);
+  if (f && fclose(f)) ok = false;
   free(text);
-  SDL_Log("saved %s: %s", path, ok ? "ok" : SDL_GetError());
+  plat_log("saved %s: %s", path, ok ? "ok" : plat_error());
   return ok;
 }
 
