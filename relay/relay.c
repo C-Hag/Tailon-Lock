@@ -25,7 +25,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION 2
+#define VERSION 3 /* the same as src/net.c: the relay drops packets of any other version */
 enum { T_RHOST = 6, T_RCODE, T_RJOIN, T_RFAIL, T_PING };
 #define MAX_GAMES  1024
 #define IDLE_S     60  /* a game nobody has sent anything for is dropped */

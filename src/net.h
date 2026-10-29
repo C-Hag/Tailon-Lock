@@ -30,6 +30,7 @@ typedef struct {
   uint32_t game, seed;
   bool coop, pairs, classic, realistic, ground, gforce, dogfight, no_crash;
   int  diff, hits, lives, tod, weather;
+  int  drone;  /* beat the drone: 0 no, 1 the guest flies the drone, 2 the host does */
   char map[24];
   int  jets[2], load[2][3]; /* [0] the host's seat, [1] the guest's */
 } NetMatch;

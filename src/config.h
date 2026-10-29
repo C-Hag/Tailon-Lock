@@ -10,6 +10,7 @@ typedef struct {
   GameMode   mode;   /* MODE_1P, MODE_2P or MODE_DEFEND */
   bool       coop;
   bool       commander; /* defend: player 2 commands the carrier */
+  bool       drone2;    /* beat the drone: player 2 flies the drone (else the CPU) */
   Difficulty diff;
   bool       invert, sound, music, intro, gforce;
   bool       classic; /* classic keys and rules */
@@ -28,6 +29,7 @@ typedef struct {
   int        weather; /* WX_*, or -1 for the map's usual weather */
   /* network play: host or join, by LAN, address or relay */
   bool       net_join;
+  int        net_drone;      /* host a drone match: 0 no, 1 the guest flies the drone, 2 the host does */
   int        net_via;        /* NV_* */
   char       net_name[16];   /* shown to the other player */
   char       net_addr[48];   /* the host to join, "1.2.3.4" or "name:port" */

@@ -95,6 +95,33 @@ dogfight with cannon and heat-seekers that starts in the air), PLANES EACH
 leaves the controls dead for a few seconds, and the score counts as in the
 manual: 20 a cannon hit, 50 a missile hit, 200 a kill, 2000 a ground target.
 
+**Beat the Drone!** (MODE in the menu): one jet against the DR-7 Vesper, an
+unmanned combat drone with a vectoring nozzle and no pilot to black out (it
+takes 14 g). THE DRONE sets who flies it: the CPU (DRONE AI sets how often
+it uses its tricks) or player 2 on split screen. Over the network the host
+picks MATCH: DRONE, with the guest or the host flying it.
+
+The drone's nose and its flight path are separate. In normal flight it
+flies like the jets (arcade or realistic). Hold the vector key (T or E for
+player 1, Y for player 2, a stick click or Y on a pad) and the nozzle swings
+the nose at the same rate at any speed, far past the stall:
+
+- **Cobra**: hold vector and pull, let go of the stick with the nose up.
+  The wing flown broadside brakes hard and a chasing fighter overshoots;
+  let go of vector and the nose falls back onto the path.
+- **Flip**: hold vector and keep pulling; the nose goes all the way round.
+- **J-turn**: pull the nose over until it faces back down the path and hold
+  it there; the speed goes and the thrust pulls the path round behind it.
+- **Nose pointing**: with vector held the nose (and the gun) can point off
+  the path at a target the path cannot reach yet.
+- **Fast rolls**: the drone rolls half again as fast as a jet, more than
+  twice as fast when vectoring.
+
+The HUD shows VECTOR or POST-STALL and the angle of attack; every pilot
+here is told when the drone pulls a Cobra, a flip or a J-turn. Post-stall
+flight costs energy, and the drone has to get its speed back before the
+wing works again. `--flight-test` measures the moves.
+
 **Defend the carrier** (MODE in the menu): player 1 flies off the carrier's
 catapult; player 2 runs the carrier from its control room, or the turrets
 run on their own with CREW set to PILOT ONLY. Five waves of strike jets come
@@ -335,7 +362,8 @@ Check gamepads and fullscreen on a real Windows PC before a release.
 - `--jet ID` (af40, lf27, ecf90, ja46, sy26, vk33, ks55, nf24), `--map ID`, `--time dawn|day|dusk|night`, `--weather clear|scattered|overcast|storm`: override the menu.
 - `--chase`: start in chase view (for screenshots).
 - `--play defend` or `defend1`: the carrier defence with or without a commander.
-- `--pull`, `--cmd ACTIONS`: test hooks (full back stick; commander key presses).
+- `--play drone` or `drone2`: Beat the Drone!, the CPU or player 2 flying the drone. `--set net_drone=1|2` with `--host`: a network drone match (the guest or the host flies it).
+- `--pull`, `--vector`, `--cmd ACTIONS`: test hooks (full back stick; the drone's vector key held; commander key presses).
 - `--render-music KEY FILE.wav`: render one pass of a theme (horizon, pop,
   h2h, anthem, strike, cine, chip, overtone, neon, midnight, rocknroll, ghost) from the synth, to compare with
   the mp3 in `music/tracks/`.

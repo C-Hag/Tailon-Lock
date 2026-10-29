@@ -107,6 +107,7 @@ add_executable(tailonlock
   src/cockpit.c
   src/hangar.c
   src/flighttest.c
+  src/audit.c
   src/ui.c
   src/input.c
   src/config.c

@@ -419,6 +419,136 @@ static void ground_tests(int jet, bool classic) {
   free(g);
 }
 
+/* ---- the drone (Beat the Drone!) ----------------------------------------- */
+/* Just the drone in the sky, level at 3000 m, at speed. */
+static Plane *drone_setup(Game *g, float speed) {
+  int jets[2] = { 0, 0 };
+  GameRules R = { 0 };
+  R.realistic = realistic;
+  game_new_rules(g, MODE_DRONE, DIFF_NORMAL, true, jets, 1, &R);
+  Plane *p = NULL;
+  for (int i = 0; i < g->nplanes; i++) {
+    if (g->planes[i].drone) p = &g->planes[i];
+    else {
+      g->planes[i].inactive = true;
+      g->planes[i].alive = false;
+    }
+  }
+  p->lives = 99;
+  p->invuln = 0;
+  p->is_ai = false;
+  place(p, 3000, speed);
+  p->throttle = 1;
+  return p;
+}
+
+static void drone_tests(void) {
+  Game *g = malloc(sizeof *g);
+  if (!g) return;
+  printf("DR-7 drone, %s:\n", realistic ? "realistic" : "arcade");
+  /* a full pull without vectoring turns like a jet (a little better: no
+   * pilot, so 14 g) */
+  for (int k = 0; k < 2; k++) {
+    float v0 = k ? 260.0f : 160.0f;
+    Plane *p = drone_setup(g, v0);
+    float h0 = 0, h1 = 0;
+    for (int t = 0; t < 180; t++) {
+      hold(p, 0, 1.4f);
+      if (t >= 60) p->ctl.pitch = 1;
+      if (t == 120) h0 = hdg_of(p);
+      sim_update(g, DT);
+      check(g, p, "drone turn");
+    }
+    h1 = hdg_of(p);
+    float d = fabsf(h1 - h0);
+    if (d > PI_F) d = 2 * PI_F - d;
+    printf("  hard turn from %.0f kt: %.1f deg/s, now %.0f kt\n", v0 * KT, d * 180 / PI_F, p->speed * KT);
+  }
+  /* the Cobra: nose up past the vertical, then let it fall back */
+  {
+    Plane *p = drone_setup(g, 160);
+    float y0 = p->pos.y, maxA = 0, minV = 1e9f, back = -1;
+    int st = STUNT_NONE;
+    for (int t = 0; t < 60 * 8; t++) {
+      bool up = t < 84;
+      p->ctl.vec = up;
+      p->ctl.pitch = up ? clampf((1.55f - p->aoa) * 4, -1, 1) : 0.0f;
+      p->ctl.roll = 0;
+      sim_update(g, DT);
+      check(g, p, "drone cobra");
+      maxA = fmaxf(maxA, p->aoa);
+      minV = fminf(minV, p->speed);
+      if (t > 84 && back < 0 && p->aoa < 0.2f) back = g->time;
+      if (p->lastStunt) st = p->lastStunt;
+    }
+    printf("  cobra from 311 kt: nose %.0f deg off the path, speed down to %.0f kt, nose back in %.1f s, %+.0f m, %s;"
+           " 8 s on %.0f kt\n",
+           maxA * 180 / PI_F, minV * KT, back - 84 * DT, p->pos.y - y0, STUNT_NAMES[st][0] ? STUNT_NAMES[st] : "NOT SEEN",
+           p->speed * KT);
+    if (maxA < 1.2f || st != STUNT_COBRA) problems++;
+  }
+  /* the flip: hold the pull until the nose has gone all the way round */
+  {
+    Plane *p = drone_setup(g, 160);
+    float y0 = p->pos.y, tdone = -1, minV = 1e9f;
+    int st = STUNT_NONE;
+    for (int t = 0; t < 60 * 8; t++) {
+      bool pull = tdone < 0 && fabsf(p->stuntPitch) < 2 * PI_F - 0.15f;
+      if (!pull && tdone < 0) tdone = g->time;
+      p->ctl.vec = pull;
+      p->ctl.pitch = pull ? 1.0f : 0.0f;
+      p->ctl.roll = 0;
+      sim_update(g, DT);
+      check(g, p, "drone flip");
+      minV = fminf(minV, p->speed);
+      if (p->lastStunt) st = p->lastStunt;
+    }
+    printf("  flip from 311 kt: round in %.1f s, speed down to %.0f kt, %+.0f m, %s\n", tdone, minV * KT, p->pos.y - y0,
+           STUNT_NAMES[st][0] ? STUNT_NAMES[st] : "NOT SEEN");
+    if (tdone < 0 || st != STUNT_FLIP) problems++;
+  }
+  /* the J-turn: nose over the top to face back down the path, hold it
+   * there until the path follows */
+  {
+    Plane *p = drone_setup(g, 140);
+    vec3 v0 = v3_norm(p->vel), x0 = p->pos;
+    float trev = -1, ahead = 0;
+    int st = STUNT_NONE;
+    for (int t = 0; t < 60 * 10; t++) {
+      float nose = acosf(clampf(v3_dot(p->f, v0), -1, 1));
+      bool vec = trev < 0;
+      p->ctl.vec = vec;
+      p->ctl.pitch = nose < 2.9f ? 1.0f : 0.0f;
+      p->ctl.roll = 0;
+      sim_update(g, DT);
+      check(g, p, "drone j-turn");
+      ahead = fmaxf(ahead, v3_dot(v3_sub(p->pos, x0), v0));
+      vec3 hv = v3(p->vel.x, 0, p->vel.z);
+      if (trev < 0 && v3_len(hv) > 15 && v3_dot(v3_norm(hv), v0) < -0.94f) trev = g->time;
+      if (p->lastStunt) st = p->lastStunt;
+    }
+    printf("  j-turn from 272 kt: path reversed in %.1f s, %.0f m on past the start, %s; 10 s on %.0f kt\n", trev, ahead,
+           STUNT_NAMES[st][0] ? STUNT_NAMES[st] : "NOT SEEN", p->speed * KT);
+    if (trev < 0 || st != STUNT_JTURN) problems++;
+  }
+  /* hanging on the nozzle: nose straight up, full power, almost no speed */
+  {
+    Plane *p = drone_setup(g, 40);
+    p->f = v3(0, 1, 0);
+    p->u = v3(0, 0, -1);
+    p->vel = v3(0, 0, 40);
+    float y0 = p->pos.y;
+    for (int t = 0; t < 60 * 4; t++) {
+      p->ctl.vec = true;
+      p->ctl.pitch = p->ctl.roll = 0;
+      sim_update(g, DT);
+      check(g, p, "drone hover");
+    }
+    printf("  nose up on the nozzle for 4 s: %+.0f m, %.0f kt\n", p->pos.y - y0, p->speed * KT);
+  }
+  free(g);
+}
+
 int flight_test(void) {
   int twin = assets_map_find("twin-isles");
   world_set_map(assets_map(twin), TOD_DAY, WX_CLEAR);
@@ -431,6 +561,10 @@ int flight_test(void) {
       energy_tests(j, c == 1);
       ground_tests(j, c == 1);
     }
+  for (int c = 0; c < 2; c++) {
+    realistic = c == 1;
+    drone_tests();
+  }
   printf("%d physics problems\n", problems);
   return problems ? 1 : 0;
 }

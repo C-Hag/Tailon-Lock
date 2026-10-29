@@ -225,6 +225,15 @@ static void load_specs(void) {
     s->radius = num(p, "radius_km", 0);
     s->takeoff = num(p, "takeoff_m", 0);
     s->landing = num(p, "landing_m", 0);
+    JETS[k].s_vmax = s->vmax_sl / 3.6f;
+    JETS[k].s_corner = s->corner / 3.6f;
+    JETS[k].s_tw = num(p, "tw", 0);
+    JETS[k].s_roll = s->roll * PI_F / 180;
+    /* induced drag over the weight at corner speed, per g squared:
+     * K (W/S) / q, doubled to land the sheet's sustained turn rates */
+    float ws = num(p, "wing_loading", 0) * 9.81f;
+    if (ws > 0 && JETS[k].s_corner > 0)
+      JETS[k].s_induced = 4 * (float)num(j, "k", 0) * ws / (1.225f * JETS[k].s_corner * JETS[k].s_corner);
     const Json *g = json_get(j, "game");
     static const char *const STAT[7] = { "speed", "turn", "climb", "range", "field", "firepower", "stealth" };
     for (int q = 0; q < 7; q++) s->stat[q] = num(g, STAT[q], 5);

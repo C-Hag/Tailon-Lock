@@ -184,16 +184,21 @@ void hud_draw(Framebuffer *fb, Game *g, Plane *p, const HudView *V, bool label) 
     /* status messages */
     const char *msg[8];
     uint32_t mcol[8];
-    char refuel[32];
+    char refuel[32], aoa[32];
     int nm = 0;
 #define MSG(s, c) (msg[nm] = (s), mcol[nm] = (c), nm++)
     if (p->warn && blink) MSG("MISSILE!", WARN);
     float agl = p->pos.y - terrain_h(p->pos.x, p->pos.z);
     if (!p->onGround && !p->refuel && agl < 300 && p->f.y < -0.15f && blink) MSG("PULL UP", WARN);
+    /* the drone: the nozzle at work, and how far the nose is off the path */
+    if (p->drone && (p->vecOn || p->aoa > 0.35f)) {
+      snprintf(aoa, sizeof aoa, "%s  AOA %d", p->vecOn ? "VECTOR" : "POST-STALL", (int)roundf(p->aoa * 180 / PI_F));
+      MSG(aoa, p->aoa > 0.6f ? AMBER : HUDC);
+    }
     if (p->stall) MSG("STALL", AMBER);
     /* in a hard turn: where the speed is against corner speed, the fastest turn */
     else if (!p->onGround && p->gload > 3.5f) {
-      float vc = jet_corner(&JETS[p->jet]);
+      float vc = jet_corner(jet_type(p->jet, g->realistic));
       MSG(p->speed < vc * 0.85f ? "SLOW - TURN WEAKENING" : p->speed > vc * 1.2f ? "FAST - WIDE TURN" : "CORNER SPEED", DIM);
     }
     if (p->out) MSG("RETURN TO COMBAT AREA", AMBER);
@@ -211,7 +216,10 @@ void hud_draw(Framebuffer *fb, Game *g, Plane *p, const HudView *V, bool label) 
 #undef MSG
     for (int i = 0; i < nm && i < 3; i++) fb_text(fb, msg[i], cx, cy + sh * 0.2f + i * 11 * k, ks, C(mcol[i]), ALIGN_CENTER, 1);
     if (p->evT > 0) fb_text(fb, p->ev, cx, cy - sh * 0.22f, ks, C(INK), ALIGN_CENTER, 1);
-    if (g->time < 6 && !g->over) fb_text(fb, "TAB  CHASE VIEW     ESC  PAUSE", cx, vy + sh - 8 * k, ks, C(DIM), ALIGN_CENTER, 1);
+    if (g->time < 6 && !g->over && p->drone)
+      fb_text(fb, p->hidx == 1 ? "HOLD Y: VECTOR  PULL: COBRA, FLIP" : "HOLD T OR E: VECTOR  PULL: COBRA, FLIP",
+              cx, vy + sh - 8 * k, ks, C(DIM), ALIGN_CENTER, 1);
+    else if (g->time < 6 && !g->over) fb_text(fb, "TAB  CHASE VIEW     ESC  PAUSE", cx, vy + sh - 8 * k, ks, C(DIM), ALIGN_CENTER, 1);
   } else {
     fb_text(fb, p->deathMsg ? p->deathMsg : "", cx, cy - 12 * k, 2 * ks, C(WARN), ALIGN_CENTER, 1);
     if (p->lives > 0) {

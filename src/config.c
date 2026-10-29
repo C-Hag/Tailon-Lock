@@ -58,7 +58,10 @@ static bool ini_path(char *buf, size_t n, bool create) {
 }
 
 void config_set(Settings *s, const char *key, const char *val) {
-  if (!strcmp(key, "mode")) s->mode = !strcmp(val, "2p") ? MODE_2P : !strcmp(val, "defend") ? MODE_DEFEND : MODE_1P;
+  if (!strcmp(key, "mode"))
+    s->mode = !strcmp(val, "2p") ? MODE_2P : !strcmp(val, "defend") ? MODE_DEFEND : !strcmp(val, "drone") ? MODE_DRONE : MODE_1P;
+  else if (!strcmp(key, "drone")) s->drone2 = !strcmp(val, "p2");
+  else if (!strcmp(key, "net_drone")) s->net_drone = atoi(val) % 3; /* not saved: the next host picks again */
   else if (!strcmp(key, "crew")) s->commander = strcmp(val, "pilot") != 0;
   else if (!strcmp(key, "match")) s->coop = !strcmp(val, "coop");
   else if (!strcmp(key, "diff")) s->diff = !strcmp(val, "easy") ? DIFF_EASY : !strcmp(val, "hard") ? DIFF_HARD : DIFF_NORMAL;
@@ -119,12 +122,13 @@ void config_save(const Settings *s) {
   static const char *const tods[] = { "dawn", "day", "dusk", "night" };
   static const char *const wxs[] = { "clear", "scattered", "overcast", "storm" };
   fprintf(f, "# " GAME_TITLE " settings\nmode=%s\ncrew=%s\nmatch=%s\ndiff=%s\ninvert=%d\nsound=%d\nmusic=%d\ntrack=%s\njet1=%s\njet2=%s\nmap=%s\ntime=%s\nweather=%s\nintro=%d\ngforce=%d\nrules=%s\nsize=%s\nstart=%s\nhandling=%s\nscenario=%s\ncrash=%d\nplanes=%d\nhits=%d\nload1=%d,%d,%d\nload2=%d,%d,%d\nrenderer=%s\ngraphics=%s\n",
-          s->mode == MODE_2P ? "2p" : s->mode == MODE_DEFEND ? "defend" : "1p", s->commander ? "commander" : "pilot", s->coop ? "coop" : "vs", diff[s->diff], s->invert, s->sound, s->music,
+          s->mode == MODE_2P ? "2p" : s->mode == MODE_DEFEND ? "defend" : s->mode == MODE_DRONE ? "drone" : "1p", s->commander ? "commander" : "pilot", s->coop ? "coop" : "vs", diff[s->diff], s->invert, s->sound, s->music,
           THEMES[s->track].key, JETS[s->jets[0]].id, JETS[s->jets[1]].id, assets_map_id(s->map), tods[s->tod],
           s->weather < 0 ? "auto" : wxs[s->weather], s->intro, s->gforce, s->classic ? "classic" : "modern", s->pairs ? "2v2" : "1v1", s->ground ? "ground" : "air", s->realistic ? "realistic" : "arcade",
           s->dogfight ? "dogfight" : "full", s->crash, s->lives, s->hits, s->load[0][0], s->load[0][1], s->load[0][2],
           s->load[1][0], s->load[1][1], s->load[1][2], s->modern ? "modern" : "retro",
           (const char *[]){ "low", "medium", "high", "ultra" }[s->gfx & 3]);
+  fprintf(f, "drone=%s\n", s->drone2 ? "p2" : "cpu");
   fprintf(f, "net=%s\nnet_via=%s\nnet_name=%s\nnet_relay=%s\n", s->net_join ? "join" : "host",
           (const char *[]){ "lan", "address", "relay" }[s->net_via % NV_COUNT], s->net_name[0] ? s->net_name : "PILOT", s->net_relay[0] ? s->net_relay : "localhost");
   if (s->net_addr[0]) fprintf(f, "net_addr=%s\n", s->net_addr);

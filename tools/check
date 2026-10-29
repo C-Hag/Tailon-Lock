@@ -120,7 +120,7 @@ SHOTS = {  # name: arguments; each a fixed number of ticks with the retro (softw
     'titlecard': ['--play', 'intro', '--frames', '3735'],
     'hangar': ['--frames', '200', '--cmd', 'kh', '--seed', '1'],
 }
-MODES = ['1p', '2p', 'coop', 'defend', 'defend1', 'demo']
+MODES = ['1p', '2p', 'coop', 'defend', 'defend1', 'drone', 'demo']
 PERF = ['--play', '1p', '--frames', '1500', '--seed', '1', '--cmd', 'g']
 MAPS = ['twin-isles', 'dune-sea', 'high-valley', 'iron-coast']
 TODS = ['dawn', 'day', 'dusk', 'night']

@@ -9,11 +9,13 @@
  *   --frames N        quit after N frames; each frame then runs exactly one
  *                     60 Hz tick, so a run is repeatable (headless smoke test)
  *   --scale N         internal resolution divisor: 1, 2 or 3 (default 1 modern, 2 retro)
- *   --play MODE       skip the menu: 1p, 2p, coop (or intro, demo)
+ *   --play MODE       skip the menu: 1p, 2p, coop, defend, defend1, drone (the CPU flies it),
+ *                     drone2 (player 2 flies it), or intro, demo
  *   --seed N          fixed random seed
  *   --screenshot F    save the last frame as a BMP
  *   --chase           start local jets in chase view
  *   --pull            hold the stick fully back (G-force screenshots)
+ *   --vector          hold the drone's vector key (with --pull: the drone flips)
  *   --cmd ACTIONS     defend: commander actions at the start, letters u d l r o(rder) m(ode) f (man) p (launch),
  *                     x (captain to the deck)
  *   --map ID --time T --weather W   override the menu's map choice
@@ -39,6 +41,7 @@
 #include "compose.h"
 #include "editor.h"
 #include "flighttest.h"
+#include "audit.h"
 #include "gpu.h"
 #include "core/game.h"
 #include "core/sim.h"
@@ -81,6 +84,7 @@ typedef struct {
   bool          intro_bg;   /* the menu sits over the intro's last shot */
   bool          intro_keep; /* the intro's music carries on under the menu */
   bool          pull;       /* test hook: full back stick */
+  bool          vector;     /* test hook: the drone's vector key held */
   bool          bots;       /* test hook: CPU pilots fly the players' jets */
 } App;
 
@@ -143,7 +147,8 @@ static void bots_fly(App *app) {
 static void start_with(App *app, const Settings *s, uint32_t seed) {
   app->intro_bg = app->intro_keep = false;
   apply_map_of(s);
-  bool coop = s->mode == MODE_DEFEND ? s->commander : s->mode == MODE_2P && s->coop;
+  /* the second seat: the carrier's commander, the drone's pilot, or a 2-player wingman */
+  bool coop = s->mode == MODE_DEFEND ? s->commander : s->mode == MODE_DRONE ? s->drone2 : s->mode == MODE_2P && s->coop;
   GameRules R = { 0 };
   R.classic = s->classic;
   R.g_effects = s->gforce;
@@ -169,8 +174,9 @@ static NetMatch match_of(App *app) {
   const Settings *s = &app->settings;
   NetMatch m = { 0 };
   m.seed = next_seed(app);
-  m.coop = s->coop;
-  m.pairs = s->pairs && !s->coop;
+  m.drone = s->net_drone;
+  m.coop = s->coop && !m.drone;
+  m.pairs = s->pairs && !s->coop && !m.drone;
   m.classic = s->classic;
   m.realistic = s->realistic;
   m.ground = s->ground;
@@ -192,7 +198,8 @@ static NetMatch match_of(App *app) {
  * host's choices, then each takes its own seat. */
 static void start_net(App *app, const NetMatch *m) {
   Settings s = app->settings;
-  s.mode = MODE_2P;
+  s.mode = m->drone ? MODE_DRONE : MODE_2P;
+  s.drone2 = true;
   s.coop = m->coop;
   s.pairs = m->pairs;
   s.classic = m->classic;
@@ -208,8 +215,10 @@ static void start_net(App *app, const NetMatch *m) {
   s.weather = m->weather >= -1 && m->weather < WX_COUNT ? m->weather : -1;
   s.map = assets_map_find(m->map);
   for (int k = 0; k < 2; k++) {
-    s.jets[k] = m->jets[k] >= 0 && m->jets[k] < NJETS ? m->jets[k] : 0;
-    if (game_load_fits(m->load[k])) memcpy(s.load[k], m->load[k], sizeof s.load[k]);
+    /* when the host flies the drone, the jet in seat 0 is the guest's */
+    int from = m->drone == 2 ? 1 - k : k;
+    s.jets[k] = m->jets[from] >= 0 && m->jets[from] < NJETS ? m->jets[from] : 0;
+    if (game_load_fits(m->load[from])) memcpy(s.load[k], m->load[from], sizeof s.load[k]);
   }
   start_with(app, &s, m->seed);
   net_setup(&app->game);
@@ -285,6 +294,7 @@ static void app_update(App *app, float dt) {
       Plane *p = &g->planes[g->locals[i]];
       if (p->alive) input_read_human(g, p, dt, p->hidx, app->settings.invert);
       if (app->pull) p->ctl.pitch = 1;
+      if (app->vector) p->ctl.vec = true;
     }
     if (g->def.on && g->def.commander && g->def.cmd_state == CMD_WALK) {
       Defense *d = &g->def;
@@ -754,6 +764,8 @@ int main(int argc, char **argv) {
       wx = argv[++i];
     } else if (!strcmp(argv[i], "--cmd") && i + 1 < argc) {
       cmd = argv[++i];
+    } else if (!strcmp(argv[i], "--vector")) {
+      app.vector = true;
     } else if (!strcmp(argv[i], "--pull")) {
       app.pull = true;
     } else if (!strcmp(argv[i], "--renderer") && i + 1 < argc) {
@@ -798,6 +810,7 @@ int main(int argc, char **argv) {
   jets_finish();
   for (int i = 1; i < argc; i++)
     if (!strcmp(argv[i], "--flight-test")) return flight_test();
+    else if (!strcmp(argv[i], "--audit")) return audit(argc - i - 1, argv + i + 1);
   config_load(&app.settings);
   if (renderer) app.settings.modern = !strcmp(renderer, "modern");
   if (gfx >= 0) app.settings.gfx = gfx;
@@ -842,6 +855,8 @@ int main(int argc, char **argv) {
     else if (!strcmp(play, "coop")) { app.settings.mode = MODE_2P; app.settings.coop = true; }
     else if (!strcmp(play, "defend")) { app.settings.mode = MODE_DEFEND; app.settings.commander = true; }
     else if (!strcmp(play, "defend1")) { app.settings.mode = MODE_DEFEND; app.settings.commander = false; }
+    else if (!strcmp(play, "drone")) { app.settings.mode = MODE_DRONE; app.settings.drone2 = false; }
+    else if (!strcmp(play, "drone2")) { app.settings.mode = MODE_DRONE; app.settings.drone2 = true; }
     else app.settings.mode = MODE_1P;
     if (strcmp(play, "demo") != 0) start_game(&app);
   }

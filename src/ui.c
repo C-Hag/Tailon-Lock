@@ -38,6 +38,19 @@ static int sel = ROW_START;
 static int sel2;
 static int page, hseat, lan_sel;
 
+/* The modes the MODE row steps through, in order. A new mode goes here,
+ * with its name in mode_name and its MATCH row (the second seat) below. */
+static const GameMode MENU_MODES[] = { MODE_1P, MODE_2P, MODE_DEFEND, MODE_DRONE };
+#define NMENU_MODES (int)(sizeof MENU_MODES / sizeof MENU_MODES[0])
+
+static const char *mode_name(GameMode m) {
+  return m == MODE_2P ? "2 PLAYERS" : m == MODE_DEFEND ? "DEFEND THE CARRIER" : m == MODE_DRONE ? "BEAT THE DRONE!" : "1 PLAYER";
+}
+
+/* The network MATCH row: versus, co-op, or the drone flown by either side. */
+static int net_kind(const Settings *st) { return st->net_drone ? 1 + st->net_drone : st->coop ? 1 : 0; }
+static const char *const NET_KINDS[4] = { "VERSUS", "CO-OP", "DRONE: GUEST FLIES IT", "DRONE: YOU FLY IT" };
+
 static int row_page(int r) {
   if ((r >= ROW_NROLE && r <= ROW_NNAME) || r == ROW_NGO || r == ROW_NBACK) return PAGE_NET;
   if (r >= ROW_GFORCE && r <= ROW_INTRO) return PAGE_SETTINGS;
@@ -49,12 +62,15 @@ static int row_page(int r) {
 static bool row_visible(const Settings *st, int r) {
   if (row_page(r) != page) return false;
   if (r == ROW_MATCH) return st->mode != MODE_1P;
-  if (r == ROW_SIZE) return st->mode != MODE_DEFEND && !(st->mode == MODE_2P && st->coop);
-  if (r == ROW_STARTAT) return st->mode != MODE_DEFEND;
+  if (r == ROW_SIZE) return st->mode != MODE_DEFEND && st->mode != MODE_DRONE && !(st->mode == MODE_2P && st->coop);
+  if (r == ROW_STARTAT) return st->mode != MODE_DEFEND && st->mode != MODE_DRONE;
   if (r == ROW_JET2) return st->mode == MODE_2P || (st->mode == MODE_DEFEND && st->commander);
-  if (r == ROW_DIFF) return st->mode == MODE_1P || st->mode == MODE_DEFEND || (st->mode == MODE_2P && (st->coop || st->pairs));
+  if (r == ROW_DIFF)
+    return st->mode == MODE_1P || st->mode == MODE_DEFEND || (st->mode == MODE_DRONE && !st->drone2) ||
+           (st->mode == MODE_2P && (st->coop || st->pairs));
   if (r == ROW_MAP) return assets_map_count() > 0;
   if (r == ROW_TOD || r == ROW_WX) return st->map >= 0;
+  if (r == ROW_SCEN) return st->classic && st->mode != MODE_DEFEND && st->mode != MODE_DRONE; /* the drone is always close in */
   if (r >= ROW_SCEN && r <= ROW_HITS) return st->classic && st->mode != MODE_DEFEND;
   if (r == ROW_INTRO || r == ROW_WATCH) return intro_available();
   if (r == ROW_EDITOR) return false; /* the music editor is a development tool now (--music-editor) */
@@ -167,12 +183,16 @@ UiAction ui_nav(Screen s, Settings *st, Nav n) {
   bool change = n == NAV_LEFT || n == NAV_RIGHT || n == NAV_OK;
   switch (sel) {
   case ROW_MODE:
-    if (change) st->mode = (GameMode)(st->mode == MODE_1P ? (d > 0 ? MODE_2P : MODE_DEFEND)
-                                      : st->mode == MODE_2P ? (d > 0 ? MODE_DEFEND : MODE_1P) : (d > 0 ? MODE_1P : MODE_2P));
+    if (change) {
+      int k = 0;
+      while (k < NMENU_MODES && MENU_MODES[k] != st->mode) k++;
+      st->mode = MENU_MODES[(k + d + NMENU_MODES) % NMENU_MODES];
+    }
     break;
   case ROW_MATCH:
     if (!change) break;
     if (st->mode == MODE_DEFEND) st->commander = !st->commander;
+    else if (st->mode == MODE_DRONE) st->drone2 = !st->drone2;
     else st->coop = !st->coop;
     break;
   case ROW_SIZE:    if (change) st->pairs = !st->pairs; break;
@@ -219,7 +239,13 @@ UiAction ui_nav(Screen s, Settings *st, Nav n) {
     }
     break;
   case ROW_NROLE:  if (change && !net_active()) st->net_join = !st->net_join; break;
-  case ROW_NMATCH: if (change && !net_active()) st->coop = !st->coop; break;
+  case ROW_NMATCH:
+    if (change && !net_active()) {
+      int k = (net_kind(st) + d + 4) % 4;
+      st->coop = k == 1;
+      st->net_drone = k >= 2 ? k - 1 : 0;
+    }
+    break;
   case ROW_NVIA:   if (change && !net_active()) st->net_via = (st->net_via + d + NV_COUNT) % NV_COUNT; break;
   case ROW_NGAME:
     if (change && net_lan_count()) lan_sel = (lan_sel + d + net_lan_count()) % net_lan_count();
@@ -504,7 +530,7 @@ static void draw_net(Framebuffer *fb, const Settings *st, float time) {
     bool text = false;
     switch (r) {
     case ROW_NROLE:  lab = "I WANT TO"; snprintf(v, sizeof v, "%s", st->net_join ? "JOIN A GAME" : "HOST A GAME"); break;
-    case ROW_NMATCH: lab = "MATCH"; snprintf(v, sizeof v, "%s", st->coop ? "CO-OP" : "VERSUS"); break;
+    case ROW_NMATCH: lab = "MATCH"; snprintf(v, sizeof v, "%s", NET_KINDS[net_kind(st)]); break;
     case ROW_NVIA:   lab = "OVER"; snprintf(v, sizeof v, "%s", via[st->net_via % NV_COUNT]); break;
     case ROW_NGAME:
       lab = "GAME";
@@ -540,8 +566,12 @@ static void draw_net(Framebuffer *fb, const Settings *st, float time) {
   /* what each choice needs */
   const char *help;
   if (!st->net_join) {
-    snprintf(v, sizeof v, "YOU HOST: %s, %s, %s.", st->coop ? "CO-OP" : "VERSUS", st->pairs ? "2 VS 2" : "1 VS 1",
-             assets_map_name(st->map));
+    if (st->net_drone)
+      snprintf(v, sizeof v, "YOU HOST: BEAT THE DRONE, %s, %s.", st->net_drone == 2 ? "YOU FLY THE DRONE" : "YOUR FRIEND FLIES IT",
+               assets_map_name(st->map));
+    else
+      snprintf(v, sizeof v, "YOU HOST: %s, %s, %s.", st->coop ? "CO-OP" : "VERSUS", st->pairs ? "2 VS 2" : "1 VS 1",
+               assets_map_name(st->map));
     y = wrap_text(&b, v, y, 46, C_INK);
     help = st->net_via == NV_LAN ? "PLAYERS ON YOUR NETWORK FIND YOUR GAME IN THEIR LIST AND JOIN WITH THE CODE. THE MAIN MENU SETS THE MAP AND RULES."
            : st->net_via == NV_ADDRESS ? "FORWARD UDP PORT 27960 ON YOUR ROUTER TO THIS COMPUTER, THEN GIVE YOUR FRIEND YOUR PUBLIC IP ADDRESS AND THE CODE."
@@ -570,8 +600,9 @@ static void draw_menu(Framebuffer *fb, const Settings *st, float time) {
   static const char *const diff[] = { "EASY", "NORMAL", "ACE" };
   char row[ROWS][48]; /* a jet row: designation (up to 15) + name (up to 23) */
   memset(row, 0, sizeof row);
-  snprintf(row[ROW_MODE], sizeof row[0], "%s", st->mode == MODE_1P ? "1 PLAYER" : st->mode == MODE_2P ? "2 PLAYERS" : "DEFEND THE CARRIER");
+  snprintf(row[ROW_MODE], sizeof row[0], "%s", mode_name(st->mode));
   if (st->mode == MODE_DEFEND) snprintf(row[ROW_MATCH], sizeof row[0], "%s", st->commander ? "PILOT + COMMANDER" : "PILOT ONLY");
+  else if (st->mode == MODE_DRONE) snprintf(row[ROW_MATCH], sizeof row[0], "%s", st->drone2 ? "PLAYER 2 FLIES IT" : "CPU FLIES IT");
   else snprintf(row[ROW_MATCH], sizeof row[0], "%s", st->coop ? "CO-OP" : "VERSUS");
   snprintf(row[ROW_SIZE], sizeof row[0], "%s", st->pairs ? "2 VS 2" : "1 VS 1");
   snprintf(row[ROW_STARTAT], sizeof row[0], "%s", st->ground ? "CARRIER VS BASE" : "IN THE AIR");
@@ -602,15 +633,15 @@ static void draw_menu(Framebuffer *fb, const Settings *st, float time) {
   snprintf(row[ROW_INTRO], sizeof row[0], "%s", st->intro ? "ON" : "OFF");
   const char *label[ROWS] = { 0 };
   label[ROW_MODE] = "MODE";
-  label[ROW_MATCH] = st->mode == MODE_DEFEND ? "CREW" : "MATCH";
+  label[ROW_MATCH] = st->mode == MODE_DEFEND ? "CREW" : st->mode == MODE_DRONE ? "THE DRONE" : "MATCH";
   label[ROW_SIZE] = "MATCH SIZE";
   label[ROW_STARTAT] = "START";
-  label[ROW_JET1] = st->mode == MODE_1P ? "YOUR JET" : "P1 JET";
+  label[ROW_JET1] = st->mode == MODE_1P || (st->mode == MODE_DRONE && !st->drone2) ? "YOUR JET" : "P1 JET";
   label[ROW_JET2] = st->mode == MODE_DEFEND ? "COMMANDER JET" : "P2 JET";
   label[ROW_MAP] = "MAP";
   label[ROW_TOD] = "TIME";
   label[ROW_WX] = "WEATHER";
-  label[ROW_DIFF] = "ENEMY PILOT";
+  label[ROW_DIFF] = st->mode == MODE_DRONE ? "DRONE AI" : "ENEMY PILOT";
   label[ROW_RULES] = "CONTROLS";
   label[ROW_HANDLING] = "HANDLING";
   label[ROW_SCEN] = "SCENARIO";
@@ -662,6 +693,12 @@ static void draw_menu(Framebuffer *fb, const Settings *st, float time) {
     btext(&b, "CONSOLE: ARROWS PICK  ENTER ORDERS  P LAUNCH", 150, 329, 1, C_DIM, ALIGN_CENTER);
     return;
   }
+  if (st->mode == MODE_DRONE && sel <= ROW_MATCH) {
+    draw_jet_info(&b, &JETS[DRONE_JET], 302);
+    btext(&b, st->drone2 ? "DRONE: P2 KEYS, HOLD Y TO VECTOR. PULL: COBRA OR FLIP" : "SHOOT DOWN THE DRONE. IT FLIES PAST THE STALL.", 150, 329, 1,
+          C_LAMP, ALIGN_CENTER);
+    return;
+  }
   if (st->classic) {
     btext(&b, st->mode == MODE_2P ? "P1 Q/A DIVE/CLIMB Z/X BANK D/S POWER F FIRE" : "Q/A DIVE/CLIMB  Z/X BANK  D/S POWER  F FIRE", 150, 311, 1, C_DIM, ALIGN_CENTER);
     btext(&b, st->mode == MODE_2P ? "P1 W WPN R DECOY C MAP T AUTO  P2 P/L N/M K/J" : "W WEAPON  R FLARES/CHAFF  C MAP  T AUTOPILOT", 150, 320, 1, C_DIM, ALIGN_CENTER);
@@ -696,6 +733,7 @@ static void draw_over(Framebuffer *fb, const Game *g) {
   else if (w < 0) t = "DRAW";
   else if (g->coop) t = w == 0 ? "MISSION COMPLETE" : "MISSION FAILED";
   else if (g->mode == MODE_1P) t = w == 0 ? "YOU WIN" : "CPU WINS";
+  else if (g->mode == MODE_DRONE) t = w == 0 ? "DRONE DOWN!" : "THE DRONE WINS";
   else t = w == 0 ? "PLAYER 1 WINS" : "PLAYER 2 WINS";
   title(&b, t, 130, 18, 2, ALIGN_CENTER);
   btext(&b, g->reason, 130, 38, 1, C_INK, ALIGN_CENTER);

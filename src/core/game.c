@@ -31,6 +31,8 @@ void game_event(Plane *p, const char *text) {
   p->evT = 2.4f;
 }
 
+const char *const STUNT_NAMES[4] = { "", "COBRA", "FLIP", "J-TURN" };
+
 typedef struct { int team; bool ai; const char *name; int hidx; } RosterEntry;
 
 static int build_roster(GameMode mode, bool coop, bool pairs, RosterEntry *out) {
@@ -46,6 +48,11 @@ static int build_roster(GameMode mode, bool coop, bool pairs, RosterEntry *out) 
     if (coop) ADD(0, false, "COMMANDER", 1);
     for (int k = 0; k < 6; k++) ADD(1, true, BANDIT[k], -1);
   }
+  else if (mode == MODE_DRONE) {
+    /* coop here means player 2 flies the drone */
+    ADD(0, false, coop ? "PLAYER 1" : "YOU", 0);
+    ADD(1, !coop, "DRONE", coop ? 1 : -1);
+  }
   else if (coop) { ADD(0, false, "PLAYER 1", 0); ADD(0, false, "PLAYER 2", 1); ADD(1, true, "CPU 1", -1); ADD(1, true, "CPU 2", -1); }
   else if (pairs) { ADD(0, false, "PLAYER 1", 0); ADD(0, true, "WINGMAN 1", -1); ADD(1, false, "PLAYER 2", 1); ADD(1, true, "WINGMAN 2", -1); }
   else { ADD(0, false, "PLAYER 1", 0); ADD(1, false, "PLAYER 2", 1); }
@@ -59,6 +66,12 @@ static int build_roster(GameMode mode, bool coop, bool pairs, RosterEntry *out) 
  * modern rules the chosen heat-seekers up to MAX_MSL. */
 void game_full_load(const Game *g, const Plane *p, int *full) {
   bool chosen = p->load[0] >= 0;
+  if (p->drone) { /* the drone: its cannon and four heat-seekers in the bay */
+    full[0] = 4;
+    full[1] = full[2] = 0;
+    full[3] = g->classic ? 3000 : MAX_AMMO;
+    return;
+  }
   if (g->classic) {
     full[0] = chosen ? p->load[0] : MAX_MSL;
     full[1] = chosen ? p->load[1] : 0;
@@ -127,7 +140,7 @@ static void ground_spawn(Game *g, Plane *p) {
 
 void game_spawn(Game *g, Plane *p) {
   const Base *b = &BASES[p->team];
-  if (g->dogfight) {
+  if (g->dogfight || g->mode == MODE_DRONE) {
     /* close range dogfight: in the air, a few kilometres apart, nose to nose */
     /* the meeting point and axis are shared by both sides, so they turn in
      * towards each other: offset sideways and in height, not head-on. A
@@ -165,6 +178,9 @@ void game_spawn(Game *g, Plane *p) {
   p->taxi = p->oncat = false;
   p->autopilot = false;
   p->stunT = 0;
+  p->vecOn = p->stunt = false;
+  p->aoa = 0;
+  p->lastStunt = STUNT_NONE;
   if (g->ground_start && !g->dogfight && !g->def.on) ground_spawn(g, p);
   p->vel = v3_scale(p->f, p->speed);
   p->fuel = 100;
@@ -222,21 +238,21 @@ void game_new_rules(Game *g, GameMode mode, Difficulty diff, bool coop, const in
   if (rules && mode != MODE_DEMO) {
     g->classic = rules->classic;
     g->g_effects = rules->g_effects;
-    g->ground_start = rules->ground_start && mode != MODE_DEFEND;
+    g->ground_start = rules->ground_start && mode != MODE_DEFEND && mode != MODE_DRONE;
     g->no_crash = rules->no_crash;
     g->realistic = rules->realistic;
     g->dogfight = rules->dogfight && rules->classic && mode != MODE_DEFEND;
-    if (mode == MODE_DEFEND) { /* the classic-rules options are not shown for the carrier defence */
+    g->hits_to_kill = rules->hits;
+    g->lives = rules->lives;
+    if (mode == MODE_DEFEND) { /* the classic rules options are not shown for the carrier defence */
       g->no_crash = false;
       g->hits_to_kill = 0;
       g->lives = 0;
     }
-    g->hits_to_kill = rules->hits;
-    g->lives = rules->lives;
   }
   g->mode = mode;
   g->diff = diff;
-  g->coop = coop;
+  g->coop = coop && mode != MODE_DRONE; /* the drone's crew is not a squadron */
   g->rng.state = seed;
   g->dfx = game_rand(g, -3000, 3000);
   g->dfz = game_rand(g, -3000, 3000);
@@ -264,7 +280,11 @@ void game_new_rules(Game *g, GameMode mode, Difficulty diff, bool coop, const in
     make_plane(g, p, roster[i].team, roster[i].ai, diff, slot - (slots - 1) / 2.0f);
     snprintf(p->name, sizeof p->name, "%s", roster[i].name);
     p->hidx = roster[i].hidx;
-    if (rules && p->hidx >= 0 && game_load_fits(rules->load[p->hidx])) {
+    if (mode == MODE_DRONE && roster[i].team == 1) {
+      p->drone = true;
+      arm(g, p);
+    }
+    if (rules && p->hidx >= 0 && !p->drone && game_load_fits(rules->load[p->hidx])) {
       memcpy(p->load, rules->load[p->hidx], sizeof p->load);
       arm(g, p);
     }
@@ -272,6 +292,7 @@ void game_new_rules(Game *g, GameMode mode, Difficulty diff, bool coop, const in
     if (p->hidx >= 0) p->jet = seatJets ? seatJets[p->hidx] : 0;
     else p->jet = (int)(rng_f(&g->rng) * NJETS);
     if (p->jet < 0 || p->jet >= NJETS) p->jet = 0;
+    if (p->drone) p->jet = DRONE_JET;
   }
   g->nplanes = n;
   for (int i = 0; i < n; i++)
@@ -282,8 +303,8 @@ void game_new_rules(Game *g, GameMode mode, Difficulty diff, bool coop, const in
     { -1500, 1100, TGT_SAM }, { 1500, 1100, TGT_SAM }, { -800, -600, TGT_FUEL },
     { 800, -600, TGT_FUEL }, { -2000, 200, TGT_RADAR }, { 2000, 200, TGT_HANGAR },
   };
-  /* the close range dogfight is jets only (classic rules) */
-  bool targets = mode != MODE_DEFEND && !g->dogfight;
+  /* the close range dogfight is jets only (classic rules), and so is the drone */
+  bool targets = mode != MODE_DEFEND && mode != MODE_DRONE && !g->dogfight;
   for (int t = 0; t < 2 && !MAP && targets; t++) {
     const Base *b = &BASES[t];
     for (int k = 0; k < 6; k++) {
@@ -313,6 +334,9 @@ void game_new_rules(Game *g, GameMode mode, Difficulty diff, bool coop, const in
     x->spin = game_rand(g, 0, 6);
   }
   sim_update_tanker(g, 0);
+  if (mode == MODE_DRONE)
+    for (int i = 0; i < g->nplanes; i++)
+      if (g->planes[i].hidx >= 0) game_event(&g->planes[i], g->planes[i].drone ? "YOU FLY THE DRONE" : "BEAT THE DRONE!");
   if (mode == MODE_DEFEND) {
     defend_setup(g, coop);
     for (int i = 0; i < g->nplanes; i++)

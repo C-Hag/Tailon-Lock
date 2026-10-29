@@ -3,6 +3,7 @@
 
 #include "core/defend.h"
 #include "core/game.h"
+#include "core/jets.h"
 #include "core/mathx.h"
 #include "core/sim.h"
 #include "core/world.h"
@@ -163,6 +164,46 @@ static void test_captain(void) {
   CHECK(d->cap.x <= ISLAND_X0 + 0.01f);
 }
 
+/* Beat the Drone!: a CPU ace flies the jet against the CPU drone. The
+ * drone must fly its post-stall moves, nothing may break, and the match
+ * has to end. */
+static void test_drone_match(void) {
+  static Game g;
+  for (int seed = 1; seed <= 3; seed++) {
+    game_new(&g, MODE_DRONE, DIFF_HARD, false, NULL, 77u + seed);
+    Plane *jet = &g.planes[0], *dr = &g.planes[1];
+    CHECK(!jet->drone && dr->drone && dr->is_ai && dr->jet == DRONE_JET && g.ntargets == 0);
+    jet->is_ai = true;
+    jet->ai.diff = DIFF_HARD;
+    jet->ai.gt = -1;
+    int ticks = 0, stunts[4] = { 0 }, prev = STUNT_NONE, moves[BFM_COUNT] = { 0 }, pbfm = -1;
+    float maxA = 0;
+    for (; ticks < 60 * 60 * 30 && !g.over; ticks++) {
+      sim_update(&g, 1.0f / 60);
+      g.nsounds = 0;
+      for (int i = 0; i < g.nplanes; i++) {
+        const Plane *p = &g.planes[i];
+        CHECK(!isnan(p->pos.x) && !isnan(p->pos.y) && !isnan(p->pos.z) && !isnan(p->vel.x));
+        CHECK(fabsf(v3_len(p->f) - 1) < 1e-3f);
+      }
+      if (dr->alive) maxA = fmaxf(maxA, dr->aoa);
+      if (dr->lastStunt != prev && dr->lastStunt) stunts[dr->lastStunt]++;
+      if (dr->ai.bfm != pbfm) moves[dr->ai.bfm]++;
+      pbfm = dr->ai.bfm;
+      prev = dr->lastStunt;
+      if (failures) break;
+    }
+    CHECK(g.over);
+    CHECK(maxA > 1.2f); /* it flew past the stall */
+    printf("drone match %d: %s after %.0f s (%s); cobras %d, flips %d, j-turns %d, max aoa %.0f\n", seed,
+           g.winner < 0 ? "draw" : g.winner ? "the drone wins" : "the jet wins", ticks / 60.0, g.reason, stunts[STUNT_COBRA],
+           stunts[STUNT_FLIP], stunts[STUNT_JTURN], maxA * 57.3f);
+    printf("  moves flown:");
+    for (int k = BFM_COBRA; k < BFM_COUNT; k++) printf(" %s %d", BFM_NAMES[k], moves[k]);
+    printf("; jet kills %d, drone kills %d\n", jet->kills, dr->kills);
+  }
+}
+
 int main(void) {
   test_captain();
   test_defend();
@@ -171,6 +212,7 @@ int main(void) {
   test_vec3();
   test_world();
   test_demo_match();
+  test_drone_match();
   if (failures) {
     fprintf(stderr, "%d check(s) failed\n", failures);
     return 1;

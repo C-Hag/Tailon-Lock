@@ -195,7 +195,7 @@ void r3d_gloss(float g) { gloss_override = g; }
 static float mesh_gloss(const Mesh *M) {
   if (gloss_override >= 0) return gloss_override;
   if (M == &MESH_TANKER || M == &MESH_JET[0] || M == &MESH_JET[1]) return 1;
-  for (int j = 0; j < NJETS; j++)
+  for (int j = 0; j < MAX_JETS; j++)
     for (int t = 0; t < 2; t++)
       if (M == &JETS[j].mesh[t] || M == &JETS[j].lod[t]) return 1;
   if (M == &MESH_CARRIER || M == &MESH_TARGET[0][TGT_SHIP] || M == &MESH_CIWS_GUN) return 0.25f;

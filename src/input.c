@@ -158,12 +158,14 @@ bool input_read_human(Game *g, Plane *p, float dt, int idx, bool invert) {
   const bool *ks = SDL_GetKeyboardState(NULL);
   Controls *c = &p->ctl;
   float pitch = 0, roll = 0, thr = 0;
-  bool gun = false, msl = false, flr = false, fire = false, sel = false, map = false, ap = false, start = false;
+  bool gun = false, msl = false, flr = false, fire = false, sel = false, map = false, ap = false, start = false, vec = false;
   int b0 = g->nlocals > 1 ? idx : 0, b1 = g->nlocals > 1 ? idx : 1;
   for (int b = b0; b <= b1; b++) {
     const Bind *B = g->classic ? &CLASSIC[b] : &BIND[b];
     fire = fire || down(ks, &B->fire);
     ap = ap || ks[b ? SDL_SCANCODE_Y : SDL_SCANCODE_T];
+    /* the drone's thrust vectoring: the autopilot key, and E for player 1 */
+    vec = vec || ks[b ? SDL_SCANCODE_Y : SDL_SCANCODE_T] || (!b && ks[SDL_SCANCODE_E]);
     sel = sel || down(ks, &B->sel);
     map = map || down(ks, &B->map);
     if (down(ks, &B->down)) pitch += 1;
@@ -190,6 +192,8 @@ bool input_read_human(Game *g, Plane *p, float dt, int idx, bool invert) {
     sel = sel || SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_NORTH);
     map = map || SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_BACK);
     ap = ap || SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_RIGHT_STICK);
+    vec = vec || SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_RIGHT_STICK) || SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_LEFT_STICK) ||
+          (!g->classic && SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_NORTH));
     thr += axis(gp, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) - axis(gp, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) - DZ(axis(gp, SDL_GAMEPAD_AXIS_RIGHTY));
 #undef DZ
     bool st = SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_START);
@@ -211,5 +215,6 @@ bool input_read_human(Game *g, Plane *p, float dt, int idx, bool invert) {
   c->fire = fire;
   c->sel = sel;
   c->map = map;
+  c->vec = vec;
   return start;
 }

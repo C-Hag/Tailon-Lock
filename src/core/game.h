@@ -20,7 +20,9 @@
 #define MAX_PARTS    1700
 #define MAX_SOUNDS   64
 
-typedef enum { MODE_DEMO, MODE_1P, MODE_2P, MODE_DEFEND } GameMode;
+/* MODE_DRONE: Beat the Drone! One jet against an unmanned drone that flies
+ * past the stall (core/sim.c fly_drone); the CPU flies it, or player 2. */
+typedef enum { MODE_DEMO, MODE_1P, MODE_2P, MODE_DEFEND, MODE_DRONE } GameMode;
 typedef enum { DIFF_EASY, DIFF_NORMAL, DIFF_HARD } Difficulty;
 
 typedef enum { REF_NONE, REF_PLANE, REF_GROUND, REF_FLARE, REF_MISSILE, REF_CARRIER } RefKind;
@@ -32,6 +34,7 @@ typedef struct {
   bool  fire, sel, map; /* classic keys: fire the selected weapon, select, map view */
   bool  ap;             /* autopilot toggle */
   bool  stick;          /* the pilot is moving the stick (takes over from the autopilot) */
+  bool  vec;            /* the drone: thrust vectoring held, for the post-stall moves */
 } Controls;
 
 /* Classic weapons, cycled with the select key. */
@@ -53,11 +56,14 @@ typedef struct {
   int   bfm;      /* the dogfight manoeuvre being flown (BFM_*) */
   float bfmT;     /* how long it has been flown */
   float burstT;   /* gun bursts: on while positive, then a pause */
+  float moveCool; /* the drone: time until its next post-stall move */
 } AiPilot;
 
-/* A CPU pilot's dogfight manoeuvres (basic fighter manoeuvres). */
+/* A CPU pilot's dogfight manoeuvres (basic fighter manoeuvres), then the
+ * drone's post-stall moves, which only thrust vectoring makes possible. */
 enum {
   BFM_PURSUIT, BFM_LEAD, BFM_LAG, BFM_HIGH_YOYO, BFM_LOW_YOYO, BFM_PERCH, BFM_BREAK, BFM_JINK, BFM_EXTEND, BFM_REVERSE,
+  BFM_COBRA, BFM_FLIP, BFM_JTURN, BFM_POINT, BFM_ROLL,
   BFM_COUNT
 };
 extern const char *const BFM_NAMES[BFM_COUNT];
@@ -94,6 +100,12 @@ typedef struct {
   float apAlt, apHdg;
   float pitchRate; /* rad/s, last tick */
   float stunT;   /* after a missile hit the controls do not answer (classic rules) */
+  /* the drone (MODE_DRONE): its nose (f) and its flight path (vel) part
+   * company past the stall; aoa is the angle between them */
+  bool  drone, vecOn, stunt;
+  float aoa, stuntPitch, stuntMaxA; /* the move being flown: nose turned, most nose-up over the path */
+  vec3  stuntV0;
+  int   lastStunt; /* STUNT_*: the move just finished, for the HUD and the CPU */
   int   score;    /* awarded on this computer */
   int   netScore; /* awarded on the other computer, in a network match */
   int   load[3];  /* chosen loadout: heat, radar, air-to-ground (-1 heat: the default) */
@@ -107,7 +119,7 @@ typedef struct {
   const char *deathMsg;
   /* network play: a jet the other computer flies, moved by its snapshots */
   bool  remote, netFire;
-  struct { vec3 pos, f, u; float speed, thr, age; bool have; } snap;
+  struct { vec3 pos, f, u, vel; float speed, thr, age; bool have; } snap;
 } Plane;
 
 typedef struct {
@@ -225,6 +237,8 @@ typedef struct {
   int      nnetev;
 } Game;
 enum { NE_MISSILE, NE_FLARES, NE_GONE };
+enum { STUNT_NONE, STUNT_COBRA, STUNT_FLIP, STUNT_JTURN };
+extern const char *const STUNT_NAMES[4];
 
 extern const char *const TNAME[TGT_TYPES];
 typedef struct { float hp, hx, hz, h; } TargetDef;

@@ -99,7 +99,7 @@ static void addr_text(const Addr *a, char *buf, size_t n) {
  * then on every match packet is encrypted and signed (XChaCha20-Poly1305,
  * Monocypher) and numbered, so it cannot be read, changed or replayed. A
  * wrong guess costs a full round trip, and the host gives up after 10. */
-#define VERSION 2
+#define VERSION 3 /* relay/relay.c checks it too: change both together */
 enum {
   T_BEACON = 1, T_HELLO, T_WELCOME, T_STATE, T_BYE, T_RHOST, T_RCODE, T_RJOIN, T_RFAIL, T_PING,
   T_CHALLENGE, T_JOIN, T_REJECT
@@ -489,7 +489,7 @@ static void lan_poll(float dt) {
       if (N.nlan == 8) continue;
       N.nlan++;
     }
-    snprintf(N.lan_games[k].name, sizeof N.lan_games[k].name, "%.12s %s", name, coop ? "CO-OP" : "VS");
+    snprintf(N.lan_games[k].name, sizeof N.lan_games[k].name, "%.12s %s", name, coop == 2 ? "DRONE" : coop ? "CO-OP" : "VS");
     snprintf(N.lan_games[k].addr, sizeof N.lan_games[k].addr, "%s", addr);
     N.lan_games[k].age = 0;
   }
@@ -506,6 +506,7 @@ static void put_match(Buf *p, const NetMatch *m) {
   put8(p, m->lives);
   put8(p, m->tod);
   put8(p, m->weather + 1);
+  put8(p, m->drone);
   puts_(p, m->map, sizeof m->map);
   for (int s = 0; s < 2; s++) {
     put8(p, m->jets[s]);
@@ -529,6 +530,7 @@ static void get_match(Buf *p, NetMatch *m) {
   m->lives = get8(p);
   m->tod = get8(p);
   m->weather = get8(p) - 1;
+  m->drone = get8(p) % 3;
   gets_(p, m->map, sizeof m->map);
   for (int s = 0; s < 2; s++) {
     m->jets[s] = get8(p);
@@ -640,7 +642,7 @@ NetEvent net_poll(float dt, NetMatch *out) {
         head(&p, T_BEACON);
         puts_(&p, N.name, 16);
         put32(&p, NET_PORT);
-        put8(&p, N.match.coop);
+        put8(&p, N.match.drone ? 2 : N.match.coop);
         puts_(&p, N.match.map, 24);
         Addr b = { 0 };
         b.sin_family = AF_INET;
@@ -784,13 +786,15 @@ NetEvent net_poll(float dt, NetMatch *out) {
 /* ---- the match: who flies what -------------------------------------------------------------- */
 void net_setup(Game *g) {
   int mine = N.role == R_HOST ? 0 : 1;
+  /* the drone is seat 1: when the host flies it, the seats swap */
+  int seat = N.match.drone == 2 ? 1 - mine : mine;
   g->net = true;
   g->net_side = mine;
   g->nlocals = 0;
   for (int i = 0; i < g->nplanes; i++) {
     Plane *p = &g->planes[i];
     /* the host flies its seat and every CPU jet; the guest its own seat */
-    bool own = p->hidx >= 0 ? p->hidx == mine : mine == 0;
+    bool own = p->hidx >= 0 ? p->hidx == seat : mine == 0;
     p->remote = !own;
     if (own && p->hidx >= 0) {
       p->hidx = 0; /* our keys and first pad fly it */
@@ -880,6 +884,7 @@ static void send_state(Game *g) {
     putv(&p, q->pos);
     putv(&p, q->f);
     putv(&p, q->u);
+    putv(&p, q->vel);
     putf(&p, q->speed);
     putf(&p, q->throttle);
     put8(&p, q->alive | (q->alive && (q->ctl.gun || (q->ctl.fire && q->wsel == W_CANNON)) && q->ammo >= 1) << 1 |
@@ -941,7 +946,7 @@ static void take_state(Game *g, Buf *p) {
   int np = get8(p);
   for (int k = 0; k < np && !p->bad; k++) {
     int i = get8(p);
-    vec3 pos = getv(p), f = getv(p), u = getv(p);
+    vec3 pos = getv(p), f = getv(p), u = getv(p), vel = getv(p);
     float speed = getf(p), thr = getf(p);
     int flags = get8(p);
     float hp = getf(p);
@@ -953,6 +958,7 @@ static void take_state(Game *g, Buf *p) {
     q->snap.pos = pos;
     q->snap.f = v3_norm(f);
     q->snap.u = v3_norm(u);
+    q->snap.vel = v3_len(vel) < 600 ? vel : v3_scale(q->snap.f, speed);
     q->snap.speed = speed;
     q->snap.thr = thr;
     q->snap.age = 0;

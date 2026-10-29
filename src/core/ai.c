@@ -5,7 +5,8 @@
 #include "core/jets.h"
 
 const char *const BFM_NAMES[BFM_COUNT] = { "PURE PURSUIT", "LEAD PURSUIT", "LAG PURSUIT", "HIGH YO-YO", "LOW YO-YO",
-                                           "PERCH",        "BREAK",        "GUNS JINK",   "EXTENSION",  "REVERSAL" };
+                                           "PERCH",        "BREAK",        "GUNS JINK",   "EXTENSION",  "REVERSAL",
+                                           "COBRA",        "FLIP",         "J-TURN",      "NOSE POINT", "VECTOR ROLL" };
 
 const DiffTable DIFF[3] = {
   { 0.62f, 1.0f, 0.06f, 15, 0.35f, 0.07f, 0.5f, 5000 },
@@ -28,7 +29,7 @@ static void dogfight(Game *g, Plane *p, const Plane *e, float dist, float dt, ve
                      bool *hard) {
   AiPilot *ai = &p->ai;
   const DiffTable *D = &DIFF[ai->diff];
-  const JetType *jt = &JETS[p->jet];
+  const JetType *jt = jet_type(p->jet, g->realistic);
   vec3 los = v3_scale(v3_sub(e->pos, p->pos), 1 / fmaxf(dist, 1));
   float ata = acosf(clampf(v3_dot(p->f, los), -1, 1));                  /* my nose off the enemy */
   float aot = acosf(clampf(v3_dot(e->f, los), -1, 1));                  /* off his tail: 0 = right behind him */
@@ -147,6 +148,116 @@ static void dogfight(Game *g, Plane *p, const Plane *e, float dist, float dt, ve
   }
 }
 
+/* The drone's post-stall moves (thrust vectoring, sim.c fly_drone), flown
+ * between its jet-style dogfighting: with a fighter on its tail it throws
+ * the nose up into a Cobra or a flip, so the fighter overshoots, then
+ * points the nose and the gun at him; with him behind and far off it
+ * J-turns to face him; close and off its nose it points at him without
+ * turning the path; and against a missile it rolls hard round the
+ * vectored nose. An easy drone does this rarely, an ace drone often.
+ * Writes the stick directly (direct) or a goal to steer at. Returns false
+ * when no move is being flown. */
+static bool drone_moves(Game *g, Plane *p, const Plane *e, float dist, float missileD, float dt, vec3 *goal, float *thr,
+                        bool *gun, bool *hard, bool *vec, bool *direct, float *dp, float *dr) {
+  AiPilot *ai = &p->ai;
+  const DiffTable *D = &DIFF[ai->diff];
+  int skill = ai->diff;
+  float agl = p->pos.y - terrain_h(p->pos.x, p->pos.z);
+  ai->moveCool -= dt;
+  bool moving = ai->bfm >= BFM_COBRA;
+  if (!e || !e->alive) {
+    if (moving) ai->bfm = BFM_PURSUIT;
+    return false;
+  }
+  vec3 los = v3_scale(v3_sub(e->pos, p->pos), 1 / fmaxf(dist, 1));
+  float ata = acosf(clampf(v3_dot(p->f, los), -1, 1));
+  float his_ata = acosf(clampf(-v3_dot(e->f, los), -1, 1));
+  float tLead = dist / (1150 + p->speed) * D->lead;
+  vec3 lead = v3_add(e->pos, v3_scale(e->vel, tLead));
+  if (!moving && ai->moveCool <= 0 && agl > 800) {
+    static const float COOL[3] = { 14, 7, 3.5f };
+    int want = -1;
+    if (missileD < 1400) want = BFM_ROLL;
+    else if (his_ata < 0.6f && dist < 1400 && ata > 1.9f) /* on our tail */
+      want = p->speed > 120 ? (game_rand(g, 0, 1) < 0.6f ? BFM_COBRA : BFM_FLIP) : BFM_JTURN;
+    else if (ata > 2.0f && dist > 700 && dist < 4000) want = BFM_JTURN;
+    else if (skill > 0 && dist < 1000 && ata > 0.2f && ata < 1.3f) want = BFM_POINT;
+    if (want >= 0) {
+      ai->bfm = want;
+      ai->bfmT = 0;
+      ai->moveCool = COOL[skill] * (want == BFM_POINT ? 0.6f : 1.0f);
+      moving = true;
+    }
+  }
+  if (!moving) return false;
+  ai->bfmT += dt;
+  float t = ai->bfmT;
+  bool done = false;
+  switch (ai->bfm) {
+  case BFM_COBRA: /* nose up past the vertical, hold, let it fall back */
+    *thr = 1;
+    *direct = true;
+    *dr = 0;
+    if (t < 1.4f && !(t > 0.2f && p->speed < 45)) {
+      *vec = true;
+      *dp = clampf((1.55f - p->aoa) * 4, -1, 1); /* hold the nose near 90 degrees */
+    } else if (t < 2.0f) *dp = 0;
+    else done = true;
+    break;
+  case BFM_FLIP: /* the nose all the way round, back onto the path */
+    *thr = 1;
+    *direct = true;
+    *vec = true;
+    *dp = 1;
+    *dr = 0;
+    if (fabsf(p->stuntPitch) > 2 * PI_F - 0.25f || t > 3.2f) {
+      *vec = false;
+      *dp = 0;
+      done = t > 3.6f || p->aoa < 0.3f;
+    }
+    break;
+  case BFM_JTURN: { /* nose round onto him, held there until the path has followed it */
+    *thr = 1;
+    *vec = true;
+    *hard = true;
+    *goal = e->pos;
+    vec3 path = v3_norm(p->vel);
+    done = (ata < 0.3f && v3_dot(path, los) > 0.7f) || t > 5.0f;
+    break;
+  }
+  case BFM_POINT: /* point nose and gun at him off the path */
+    *vec = true;
+    *hard = true;
+    *goal = lead;
+    *thr = 0.7f;
+    if (acosf(clampf(v3_dot(v3_norm(v3_sub(lead, p->pos)), p->f), -1, 1)) < D->gunCone * 1.5f && dist < 900) *gun = true;
+    done = t > 1.6f || ata > 1.6f || dist > 1300;
+    break;
+  case BFM_ROLL: /* a hard vectored roll to spoil the missile's aim */
+    *thr = 1;
+    *direct = true;
+    *vec = true;
+    *dp = 0.6f;
+    *dr = ai->jit.x < 0 ? -1.0f : 1.0f;
+    done = t > 1.4f;
+    break;
+  default:
+    done = true;
+  }
+  if (done) {
+    /* a Cobra or a flip leaves him out in front: point at him */
+    int prev = ai->bfm;
+    ai->bfm = BFM_PURSUIT;
+    ai->bfmT = 0;
+    if ((prev == BFM_COBRA || prev == BFM_FLIP) && skill > 0 && dist < 1300 && ata < 1.3f) {
+      ai->bfm = BFM_POINT;
+      return true;
+    }
+    *vec = *direct = false;
+  }
+  return true;
+}
+
 void ai_control(Game *g, Plane *p, float dt) {
   AiPilot *ai = &p->ai;
   const DiffTable *D = &DIFF[ai->diff];
@@ -176,8 +287,21 @@ void ai_control(Game *g, Plane *p, float dt) {
   if (threat && td < 2600) ai->threatT += dt;
   else ai->threatT = 0;
 
-  if (p->fuel < 22 || (p->missiles == 0 && p->ammo < 60)) ai->refuel = true;
-  if (ai->refuel && p->fuel > 94 && p->missiles >= 4) { ai->refuel = false; ai->final_leg = false; }
+  /* home to refuel with enough left to get there: the base can be the far
+   * side of the map, and full power burns a tank in about two minutes */
+  float need;
+  {
+    const Base *hb = &BASES[p->team];
+    float home = sqrtf((p->pos.x - hb->x) * (p->pos.x - hb->x) + (p->pos.z - hb->z) * (p->pos.z - hb->z)) + 3500;
+    need = home / 220 * (0.18f + 0.55f * 0.8f) * jet_type(p->jet, g->realistic)->burn * (p->drone ? 0.33f : 1.0f) *
+                 (g->realistic ? 2.0f : 1.4f) + 6;
+    need = fminf(need, 35);
+    if (p->fuel < fmaxf(22, need) || (p->missiles == 0 && p->ammo < 60)) ai->refuel = true;
+  }
+  /* full again: fuel, and the missiles it carries (a loadout can have fewer than four) */
+  int full[4];
+  game_full_load(g, p, full);
+  if (ai->refuel && p->fuel > 94 && p->missiles >= (full[0] < 4 ? full[0] : 4)) { ai->refuel = false; ai->final_leg = false; }
   float eDist = e && e->alive ? v3_dist(e->pos, p->pos) : 1e9f;
 
   bool enemyTargetsLeft = false;
@@ -201,14 +325,22 @@ void ai_control(Game *g, Plane *p, float dt) {
       goal = v3_add(p->pos, v3_scale(v3_add(v3_scale(side, -1), v3_scale(tm, 0.6f)), 1000));
       hard = true;
     }
-  } else if (ai->refuel && !(e && e->alive && eDist < 1200 && p->fuel > 8)) {
+  } else if (ai->refuel && !(e && e->alive && eDist < 1200 && p->fuel > need)) {
     const Base *b = &BASES[p->team];
     float elev = terrain_h(b->x, b->z);
     vec3 E = v3(b->x, elev + 260, b->z + b->dir * 3200), T = v3(b->x, elev + 70, b->z - b->dir * 900);
     if (!ai->final_leg) {
       goal = E;
       thr = 0.8f;
-      if (v3_dist(E, p->pos) < 600) ai->final_leg = true;
+      /* realistic slows down slower (no arcade drag): come in at circuit
+       * speed, power off and speed brakes out until there */
+      if (g->realistic && p->speed > 165) thr = 0;
+      /* over the gate, whatever the height (it can sit over a hill the
+       * terrain avoidance keeps us above); realistic turns wider, and a
+       * 600 m gate is one it can only circle */
+      float gx = E.x - p->pos.x, gz = E.z - p->pos.z;
+      if (gx * gx + gz * gz < (g->realistic ? 1500.0f * 1500.0f : 600.0f * 600.0f) && (!g->realistic || p->speed < 200))
+        ai->final_leg = true;
     } else {
       goal = T;
       thr = 0.03f;
@@ -269,18 +401,62 @@ void ai_control(Game *g, Plane *p, float dt) {
     }
   }
 
+  bool vec = false, direct = false;
+  float dp = 0, dr = 0;
+  if (p->drone && !(ai->refuel && !(e && e->alive && eDist < 1200)))
+    drone_moves(g, p, e, eDist, threat ? td : 1e9f, dt, &goal, &thr, &gun, &hard, &vec, &direct, &dp, &dr);
+
+  /* never fly into anyone, a wingman included: too close, or paths that
+   * pass within 120 m in the next three seconds, turn away from where the
+   * other will be (wingmen off the same runway fly the same line) */
+  for (int i = 0; i < g->nplanes; i++) {
+    const Plane *q = &g->planes[i];
+    if (q == p || !q->alive || q->inactive) continue;
+    vec3 r = v3_sub(q->pos, p->pos), w = v3_sub(q->vel, p->vel);
+    float rl = v3_len(r);
+    if (rl > 1500) continue;
+    float ww = v3_dot(w, w), tc = ww > 1 ? -v3_dot(r, w) / ww : -1;
+    vec3 miss = tc > 0 && tc < 3 ? v3_add(r, v3_scale(w, tc)) : r;
+    if (rl < 60 || (tc > 0 && tc < 3 && v3_len(miss) < 120)) {
+      vec3 away = v3_len(miss) > 5 ? v3_norm(miss) : (i < p->idx ? p->r : v3_scale(p->r, -1));
+      goal = v3_add(p->pos, v3_sub(v3_scale(p->f, 300), v3_scale(away, 700)));
+      hard = true;
+      vec = direct = false;
+      break;
+    }
+  }
+
   /* terrain and ground avoidance */
   /* look further ahead the faster and the lower on energy we are: a slow
    * jet cannot pull out as hard (the wing's lift grows with speed squared) */
   float ahead = 2.4f + (p->speed < 150 ? 1.5f : 0) + fmaxf(0, -p->f.y) * 2;
+  if (g->realistic) ahead *= 1.8f; /* half the arcade's pull, and gravity in the path: start the pull-out sooner */
   vec3 look = v3_add(p->pos, v3_scale(p->vel, ahead));
   float here = terrain_h(p->pos.x, p->pos.z);
   float gh = fmaxf(fmaxf(terrain_h(look.x, look.z), here), terrain_h((p->pos.x + look.x) / 2, (p->pos.z + look.z) / 2));
-  if (look.y < gh + minAlt || p->pos.y < here + minAlt * 0.5f) {
+  bool low = look.y < gh + minAlt || p->pos.y < here + minAlt * 0.5f;
+  /* realistic: the hills between, along the whole path ahead */
+  for (int k = 1; g->realistic && k <= 8 && !low; k++) {
+    vec3 q = v3_add(p->pos, v3_scale(p->vel, ahead * (float)k / 8));
+    low = q.y < terrain_h(q.x, q.z) + minAlt;
+  }
+  if (low) {
     vec3 fh = v3_norm(v3(p->f.x, 0, p->f.z));
     goal = v3_add(p->pos, v3_add(v3_scale(fh, 600), v3(0, 700, 0)));
     thr = 1;
     hard = p->f.y < 0; /* nose down toward the ground: roll level and pull */
+    if (p->drone && ai->bfm >= BFM_COBRA) ai->bfm = BFM_PURSUIT;
+    vec = direct = false;
+  }
+  /* the drone, slow and low: hang on the nozzle, nose up, until the speed is back */
+  if (p->drone && p->speed < 95 && p->pos.y - here < 1500) {
+    vec3 fh = v3_len(v3(p->f.x, 0, p->f.z)) > 0.1f ? v3_norm(v3(p->f.x, 0, p->f.z)) : v3_norm(v3(p->u.x, 0, p->u.z));
+    goal = v3_add(p->pos, v3_add(v3_scale(fh, 600), v3(0, 500, 0)));
+    thr = 1;
+    hard = true;
+    vec = true;
+    direct = false;
+    if (ai->bfm >= BFM_COBRA) ai->bfm = BFM_PURSUIT;
   }
   if (fabsf(p->pos.x) > ARENA_X - 600 || fabsf(p->pos.z) > ARENA_Z - 600) goal = v3(0, fmaxf(800, p->pos.y), 0);
 
@@ -297,7 +473,18 @@ void ai_control(Game *g, Plane *p, float dt) {
   pitch = clampf(pitch, -1, 1) * D->maxIn;
   /* slow and nose low: pulling only stalls the wing; let the nose fall and
    * the speed come back first, then pull out */
-  if (p->speed < (g->classic ? 72 : 90) * 1.25f && p->f.y < -0.2f && p->pos.y - here > 250) pitch = fminf(pitch, 0.1f);
+  if (p->speed < (g->classic ? 72 : 90) * 1.25f && p->f.y < -0.2f && p->pos.y - here > (g->realistic ? 900 : 250) && !vec)
+    pitch = fminf(pitch, 0.1f);
+  /* realistic: near the stall the wing has little to give; ease the pull
+   * and let the speed build rather than stall it into the ground */
+  if (g->realistic && !p->drone && p->speed < (g->classic ? 72 : 90) * 1.35f) {
+    pitch = fminf(pitch, p->f.y < 0 ? 0.6f : 0.25f);
+    thr = 1;
+  }
+  if (direct) {
+    pitch = dp;
+    roll = dr;
+  }
   /* a CPU pilot feels the G too, and eases off before blacking out */
   if (p->gstress > 2.5f && pitch > 0.5f) pitch = 0.5f;
   c->pitch += (pitch - c->pitch) * fminf(1, dt * 6);
@@ -306,4 +493,5 @@ void ai_control(Game *g, Plane *p, float dt) {
   c->gun = gun;
   c->msl = msl;
   c->flr = flr;
+  c->vec = vec;
 }

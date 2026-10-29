@@ -163,7 +163,7 @@ static void fire_missile(Game *g, Plane *p) {
   fire_missile_kind(g, p, MK_HEAT);
 }
 
-/* Classic classic rules: the fire key fires the selected weapon. Radar and
+/* Classic rules: the fire key fires the selected weapon. Radar and
  * air-to-ground missiles need a lock, and air-to-ground ones are launched
  * from below 2000 ft and under 500 kt. */
 static void fire_selected(Game *g, Plane *p) {
@@ -382,7 +382,7 @@ static void take_off(Game *g, Plane *p, const JetType *jt, float dt) {
 static void autopilot(Game *g, Plane *p, float dt) {
   Controls *c = &p->ctl;
   (void)dt;
-  if (p->is_ai) return;
+  if (p->is_ai || p->drone) return; /* the drone's autopilot key holds the vectoring */
   if (c->ap && !p->prevAp) {
     p->autopilot = !p->autopilot;
     p->apAlt = fmaxf(p->pos.y, terrain_h(p->pos.x, p->pos.z) + 300);
@@ -420,7 +420,7 @@ static void apply_remote(Game *g, Plane *p, float dt) {
   p->taxi = p->oncat = false; /* the owner rolls it; we follow */
   p->snap.age += dt;
   float age = fminf(0.5f, p->snap.age);
-  vec3 pred = v3_add(p->snap.pos, v3_scale(p->snap.f, p->snap.speed * age));
+  vec3 pred = v3_add(p->snap.pos, v3_scale(p->snap.vel, age)); /* the path, which on the drone is not the nose */
   p->pos = v3_add(p->pos, v3_scale(p->vel, dt));
   p->pos = v3_dist(p->pos, pred) > 400 ? pred : v3_add(p->pos, v3_scale(v3_sub(pred, p->pos), fminf(1, dt * 6)));
   float k = fminf(1, dt * 12);
@@ -430,7 +430,7 @@ static void apply_remote(Game *g, Plane *p, float dt) {
   p->u = v3_cross(p->f, p->r);
   p->speed = p->snap.speed;
   p->throttle = p->snap.thr;
-  p->vel = v3_scale(p->f, p->speed);
+  p->vel = p->snap.vel;
   p->onGround = p->pos.y < terrain_h(p->pos.x, p->pos.z) + 3.5f;
   if (p->netFire && p->gunCool <= 0 && p->ammo >= 1) fire_gun(g, p);
 }
@@ -446,74 +446,28 @@ float sim_excess_power(const Game *g, const Plane *p, const JetType *jt, float t
   float h = fmaxf(0, p->pos.y), rho = expf(-h / 9000);
   float tw = 1.1f * jt->climb; /* full power: thrust a little over the weight */
   float thrust = tw * (0.04f + 0.96f * thr) * powf(rho, 0.7f);
-  float drag = tw * (v / vmax) * (v / vmax) * powf(rho, 0.7f); /* full power just holds top speed */
+  /* full power just holds top speed. Arcade drags with the square of the
+   * speed; realistic has a clean jet's curve, little parasite drag until the
+   * transonic rise near top speed, which leaves the excess power for the
+   * sheets' climb and sustained turn */
+  float x = v / vmax, x2 = x * x;
+  float drag = tw * (g->realistic ? 0.3f * x2 + 0.7f * x2 * x2 * x2 * x2 : x2) * powf(rho, 0.7f);
+  /* realistic, power back to idle: the speed brakes come out, back to the
+   * arcade's drag, so the jet can slow down to land */
+  if (g->realistic) drag += tw * 0.7f * x2 * clampf(1 - thr / 0.15f, 0, 1) * powf(rho, 0.7f);
   /* the g the wing is making: never more than it can at this speed (the
    * g felt lags a little behind); on the wheels it carries nothing */
   float n = p->onGround ? 0 : fminf(fabsf(p->gload), fmaxf(1, jet_lift_g(jt, v)));
-  float turn = 0.034f * n * n * (vc / v) * (vc / v) / fmaxf(rho, 0.2f); /* 5 g held at corner speed */
+  float ci = g->realistic && jt->s_induced > 0 ? jt->s_induced : 0.034f; /* arcade: 5 g held at corner speed */
+  float turn = ci * n * n * (vc / v) * (vc / v) / fmaxf(rho, 0.2f);
   float k = g->realistic ? 1.0f : 2.2f, kt = g->realistic ? 1.0f : 1.2f, kg = g->realistic ? 1.0f : 1.5f;
   return 9.81f * (k * (thrust - drag) - kt * turn - kg * p->f.y);
 }
 
-static void update_plane(Game *g, Plane *p, float dt) {
-  p->hitFlash = fmaxf(0, p->hitFlash - dt * 2);
-  if (p->remote) {
-    apply_remote(g, p, dt);
-    return;
-  }
-  if (!p->alive) {
-    p->respawnT -= dt;
-    if (p->respawnT <= 0 && p->lives > 0 && !g->over) game_spawn(g, p);
-    return;
-  }
-  Controls *c = &p->ctl;
-  const Base *b = &BASES[p->team];
-  const JetType *jt = &JETS[p->jet];
-  if (p->taxi) {
-    take_off(g, p, jt, dt);
-    return;
-  }
-  autopilot(g, p, dt);
-  if (p->stunT > 0) {
-    p->stunT -= dt;
-    c->pitch = c->roll = 0;
-    c->gun = c->msl = c->flr = c->fire = false;
-  }
-  g_forces(g, p, jt, dt);
-  p->invuln = fmaxf(0, p->invuln - dt);
-  p->evT -= dt;
-  p->gunCool -= dt;
-  p->mslCool -= dt;
-  p->fuel = fmaxf(0, p->fuel - (0.18f + 0.55f * p->throttle) * jt->burn * dt);
-  float thrEff = p->fuel > 0 ? p->throttle : 0;
-  /* Turning (basic fighter manoeuvres): the rate is the g pulled over the
-   * speed. The g the wing can pull grows with speed squared up to the
-   * airframe limit, reached at corner speed, so the turn is fastest there:
-   * slower the wing runs out of lift, faster the circle grows. Arcade turns
-   * ARCADE_TURN times quicker on the same curve; a bank alone turns as fast
-   * as gravity allows. */
-  float v = fmaxf(p->speed, 60), boost = g->realistic ? 1.0f : ARCADE_TURN;
-  float lift = jet_lift_g(jt, v);
-  float pull = c->pitch >= 0 ? c->pitch * lift : c->pitch * fminf(-jt->g_min, lift);
-  float rate = boost * pull * 9.81f / v, yawk = boost * 9.81f / v;
-  p->pitchRate = rate;
-  rot_pair(&p->f, &p->u, rate * dt);
-  rot_pair(&p->u, &p->r, c->roll * 2.5f * jt->roll * dt);
-  float yaw = -p->r.y * yawk * dt;
-  p->f = rot_y(p->f, yaw);
-  p->u = rot_y(p->u, yaw);
-  p->r = rot_y(p->r, yaw);
-
-  /* classic classic rules: stall at 140 kt */
-  const float vs = g->classic ? 72 : 90;
-  p->stall = p->speed < vs && !p->onGround;
-  float sink = 0;
-  if (p->stall) {
-    float k = (vs - p->speed) / vs;
-    p->f = v3_norm(v3_add(p->f, v3(0, -1.5f * k * dt, 0)));
-    sink = k * 60;
-  }
-
+/* Outside the combat area the jet is turned back toward the middle; in
+ * classic rules, flown off its own end low enough, it lands back on its
+ * carrier. Returns true when it did (and was launched again). */
+static bool map_edge(Game *g, Plane *p, float dt) {
   p->out = fabsf(p->pos.x) > ARENA_X || fabsf(p->pos.z) > ARENA_Z;
   /* classic: fly off your own end of the map below 1000 ft to land back
    * on the carrier: refuelled, rearmed and launched again */
@@ -525,7 +479,7 @@ static void update_plane(Game *g, Plane *p, float dt) {
     p->wsel = w;
     p->invuln = 0;
     game_event(p, "BACK ON THE CARRIER - REARMED");
-    return;
+    return true;
   }
   if (p->out) {
     vec3 to = v3(-p->pos.x, 0, -p->pos.z);
@@ -533,7 +487,67 @@ static void update_plane(Game *g, Plane *p, float dt) {
     p->f = rot_y(p->f, a);
     p->u = rot_y(p->u, a);
     p->r = rot_y(p->r, a);
+    p->vel = rot_y(p->vel, a);
   }
+  return false;
+}
+
+/* A jet's flight for one tick. Returns true when it landed back on its
+ * carrier (classic) and was launched again. */
+static bool fly_jet(Game *g, Plane *p, const JetType *jt, float thrEff, float dt) {
+  Controls *c = &p->ctl;
+  /* Turning (basic fighter manoeuvres): the rate is the g pulled over the
+   * speed. The g the wing can pull grows with speed squared up to the
+   * airframe limit, reached at corner speed, so the turn is fastest there:
+   * slower the wing runs out of lift, faster the circle grows. Arcade turns
+   * ARCADE_TURN times quicker on the same curve; a bank alone turns as fast
+   * as gravity allows. */
+  float v = fmaxf(p->speed, 60), boost = g->realistic ? 1.0f : ARCADE_TURN;
+  float lift = jet_lift_g(jt, v), lo = -fminf(-jt->g_min, lift);
+  float rate;
+  if (g->realistic) {
+    /* Realistic: the load n is the lift over the weight, and gravity bends
+     * the path too. The fly-by-wire holds 1 g with the stick at rest, full
+     * back is the most the wing (or the airframe) gives, full forward the
+     * negative limit. Across the wings' plane the path turns by the lift
+     * less gravity's share (level: none at 1 g); along the wings gravity
+     * sags it toward the low wing. A level turn then comes out at
+     * g sqrt(n^2 - 1) / v, the textbook rate. */
+    float n = c->pitch >= 0 ? 1 + c->pitch * (lift - 1) : 1 + c->pitch * (1 - lo);
+    n = clampf(n, lo, lift);
+    rate = (n - p->u.y) * 9.81f / v;
+    p->pitchRate = rate;
+    rot_pair(&p->f, &p->u, rate * dt);
+    rot_pair(&p->u, &p->r, c->roll * 2.5f * jt->roll * dt);
+    rot_pair(&p->f, &p->r, -p->r.y * 9.81f / v * dt);
+    p->u = v3_norm(v3_cross(p->f, p->r));
+  } else {
+    /* the pull, kept so the load it makes on this path (with gravity's
+     * share, p->u.y) stays inside the airframe's limits */
+    float pull = c->pitch >= 0 ? c->pitch * lift : c->pitch * -lo;
+    pull = clampf(pull, jt->g_min - p->u.y, jt->g_max - p->u.y);
+    rate = boost * pull * 9.81f / v;
+    float yawk = boost * 9.81f / v;
+    p->pitchRate = rate;
+    rot_pair(&p->f, &p->u, rate * dt);
+    rot_pair(&p->u, &p->r, c->roll * 2.5f * jt->roll * dt);
+    float yaw = -p->r.y * yawk * dt;
+    p->f = rot_y(p->f, yaw);
+    p->u = rot_y(p->u, yaw);
+    p->r = rot_y(p->r, yaw);
+  }
+
+  /* classic rules: stall at 140 kt */
+  const float vs = g->classic ? 72 : 90;
+  p->stall = p->speed < vs && !p->onGround;
+  float sink = 0;
+  if (p->stall) {
+    float k = (vs - p->speed) / vs;
+    p->f = v3_norm(v3_add(p->f, v3(0, -1.5f * k * dt, 0)));
+    sink = k * 60;
+  }
+
+  if (map_edge(g, p, dt)) return true;
   if (p->onGround && p->f.y < 0) p->f.y = 0;
   p->f = v3_norm(p->f);
   p->r = v3_norm(v3_cross(p->u, p->f));
@@ -550,6 +564,193 @@ static void update_plane(Game *g, Plane *p, float dt) {
   p->vel.y -= sink;
   p->pos = v3_add(p->pos, v3_scale(p->vel, dt));
   if (p->pos.y > (g->classic ? 18288 : 7500)) p->pos.y = g->classic ? 18288 : 7500; /* 60,000 ft */
+  return false;
+}
+
+/* v turned about the unit axis k by a (Rodrigues). */
+static vec3 rot_axis(vec3 v, vec3 k, float a) {
+  float c = cosf(a), s = sinf(a);
+  return v3_add(v3_add(v3_scale(v, c), v3_scale(v3_cross(k, v), s)), v3_scale(k, v3_dot(k, v) * (1 - c)));
+}
+
+/* Tells everyone flying here which post-stall move the drone just pulled. */
+static void stunt_done(Game *g, Plane *p, int kind) {
+  char msg[40];
+  p->lastStunt = kind;
+  if (kind == STUNT_NONE) return;
+  for (int i = 0; i < g->nplanes; i++) {
+    Plane *q = &g->planes[i];
+    if (q->hidx < 0 || q->remote || !q->alive) continue;
+    if (q == p) snprintf(msg, sizeof msg, "%s!", STUNT_NAMES[kind]);
+    else snprintf(msg, sizeof msg, "THE DRONE PULLED A %s", STUNT_NAMES[kind]);
+    game_event(q, msg);
+  }
+}
+
+/* The drone (Beat the Drone!): no pilot, and a nozzle that swings the
+ * thrust. Its nose and its flight path part company. In normal flight the
+ * wing drags the path round after the nose the way the jets fly (and as
+ * fast, a little quicker to roll). With the vector key held the nozzle
+ * swings the nose at the same rate at any speed, far past the stall: the
+ * wing flown broadside piles up drag and the speed falls away (the Cobra);
+ * hold the pull and the nose goes all the way round (the flip); slow
+ * enough, the thrust itself pulls the path round onto the nose, so it can
+ * reverse in its own length (the J-turn, Herbst's manoeuvre). Let go and
+ * the nose weathervanes back onto the path. Arcade and realistic use the
+ * same constants as the jets. */
+#define DRONE_VEC_RATE 3.0f  /* nose rate the nozzle gives at full deflection, rad/s, at any speed */
+#define DRONE_THRUST   1.5f  /* thrust (and drag) against a jet's: the same top speed, more push */
+static bool fly_drone(Game *g, Plane *p, const JetType *jt, float thr, float dt) {
+  Controls *c = &p->ctl;
+  const float vsl = g->classic ? 72 : 90;
+  float boost = g->realistic ? 1.0f : ARCADE_TURN;
+  float v = p->speed;
+  vec3 vd = v > 1 ? v3_scale(p->vel, 1 / v) : p->f;
+  bool vec = c->vec && !p->onGround && thr > 0;
+  p->vecOn = vec;
+  float vs = fmaxf(v, 60), lift = jet_lift_g(jt, vs);
+
+  /* the nose: the wing's rate in normal flight, the nozzle's when vectoring */
+  float rate;
+  if (vec) rate = c->pitch * DRONE_VEC_RATE * (g->realistic ? 0.75f : 1.0f);
+  else {
+    float pull = c->pitch >= 0 ? c->pitch * lift : c->pitch * fminf(-jt->g_min, lift);
+    rate = boost * pull * 9.81f / vs;
+  }
+  rot_pair(&p->f, &p->u, rate * dt);
+  rot_pair(&p->u, &p->r, c->roll * 2.5f * jt->roll * (vec ? 2.4f : 1.5f) * dt);
+  /* a bank turns the path as gravity allows (as on the jets), less so when
+   * the wing is not flying */
+  float yaw = -p->r.y * boost * 9.81f / vs * dt * (p->aoa < 0.6f ? 1.0f : 0.3f);
+  p->f = rot_y(p->f, yaw);
+  p->u = rot_y(p->u, yaw);
+  p->r = rot_y(p->r, yaw);
+  vd = rot_y(vd, yaw);
+
+  /* let go of the nozzle and the nose weathervanes back onto the path */
+  float alpha = acosf(clampf(v3_dot(p->f, vd), -1, 1));
+  if (!vec && alpha > 0.15f && v > 25) {
+    vec3 ax = v3_cross(p->f, vd);
+    ax = v3_len(ax) > 1e-3f ? v3_norm(ax) : p->r;
+    float step = fminf(alpha, (2.5f + 1.5f * alpha) * dt);
+    p->f = rot_axis(p->f, ax, step);
+    p->u = rot_axis(p->u, ax, step);
+    alpha -= step;
+  }
+
+  /* the path: the wing pulls it round toward the nose, at most as hard as
+   * it can lift (less past the stall angle); the thrust's share across the
+   * path pulls too, which is everything when slow */
+  float h = fmaxf(0, p->pos.y), rho = expf(-h / 9000), rk = powf(rho, 0.7f);
+  float k = g->realistic ? 1.0f : 2.2f, kt = g->realistic ? 1.0f : 1.2f, kg = g->realistic ? 1.0f : 1.5f;
+  float tw = 1.1f * jt->climb * DRONE_THRUST, vmax = 390 * jt->speed, vc = jet_corner(jt);
+  float thrust = 9.81f * k * tw * (0.04f + 0.96f * thr) * rk;
+  float cl = alpha < 0.45f ? 1.0f : fmaxf(0.06f, 1 - (alpha - 0.45f) * 1.6f); /* the wing stalls past 26 degrees */
+  float sa = alpha < PI_F / 2 ? sinf(alpha) : 1; /* past 90 degrees the nozzle still pushes across, and tail first drags */
+  /* (vectoring, the nose moves faster than the wing can follow: it lifts
+   * as it really would, without the arcade boost) */
+  float side = (vec ? 1.0f : boost) * lift * 9.81f * cl + thrust * sa * clampf(1 - v / 150, 0.2f, 1);
+  float turn = fminf(alpha, fminf(alpha * (vec ? 4.0f : 10.0f), side / fmaxf(v, 15)) * dt);
+  if (turn > 1e-6f) {
+    vec3 ax = v3_cross(vd, p->f);
+    ax = v3_len(ax) > 1e-3f ? v3_norm(ax) : p->r; /* nose dead astern: over the top */
+    vd = v3_norm(rot_axis(vd, ax, turn));
+  }
+
+  /* speed: thrust along the path, less the jets' drag, the wing's drag
+   * when flown broadside (the Cobra's brake) and gravity along the path */
+  float n = fminf(fabsf(p->gload), fmaxf(1, lift));
+  float drag = 9.81f * k * tw * (v / vmax) * (v / vmax) * rk;
+  float induced = 9.81f * kt * 0.034f * n * n * (vc / vs) * (vc / vs) / fmaxf(rho, 0.2f);
+  float broad = 9.81f * k * sa * sa * (v / 70) * (v / 70);
+  v = fmaxf(0, v + (thrust * cosf(alpha) - drag - induced - broad - 9.81f * kg * vd.y) * dt);
+  /* below the stall speed the wing holds up less than the weight; nose
+   * high, the nozzle holds up the rest */
+  float hold = clampf(v / vsl, 0, 1);
+  hold *= hold * (alpha < 0.6f ? 1.0f : cl);
+  float sag = fmaxf(0, 9.81f * kg * (1 - hold) - thrust * fmaxf(0, p->f.y));
+  vec3 vel = v3_scale(vd, v);
+  vel.y -= sag * dt;
+  v = v3_len(vel);
+  vd = v > 1 ? v3_scale(vel, 1 / v) : p->f;
+  p->stall = !vec && v < vsl && !p->onGround;
+
+  /* the g the airframe feels, and no pilot to grey out */
+  float G = p->u.y + turn / dt * v / 9.81f / boost;
+  p->gload += (G - p->gload) * fminf(1, dt * 6);
+  p->gstress = p->gneg = p->gloc = 0;
+  p->pitchRate = turn / dt;
+
+  /* which move it was: a full turn of the nose is a flip, the heading
+   * reversed a J-turn, and the nose flung up 65 degrees over the path a Cobra */
+  if (vec && !p->stunt) {
+    p->stunt = true;
+    p->stuntV0 = vd;
+    p->stuntPitch = p->stuntMaxA = 0;
+  }
+  if (p->stunt) {
+    p->stuntPitch += rate * dt;
+    p->stuntMaxA = fmaxf(p->stuntMaxA, asinf(clampf(p->f.y, -1, 1)) - asinf(clampf(vd.y, -1, 1))); /* nose above the path */
+    if (!vec && alpha < 0.3f) {
+      p->stunt = false;
+      vec3 h0 = v3_norm(v3(p->stuntV0.x, 0, p->stuntV0.z)), h1 = v3(vd.x, 0, vd.z);
+      bool back = v3_len(h1) > 0.3f && v3_dot(v3_norm(h1), h0) < -0.3f;
+      int kind = fabsf(p->stuntPitch) > 5.4f ? STUNT_FLIP : back ? STUNT_JTURN
+               : p->stuntMaxA > 1.1f ? STUNT_COBRA : STUNT_NONE;
+      stunt_done(g, p, kind);
+    }
+  }
+
+  p->vel = vel;
+  if (map_edge(g, p, dt)) return true;
+  vd = v > 1 ? v3_scale(p->vel, 1 / v) : p->f;
+  if (p->onGround && p->f.y < 0) p->f.y = 0;
+  p->f = v3_norm(p->f);
+  p->r = v3_norm(v3_cross(p->u, p->f));
+  p->u = v3_cross(p->f, p->r);
+  p->aoa = acosf(clampf(v3_dot(p->f, vd), -1, 1));
+  p->speed = clampf(v, 0, 560);
+  p->vel = v3_scale(vd, p->speed);
+  p->pos = v3_add(p->pos, v3_scale(p->vel, dt));
+  if (p->pos.y > (g->classic ? 18288 : 7500)) p->pos.y = g->classic ? 18288 : 7500;
+  return false;
+}
+
+static void update_plane(Game *g, Plane *p, float dt) {
+  p->hitFlash = fmaxf(0, p->hitFlash - dt * 2);
+  if (p->remote) {
+    apply_remote(g, p, dt);
+    return;
+  }
+  if (!p->alive) {
+    p->respawnT -= dt;
+    if (p->respawnT <= 0 && p->lives > 0 && !g->over) game_spawn(g, p);
+    return;
+  }
+  Controls *c = &p->ctl;
+  const Base *b = &BASES[p->team];
+  const JetType *jt = jet_type(p->jet, g->realistic);
+  if (p->taxi) {
+    take_off(g, p, jt, dt);
+    return;
+  }
+  autopilot(g, p, dt);
+  if (p->stunT > 0) {
+    p->stunT -= dt;
+    c->pitch = c->roll = 0;
+    c->gun = c->msl = c->flr = c->fire = false;
+  }
+  if (!p->drone) g_forces(g, p, jt, dt);
+  p->invuln = fmaxf(0, p->invuln - dt);
+  p->evT -= dt;
+  p->gunCool -= dt;
+  p->mslCool -= dt;
+  /* the drone carries fuel where a cockpit would be: three times the endurance */
+  p->fuel = fmaxf(0, p->fuel - (0.18f + 0.55f * p->throttle) * jt->burn * (p->drone ? 0.33f : 1.0f) * dt);
+  float thrEff = p->fuel > 0 ? p->throttle : 0;
+  if (p->drone) {
+    if (fly_drone(g, p, jt, thrEff, dt)) return;
+  } else if (fly_jet(g, p, jt, thrEff, dt)) return;
 
   /* ground contact and runway */
   float h = terrain_h(p->pos.x, p->pos.z);
@@ -772,14 +973,24 @@ static void update_missiles(Game *g, float dt) {
       part(g, m->prev, rand3(g, -3, 3), 1.6f, 4, 1, 9);
     }
     bool boom = m->life < -0.5f; /* shot down */
+    /* network play: a hit on a jet the other computer flies is that
+     * computer's to judge, on its own copy of this missile; ours just goes
+     * out of the sky without telling it to remove that copy */
+    bool theirs = false;
     if (!boom && m->team == 1 && g->def.on && defend_over_carrier(g, m->pos.x, m->pos.z) && m->pos.y < g->def.deck + 15) {
       boom = true;
       defend_damage(g, m->ashm ? m->dmg : 20);
     }
     if (!boom && m->target.kind != REF_CARRIER && ref_get(g, m->target, &tpos, NULL) && seg_dist(m->prev, m->pos, tpos) < 26) {
       boom = true;
-      if (m->target.kind == REF_PLANE) damage(g, &g->planes[m->target.idx], m->dmg, m->owner);
-      else if (m->target.kind == REF_GROUND) damage_target(g, &g->targets[m->target.idx], 100, m->owner);
+      if (m->target.kind == REF_PLANE) {
+        theirs = g->planes[m->target.idx].remote;
+        damage(g, &g->planes[m->target.idx], m->dmg, m->owner);
+      }
+      else if (m->target.kind == REF_GROUND) {
+        theirs = g->targets[m->target.idx].remote;
+        damage_target(g, &g->targets[m->target.idx], 100, m->owner);
+      }
       else if (m->target.kind == REF_MISSILE) /* a SAM on an inbound missile */
         for (int k = 0; k < g->nmissiles; k++) {
           Missile *v = &g->missiles[k];
@@ -792,6 +1003,7 @@ static void update_missiles(Game *g, float dt) {
       Plane *e = &g->planes[k];
       if (e->team != m->team && e->alive && seg_dist(m->prev, m->pos, e->pos) < 16) {
         boom = true;
+        theirs = e->remote;
         damage(g, e, m->dmg, m->owner);
       }
     }
@@ -799,11 +1011,14 @@ static void update_missiles(Game *g, float dt) {
       boom = true;
       for (int k = 0; k < g->ntargets; k++) {
         Target *t = &g->targets[k];
-        if (t->alive && t->team != m->team && v3_dist(t->pos, m->pos) < 70) damage_target(g, t, 100, m->owner);
+        if (t->alive && t->team != m->team && v3_dist(t->pos, m->pos) < 70) {
+          theirs |= t->remote;
+          damage_target(g, t, 100, m->owner);
+        }
       }
     }
     if (boom || m->life <= 0) {
-      if (!m->remote) net_event(g, NE_GONE, -1, false, m);
+      if (!m->remote && !theirs) net_event(g, NE_GONE, -1, false, m);
       explode(g, m->pos, boom ? 0.8f : 0.5f);
       g->missiles[i] = g->missiles[--g->nmissiles];
     }
@@ -923,7 +1138,7 @@ void sim_remote_up(Game *g, Plane *p) {
   p->r = v3_norm(v3_cross(p->u, p->f));
   p->u = v3_cross(p->f, p->r);
   p->speed = p->snap.speed;
-  p->vel = v3_scale(p->f, p->speed);
+  p->vel = p->snap.vel;
 }
 
 void sim_target_fall(Game *g, Target *t, int by) {
@@ -995,6 +1210,8 @@ void sim_update(Game *g, float dt) {
       g->overT = 3.2f;
       g->winner = lost[0] && lost[1] ? -1 : lost[0] ? 1 : 0;
       if (lost[0] && lost[1]) snprintf(g->reason, sizeof g->reason, "Both sides are finished at the same moment.");
+      else if (g->mode == MODE_DRONE)
+        snprintf(g->reason, sizeof g->reason, "%s", lost[1] ? "The last drone is down." : "The drone got the last jet.");
       else reason_for(g, lost[0] ? 0 : 1, jets[lost[0] ? 0 : 1]);
     }
   } else {
