@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""tools/ci - our own small CI: watches the repository, runs tools/check on every new branch head, and posts
+the result to GitHub as a commit status, so pull requests show green or red without GitHub Actions.
+Original code for this project; see docs/CI.md.
+
+usage: tools/ci [--once] [--dry-run] [--config FILE]
+  --once     one round (fetch, check what is new, post), then exit; without it, a round every INTERVAL seconds
+  --dry-run  run the checks but post nothing (prints what it would post)
+  --config   the settings file (default: $XDG_CONFIG_HOME/tailonlock-ci/ci.conf)
+
+The settings file is KEY=value lines:
+  CLONE=/path/to/a/clone        a clone used only by the CI (it is fetched and checked out here, never edited)
+  REPO=owner/name               the GitHub repository the statuses go to
+  TOKEN_FILE=/path/to/token     a fine-grained token: this repository only, "Commit statuses: write" and
+                                "Contents: read"; the file must be readable by its owner alone (chmod 600)
+  INTERVAL=120                  seconds between rounds
+  BRANCHES=*                    which branches (shell patterns, space-separated)
+  KEEP=20                       reports kept per branch
+  PRIVATE=/path/to/check-private   the checker's private term list (tools/check, stage 5), outside the repo
+
+Each branch head is checked once: the results live in STATE (default: next to the settings file), so a
+restart does not check the same commit again. The check runs in its own clean worktree at that commit, with
+a scratch HOME, and the report is kept in the state folder.
+"""
+import fnmatch
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+API = 'https://api.github.com'
+CONTEXT = 'tools/check'
+
+
+def log(*a):
+    print(time.strftime('%Y-%m-%d %H:%M:%S'), *a, flush=True)
+
+
+def git(clone, *args, check=True):
+    p = subprocess.run(['git', '-C', clone] + list(args), capture_output=True, text=True)
+    if check and p.returncode:
+        raise RuntimeError('git %s: %s' % (' '.join(args), p.stderr.strip()))
+    return p.stdout
+
+
+def load_conf(path):
+    conf = {'INTERVAL': '120', 'BRANCHES': '*', 'KEEP': '20'}
+    for line in open(path):
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            k, v = line.split('=', 1)
+            conf[k.strip()] = v.strip()
+    for k in ('CLONE', 'REPO', 'TOKEN_FILE'):
+        if not conf.get(k):
+            sys.exit('tools/ci: %s is not set in %s' % (k, path))
+    conf.setdefault('STATE', os.path.join(os.path.dirname(os.path.abspath(path)), 'state'))
+    return conf
+
+
+def read_token(path):
+    st = os.stat(path)
+    if st.st_mode & 0o077:
+        sys.exit('tools/ci: %s must be readable by its owner only (chmod 600)' % path)
+    return open(path).read().strip()
+
+
+def post_status(conf, token, sha, state, description, dry):
+    """POST /repos/{owner}/{repo}/statuses/{sha}: state is pending, success, failure or error"""
+    body = {'state': state, 'context': CONTEXT, 'description': description[:140]}
+    if dry:
+        log('dry run: would post %s %s: %s' % (sha[:10], state, description))
+        return True
+    req = urllib.request.Request('%s/repos/%s/statuses/%s' % (API, conf['REPO'], sha), method='POST',
+                                 data=json.dumps(body).encode(),
+                                 headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
+                                          'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'tailonlock-ci'})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return 200 <= r.status < 300
+    except urllib.error.URLError as x:
+        log('status for %s not posted: %s' % (sha[:10], x))
+        return False
+
+
+def heads(conf):
+    """{branch: sha} of the remote's branches that match BRANCHES"""
+    git(conf['CLONE'], 'fetch', '--prune', '--quiet', 'origin')
+    out = git(conf['CLONE'], 'for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/remotes/origin')
+    pats = conf['BRANCHES'].split()
+    res = {}
+    for line in out.splitlines():
+        ref, sha = line.split()
+        name = ref[len('origin/'):]
+        if name == 'HEAD' or not any(fnmatch.fnmatch(name, p) for p in pats):
+            continue
+        res[name] = sha
+    return res
+
+
+def run_check(conf, branch, sha):
+    """tools/check at sha, in a clean worktree: (passed, summary line, report path)"""
+    work = tempfile.mkdtemp(prefix='tailonlock-ci-')
+    tree = os.path.join(work, 'tree')
+    home = os.path.join(work, 'home')
+    os.makedirs(home)
+    try:
+        git(conf['CLONE'], 'worktree', 'add', '--detach', '--force', tree, sha)
+        env = dict(os.environ, HOME=home, XDG_CONFIG_HOME=os.path.join(home, '.config'))
+        if conf.get('PRIVATE'):
+            env['A4C_CHECK_PRIVATE'] = conf['PRIVATE']
+        t0 = time.time()
+        p = subprocess.run([os.path.join(tree, 'tools', 'check')], cwd=tree, env=env, capture_output=True, text=True)
+        out = p.stdout + p.stderr
+        lines = [l for l in out.splitlines() if l.strip()]
+        failed = [l.split()[1] for l in lines if l.startswith('  ') and l.rstrip().endswith('FAIL') and len(l.split()) == 3]
+        summary = ('all stages pass' if p.returncode == 0 else 'failed: ' + ', '.join(failed or ['see the report'])) + \
+            ' (%.0f s)' % (time.time() - t0)
+        keep = os.path.join(conf['STATE'], 'reports', branch.replace('/', '_'))
+        os.makedirs(keep, exist_ok=True)
+        rp = os.path.join(keep, '%s-%s.txt' % (time.strftime('%Y%m%d-%H%M%S'), sha[:10]))
+        open(rp, 'w').write(out)
+        old = sorted(os.listdir(keep))[:-int(conf['KEEP'])]
+        for f in old:
+            os.remove(os.path.join(keep, f))
+        return p.returncode == 0, summary, rp
+    finally:
+        git(conf['CLONE'], 'worktree', 'remove', '--force', tree, check=False)
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def one_round(conf, token, dry):
+    statep = os.path.join(conf['STATE'], 'checked.json')
+    done = json.load(open(statep)) if os.path.exists(statep) else {}
+    for branch, sha in sorted(heads(conf).items()):
+        if done.get(sha):
+            continue
+        log('%s %s: checking' % (branch, sha[:10]))
+        post_status(conf, token, sha, 'pending', 'tools/check is running', dry)
+        try:
+            ok, summary, rp = run_check(conf, branch, sha)
+        except Exception as x:  # the check could not run: an error, not a failure of the code
+            log('%s %s: %r' % (branch, sha[:10], x))
+            post_status(conf, token, sha, 'error', 'the check could not run: %s' % x, dry)
+            continue
+        log('%s %s: %s (%s)' % (branch, sha[:10], summary, rp))
+        if post_status(conf, token, sha, 'success' if ok else 'failure', summary, dry) or dry:
+            done[sha] = {'branch': branch, 'ok': ok, 'summary': summary, 'report': rp, 'at': time.time()}
+            os.makedirs(conf['STATE'], exist_ok=True)
+            tmp = statep + '.tmp'
+            json.dump(done, open(tmp, 'w'), indent=1)
+            os.replace(tmp, statep)
+
+
+def main():
+    a = sys.argv[1:]
+    once, dry = '--once' in a, '--dry-run' in a
+    cfg = a[a.index('--config') + 1] if '--config' in a else os.path.join(
+        os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'tailonlock-ci', 'ci.conf')
+    conf = load_conf(cfg)
+    token = '' if dry else read_token(conf['TOKEN_FILE'])
+    os.makedirs(conf['STATE'], exist_ok=True)
+    while True:
+        try:
+            one_round(conf, token, dry)
+        except Exception as x:  # a network hiccup on fetch: try again next round
+            log('round failed: %r' % x)
+        if once:
+            return 0
+        time.sleep(int(conf['INTERVAL']))
+
+
+if __name__ == '__main__':
+    sys.exit(main())

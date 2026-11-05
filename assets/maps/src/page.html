@@ -1,0 +1,644 @@
+<title>Tailon Lock Map Room</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a briefing-room console. The 3D sky view is the hero; chart and weather sheet sit beside it like plotting boards. */
+:root {
+  --bg: #e9ecef; --panel: #f7f8f9; --ink: #18202b; --muted: #5a6573; --line: #cfd5dc;
+  --accent: #c8501e; --blue: #2f52c8; --red: #b2321c; --hud: #2f7d3a;
+  --f-display: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  --f-body: 'Barlow', 'Segoe UI', system-ui, sans-serif;
+  --f-mono: 'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f141b; --panel: #161d26; --ink: #e5e9ee; --muted: #93a0b0; --line: #2a3442;
+  --accent: #f07a42; --blue: #7aa0ff; --red: #ff7a5c; --hud: #8fe08a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d26; --ink: #e5e9ee; --muted: #93a0b0; --line: #2a3442;
+  --accent: #f07a42; --blue: #7aa0ff; --red: #ff7a5c; --hud: #8fe08a; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); }
+.wrap { max-width: 1440px; margin: 0 auto; padding-block: 20px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; }
+h1 { font: 700 26px/1.1 var(--f-display); letter-spacing: .04em; text-transform: uppercase; margin: 0; }
+h1 span { color: var(--accent); }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+h2 { font: 600 13px/1.2 var(--f-display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.maps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.mapbtn { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: center; text-align: left; padding: 8px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font: inherit; }
+.mapbtn canvas { width: 64px; height: 64px; image-rendering: pixelated; border-radius: 2px; }
+.mapbtn b { display: block; font: 600 16px/1.2 var(--f-display); letter-spacing: .03em; }
+.mapbtn small { color: var(--muted); font-size: 13px; }
+.mapbtn[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.mapbtn:focus-visible, .seg button:focus-visible, .tog:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.view { position: relative; background: #000; border-radius: 4px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; }
+.view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hud { position: absolute; left: 12px; top: 10px; right: 12px; display: flex; justify-content: space-between; gap: 10px; pointer-events: none; font: 500 12px/1.4 var(--f-mono); color: #d8ffd0; text-shadow: 0 1px 2px #000a; }
+.hud div:last-child { text-align: right; }
+.hint { position: absolute; left: 12px; bottom: 10px; font: 12px var(--f-mono); color: #ffffffc0; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.controls { display: grid; gap: 12px; }
+.ctl { display: grid; gap: 6px; }
+.ctl label, .ctl .lbl { font: 600 12px var(--f-display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--panel); }
+.seg button { flex: 1 1 auto; font: 500 14px var(--f-display); letter-spacing: .04em; padding: 7px 10px; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.tog { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.togs { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 14px; min-width: 0; }
+.wx p { margin: 0 0 8px; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; font-size: 14px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font: 600 11px var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 4px 6px 4px 0; border-bottom: 1px solid var(--line); }
+td { padding: 4px 6px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.num, th.num { text-align: right; }
+.code { font-family: var(--f-mono); font-size: 12px; }
+.lower { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.chartbox { position: relative; }
+#chart { width: 100%; max-width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; cursor: crosshair; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 2px; }
+.blurb { font-size: 16px; margin: 0 0 10px; max-width: 62ch; }
+.req { font: 500 12px var(--f-mono); color: var(--accent); }
+.note { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 6px; border: 1px solid #0003; }
+@media (max-width: 1080px) { .stage { grid-template-columns: minmax(0, 1fr); } .lower { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .maps { grid-template-columns: repeat(2, minmax(0, 1fr)); } .view { aspect-ratio: 4 / 3; } }
+@media (max-width: 420px) { .mapbtn { grid-template-columns: 44px minmax(0, 1fr); } .mapbtn canvas { width: 44px; height: 44px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Tailon Lock <span>Map Room</span></h1>
+    <p>Four selectable theatres for the browser game and the C port. Pick a map, a time of day and the weather. Drag to orbit, scroll or pinch to zoom, or press Fly to ride along a low pass.</p>
+  </header>
+  <nav class="maps" id="maps" aria-label="Maps"></nav>
+  <div class="stage">
+    <div class="view" id="view">
+      <canvas id="gl"></canvas>
+      <div class="hud"><div id="hudL"></div><div id="hudR"></div></div>
+      <div class="hint" id="hint">Drag to orbit · scroll to zoom · click the chart to look there</div>
+    </div>
+    <div class="controls">
+      <div class="ctl"><span class="lbl">Time of day</span><div class="seg" id="tod"></div></div>
+      <div class="ctl"><span class="lbl">Weather</span><div class="seg" id="wx"></div></div>
+      <div class="ctl"><span class="lbl">Camera</span><div class="seg" id="cam"></div></div>
+      <div class="ctl"><span class="lbl">Show</span>
+        <div class="togs">
+          <label class="tog"><input type="checkbox" id="optMarkers" checked> Markers</label>
+          <label class="tog"><input type="checkbox" id="optClouds" checked> Clouds</label>
+          <label class="tog"><input type="checkbox" id="optShadows" checked> Cloud shadows</label>
+          <label class="tog"><input type="checkbox" id="optOrbit" checked> Tanker orbit</label>
+        </div>
+      </div>
+      <div class="card wx" id="wxCard"></div>
+    </div>
+  </div>
+  <div class="lower">
+    <div class="card">
+      <h2>Plotting chart</h2>
+      <div class="chartbox"><canvas id="chart" width="768" height="768"></canvas></div>
+      <div class="legend">
+        <span><i style="background:#2f52c8"></i>Blue side</span><span><i style="background:#d2482e"></i>Red side</span>
+        <span><i style="background:#ffd25a"></i>Carrier group</span><span><i style="background:#fff;border:1px solid #888"></i>Tanker orbit</span>
+        <span>Dashed box: arena edge · grid 2 km</span>
+      </div>
+    </div>
+    <div class="card" id="info"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>/*MAPS_JS*/</script>
+<script>/*CARRIER_JS*/</script>
+<script>
+'use strict';
+const MAPS = window.ACE_MAPS, IDS = ['twin-isles', 'dune-sea', 'iron-coast', 'high-valley'];
+const TODS = ['dawn', 'day', 'dusk', 'night'], WXS = ['clear', 'scattered', 'overcast', 'storm'];
+const TEAMC = ['#2f52c8', '#d2482e'], TEAMB = ['#4d74e0', '#d2482e'];
+const S = { map: 'twin-isles', tod: 'day', wx: 'scattered', cam: 'orbit' };
+try { const s = JSON.parse(localStorage.getItem('ace-maproom') || '{}'); if (MAPS[s.map]) S.map = s.map; if (TODS.includes(s.tod)) S.tod = s.tod; if (WXS.includes(s.wx)) S.wx = s.wx; } catch (e) {}
+const save = () => { try { localStorage.setItem('ace-maproom', JSON.stringify({ map: S.map, tod: S.tod, wx: S.wx })); } catch (e) {} };
+
+// ---------- data access (same rules as FORMAT.md) ----------
+function b64(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+const hex = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+function decode(m) {
+  if (m._H) return;
+  const hm = m.heightmap, raw = b64(hm.data), dv = new DataView(raw.buffer), N = hm.samples;
+  m._H = new Float32Array(N * N); for (let k = 0; k < N * N; k++) m._H[k] = dv.getInt16(k * 2, true) * hm.scale;
+  m._M = b64(m.surface.data); m._N = N;
+}
+function hAt(m, x, z) {   // two-triangle interpolation, diagonal a-c
+  const N = m._N, sp = m.heightmap.spacing, o = m.heightmap.origin[0];
+  const u = (x - o) / sp, v = (z - o) / sp;
+  const i = Math.min(Math.max(Math.floor(u), 0), N - 2), j = Math.min(Math.max(Math.floor(v), 0), N - 2);
+  const fu = Math.min(Math.max(u - i, 0), 1), fv = Math.min(Math.max(v - j, 0), 1), H = m._H;
+  const a = H[j * N + i], b = H[j * N + i + 1], c = H[(j + 1) * N + i + 1], d = H[(j + 1) * N + i];
+  return fu >= fv ? a + (b - a) * fu + (c - b) * fv : a + (c - d) * fu + (d - a) * fv;
+}
+function hash(i, j, t) {
+  let n = (Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ Math.imul(t, 83492791)) >>> 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177) >>> 0; n = (n ^ (n >>> 16)) >>> 0; return (n & 255) / 255;
+}
+// lighting for the chosen time of day and weather (FORMAT.md, "Lighting")
+function lighting(m) {
+  const t = m.time_of_day[S.tod], w = m.weather.presets[S.wx];
+  const sun = t.sun, sc = hex(t.sun_color), ac = hex(t.ambient_color || t.ambient);
+  const si = t.sun_intensity * w.sun_factor, ai = t.ambient_intensity * w.ambient_factor;
+  return { t, w, sun, sunCol: sc.map(c => c * si), amb: ac.map(c => c * ai), si, ai };
+}
+const G2T = (x, y, z) => new THREE.Vector3(x, y, -z);   // game axes -> three.js axes
+
+// ---------- three.js setup ----------
+const view = document.getElementById('view'), cv = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, 16 / 9, 5, 100000);
+const controls = new THREE.OrbitControls(camera, cv);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.maxPolarAngle = Math.PI * 0.495; controls.minDistance = 300; controls.maxDistance = 38000;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.25;
+controls.addEventListener('start', () => { controls.autoRotate = false; });
+const fog = new THREE.Fog(0xffffff, 1000, 40000); scene.fog = fog;
+const sunLight = new THREE.DirectionalLight(0xffffff, 1), hemi = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(sunLight, hemi);
+function resize() { const r = view.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(view);
+
+// sky dome
+const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { top: { value: new THREE.Color() }, hor: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3() }, sunCol: { value: new THREE.Color() }, glow: { value: 1 } },
+  vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `uniform vec3 top, hor, sunCol, sunDir; uniform float glow; varying vec3 vD;
+    void main(){ float h = clamp(vD.y, -0.2, 1.0); vec3 c = mix(hor, top, pow(max(h,0.0), 0.55));
+      if (h < 0.0) c = hor * 0.92;
+      float s = max(dot(vD, sunDir), 0.0); c += sunCol * (pow(s, 6.0) * 0.35 + pow(s, 60.0) * 0.6) * glow;
+      gl_FragColor = vec4(c, 1.0); }` });
+const skyG = new THREE.Group(); scene.add(skyG);
+const sky = new THREE.Mesh(new THREE.SphereGeometry(80000, 32, 16), skyMat); skyG.add(sky);
+function discTex(soft) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(soft, '#fff'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); }
+const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: discTex(0.35), fog: false, depthWrite: false, transparent: true })); sunSprite.scale.set(5200, 5200, 1); skyG.add(sunSprite);
+const starGeo = new THREE.BufferGeometry(); { const P = []; const r = Math.random; for (let k = 0; k < 1400; k++) { const a = r() * 6.283, y = r() * 0.95 + 0.03, q = Math.sqrt(1 - y * y); P.push(Math.cos(a) * q * 76000, y * 76000, Math.sin(a) * q * 76000); } starGeo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); }
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, fog: false, transparent: true, depthWrite: false })); skyG.add(stars);
+
+// ---------- world building ----------
+let world = null;   // group of the current map
+function terrainGeometry(m) {
+  const N = m._N, C = N - 1, sp = m.heightmap.spacing, o = m.heightmap.origin[0], H = m._H;
+  const pos = new Float32Array(C * C * 18), nor = new Float32Array(C * C * 6 * 3), col = new Float32Array(C * C * 18);
+  const faceN = new Float32Array(C * C * 6); let p = 0, f = 0;
+  const V = (i, j) => [o + i * sp, H[j * N + i], o + j * sp];
+  for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) {
+    const a = V(i, j), b = V(i + 1, j), c = V(i + 1, j + 1), d = V(i, j + 1);
+    for (const tri of [[a, b, c], [a, c, d]]) {
+      const [A, B, Cc] = tri; const e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], e2 = [Cc[0] - A[0], Cc[1] - A[1], Cc[2] - A[2]];
+      let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+      if (n[1] < 0) n = n.map(v => -v); const l = Math.hypot(...n); n = n.map(v => v / l);
+      faceN[f++] = n[0]; faceN[f++] = n[1]; faceN[f++] = n[2];
+      for (const v of tri) { pos[p++] = v[0]; pos[p++] = v[1]; pos[p++] = -v[2]; }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.userData.faceN = faceN; return g;
+}
+// cloud shadow map: fraction of direct sun that reaches each terrain cell
+function cloudShadow(m, L) {
+  const C = m._N - 1, sp = m.heightmap.spacing, o = m.heightmap.origin[0], sh = new Float32Array(C * C);
+  if (!document.getElementById('optShadows').checked || L.sun[1] < 0.05) return sh.fill(1);
+  const acc = new Float32Array(C * C), s = L.sun, w = L.w;
+  for (const c of w.clouds) for (const q of c.puffs) {
+    if (q[4] > 1) continue;
+    const x = c.x + q[0], y = c.base + q[1], z = c.z + q[2], r = q[3] * 0.85;
+    const gx = x - s[0] * y / s[1], gz = z - s[2] * y / s[1];
+    const i0 = Math.floor((gx - r - o) / sp), i1 = Math.floor((gx + r - o) / sp), j0 = Math.floor((gz - r - o) / sp), j1 = Math.floor((gz + r - o) / sp);
+    for (let j = Math.max(0, j0); j <= Math.min(C - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(C - 1, i1); i++) {
+      const dx = o + (i + .5) * sp - gx, dz = o + (j + .5) * sp - gz, d = Math.hypot(dx, dz) / r;
+      if (d < 1) acc[j * C + i] += (1 - d * d) * (c.genus === 'Cb' ? 0.9 : 0.6);
+    }
+  }
+  for (const sh2 of w.sheets) {
+    if (sh2.tod_only && !sh2.tod_only.includes(S.tod)) continue;
+    const mk = sheetMask(sh2), n = sh2.mask.size, span = sh2.mask.span, strength = sh2.genus === 'Ci' ? 0.15 : 0.75;
+    for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) {
+      const x = o + (i + .5) * sp, z = o + (j + .5) * sp, y = sh2.base - 0;
+      const px = x + s[0] * y / s[1], pz = z + s[2] * y / s[1];
+      const u = ((px / span + 0.5) % 1 + 1) % 1, v = ((pz / span + 0.5) % 1 + 1) % 1;
+      acc[j * C + i] += mk[Math.floor(v * n) * n + Math.floor(u * n)] / 255 * strength;
+    }
+  }
+  for (let k = 0; k < C * C; k++) sh[k] = 1 - 0.7 * Math.min(1, acc[k]);
+  return sh;
+}
+function skyHorizon(m, L) {   // horizon colour after weather, as reflected by water
+  const h = hex(L.t.sky_horizon), t = hex(L.t.sky_top), f = hex(L.t.fog), k = S.wx === 'overcast' || S.wx === 'storm' ? 0.7 : 0;
+  return h.map((v, i) => ((v + t[i]) / 2 * (1 - k) + f[i] * 0.7 * k));
+}
+function shadeTerrain(m) {
+  const g = world.terrain.geometry, col = g.attributes.color.array, fn = g.userData.faceN, L = lighting(m), C = m._N - 1;
+  const pal = m.palette.map(p => ({ c: hex(p.color), w: p.kind === 'water', j: p.jitter }));
+  const wt = hex(L.t.water_tint), sh = cloudShadow(m, L), skyH = skyHorizon(m, L);
+  let p = 0;
+  for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) {
+    const mat = pal[m._M[j * C + i]];
+    for (let t = 0; t < 2; t++) {
+      const k = ((j * C + i) * 2 + t) * 3, n = [fn[k], fn[k + 1], -fn[k + 2]];
+      const ndl = Math.max(0, n[0] * L.sun[0] + n[1] * L.sun[1] - n[2] * L.sun[2]) * sh[j * C + i];
+      const jit = 1 + mat.j * (2 * hash(i, j, t) - 1);
+      for (let ch = 0; ch < 3; ch++) {
+        let v = mat.c[ch] * (L.amb[ch] + L.sunCol[ch] * ndl) * jit;
+        if (mat.w) v = v * (0.55 + 0.45 * wt[ch]) * (1 - m.water_sky_mix) + skyH[ch] * m.water_sky_mix;
+        const vv = Math.min(1, v); col[p + ch] = vv; col[p + 3 + ch] = vv; col[p + 6 + ch] = vv;
+      }
+      p += 9;
+    }
+  }
+  g.attributes.color.needsUpdate = true;
+}
+const maskCache = new Map();
+function sheetMask(sh) { if (!maskCache.has(sh.mask.data)) maskCache.set(sh.mask.data, b64(sh.mask.data)); return maskCache.get(sh.mask.data); }
+
+// simple low-poly meshes for sites and props
+const lam = c => new THREE.MeshLambertMaterial({ color: c });
+function boxAt(grp, w, h, d, x, y, z, c) { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lam(c)); b.position.set(x, y + h / 2, z); grp.add(b); return b; }
+function targetMesh(type, team) {
+  const g = new THREE.Group(), tc = TEAMB[team];
+  if (type === 'sam') { boxAt(g, 32, 6, 32, 0, 0, 0, '#6c6c6c'); boxAt(g, 10, 8, 18, 0, 6, 0, tc); boxAt(g, 2.4, 2.4, 22, -3, 14, 0, '#e8e8e8'); boxAt(g, 2.4, 2.4, 22, 3, 14, 0, '#e8e8e8'); }
+  else if (type === 'fuel') { const c = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 18, 10), lam('#c9c9c9')); c.position.y = 9; g.add(c); const t = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 1, 10), lam(tc)); t.position.y = 18.5; g.add(t); }
+  else if (type === 'radar') { boxAt(g, 24, 32, 24, 0, 0, 0, '#959595'); boxAt(g, 3, 16, 3, 0, 32, 0, '#777'); boxAt(g, 28, 12, 2, 0, 44, 0, '#e0e0e0'); }
+  else if (type === 'hangar') { boxAt(g, 80, 32, 56, 0, 0, 0, '#7a7a72'); const r = new THREE.Mesh(new THREE.CylinderGeometry(28, 28, 80, 8, 1, false, 0, Math.PI), lam(tc)); r.rotation.z = Math.PI / 2; r.position.y = 32; g.add(r); }
+  else if (type === 'ship') { boxAt(g, 15, 9, 128, 0, -3, 0, '#6d7680'); const bow = new THREE.Mesh(new THREE.ConeGeometry(7.5, 22, 4), lam('#6d7680')); bow.rotation.x = -Math.PI / 2; bow.rotation.y = Math.PI / 4; bow.position.set(0, 2, -74); g.add(bow); boxAt(g, 11, 9, 34, 0, 6, 6, '#8a939d'); boxAt(g, 2, 16, 2, 0, 15, 4, '#444'); boxAt(g, 13, 1, 10, 0, 6, -40, tc); }
+  return g;
+}
+function carrierMesh() {   // CVN-90 Stormhaven from the jets work (game axes: +X starboard, +Z bow)
+  const C = window.CARRIER_TYPE, P = [], Cc = [];
+  for (const [idx, col] of C.mesh.f) {
+    const c = hex(col);
+    for (let k = 1; k + 1 < idx.length; k++) for (const i of [idx[0], idx[k], idx[k + 1]]) { const v = C.mesh.v[i]; P.push(v[0], v[1], -v[2]); Cc.push(...c); }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3)); g.computeVertexNormals();
+  const grp = new THREE.Group(); grp.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }))); return grp;
+}
+const PROP = (() => {
+  const P = {};
+  const mk = (geo, c, y) => { geo.translate(0, y, 0); return { geo, mat: lam(c) }; };
+  P.pine = [mk(new THREE.ConeGeometry(7, 26, 5), '#2c5530', 15)];
+  P.tree = [mk(new THREE.IcosahedronGeometry(10, 0), '#3e7a33', 16), mk(new THREE.CylinderGeometry(1.5, 2, 8, 5), '#5b4630', 4)];
+  P.palm = [mk(new THREE.CylinderGeometry(1, 1.5, 18, 5), '#7b6342', 9), mk(new THREE.ConeGeometry(9, 5, 6), '#4c8a3a', 19)];
+  P.cactus = [mk(new THREE.CylinderGeometry(1.4, 1.6, 9, 6), '#5d7f45', 4.5)];
+  P.rock = [mk(new THREE.DodecahedronGeometry(14, 0), '#80786a', 4)];
+  P.house = [mk(new THREE.BoxGeometry(14, 8, 10), '#d8d0c0', 4), mk(new THREE.ConeGeometry(10.5, 6, 4), '#a14a35', 11)];
+  P.lighthouse = [mk(new THREE.CylinderGeometry(4, 6, 32, 8), '#f0f0ea', 16), mk(new THREE.CylinderGeometry(5, 5, 5, 8), '#c03a2a', 34)];
+  P.house[1].geo.rotateY(Math.PI / 4);
+  return P;
+})();
+function addProps(grp, m) {
+  const by = {}; for (const p of m.props) (by[p.type] = by[p.type] || []).push(p);
+  const o = new THREE.Object3D();
+  for (const [type, list] of Object.entries(by)) for (const part of PROP[type]) {
+    const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
+    list.forEach((p, k) => { o.position.copy(G2T(p.x, p.y, p.z)); o.rotation.set(0, p.rot * Math.PI / 180, 0); const s = p.s * 2.2; o.scale.set(s, s, s); o.updateMatrix(); im.setMatrixAt(k, o.matrix); });
+    grp.add(im);
+  }
+}
+function labelSprite(text, color) {
+  const c = document.createElement('canvas'), g = c.getContext('2d'); g.font = '600 26px "Chakra Petch", sans-serif';
+  const w = Math.ceil(g.measureText(text).width) + 22; c.width = w; c.height = 40;
+  g.font = '600 26px "Chakra Petch", sans-serif'; g.fillStyle = 'rgba(10,14,20,.72)'; g.fillRect(0, 0, w, 40); g.fillStyle = color; g.fillRect(0, 0, 5, 40);
+  g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.fillText(text, 13, 21);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), sizeAttenuation: false, depthTest: false, fog: false, transparent: true }));
+  sp.scale.set(w / 40 * 0.026, 0.026, 1); sp.center.set(0, 0); sp.renderOrder = 10; return sp;
+}
+
+// night lights: glowing points with a minimum on-screen size
+const lightMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uOn: { value: 0 }, uT: { value: 0 } },
+  vertexShader: `attribute vec3 color; attribute float size; attribute float blink; varying vec3 vC; varying float vA; uniform float uT, uOn;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * mv;
+      gl_PointSize = clamp(size * 2600.0 / -mv.z, 1.5, 14.0) * (1.0 + 0.6 * uOn);
+      vA = uOn * (blink > 0.0 ? step(0.5, fract(uT / blink)) : 1.0) * clamp(9000.0 / -mv.z, 0.25, 1.0); vC = color; }`,
+  fragmentShader: `varying vec3 vC; varying float vA; void main(){ float r = length(gl_PointCoord - 0.5) * 2.0; float a = smoothstep(1.0, 0.0, r); gl_FragColor = vec4(vC * (0.6 + a), a * a * vA); }` });
+function addLights(grp, m) {
+  const P = [], Cc = [], Sz = [], B = [];
+  for (const l of m.lights) { const v = G2T(l.x, l.y, l.z); P.push(v.x, v.y, v.z); Cc.push(...hex(m.light_colors[l.kind])); Sz.push(l.size); B.push(l.blink); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
+  g.setAttribute('size', new THREE.Float32BufferAttribute(Sz, 1)); g.setAttribute('blink', new THREE.Float32BufferAttribute(B, 1));
+  const pts = new THREE.Points(g, lightMat); pts.renderOrder = 5; grp.add(pts);
+}
+
+// ---------- clouds ----------
+const puffTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let k = 0; k < 60; k++) {
+    const a = rnd() * 6.283, d = Math.sqrt(rnd()) * (k < 12 ? 14 : 36), x = 64 + Math.cos(a) * d, y = 64 + Math.sin(a) * d, r = 14 + rnd() * 22;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,.5)'); gr.addColorStop(0.6, 'rgba(255,255,255,.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  }
+  const t = new THREE.CanvasTexture(c); return t;
+})();
+const cloudMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false,
+  uniforms: { uTex: { value: puffTex }, fogColor: { value: new THREE.Color() }, fogNear: { value: 1 }, fogFar: { value: 2 }, uFlash: { value: 0 }, uTopLit: { value: 1 } },
+  vertexShader: `attribute vec3 iPos; attribute vec2 iSize; attribute vec3 iCol; attribute float iRot; varying vec2 vUv; varying vec3 vC; varying float vF; varying float vN;
+    uniform float fogNear, fogFar;
+    void main(){ vec4 mv = modelViewMatrix * vec4(iPos, 1.0); mv.xy += position.xy * iSize; float c = cos(iRot), s = sin(iRot);
+      vUv = vec2(c * position.x - s * position.y, s * position.x + c * position.y) * 0.5 + 0.5; vC = iCol;
+      vF = smoothstep(fogNear, fogFar, -mv.z); vN = smoothstep(iSize.x * 0.5, iSize.x * 2.0, -mv.z); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform sampler2D uTex; uniform vec3 fogColor; uniform float uFlash, uTopLit; varying vec2 vUv; varying vec3 vC; varying float vF; varying float vN;
+    void main(){ vec4 t = texture2D(uTex, vUv); if (t.a < 0.01) discard; vec3 c = vC * (1.0 + uFlash);
+      gl_FragColor = vec4(mix(c, fogColor, vF), min(1.0, t.a * 1.15) * (1.0 - vF * 0.5) * vN); }` });
+let cloudObj = null, cloudData = null;
+function buildClouds(grp, m) {
+  const L = lighting(m), w = L.w, list = [];
+  const sun = L.sun;
+  for (const c of w.clouds) {
+    const depth = Math.max(200, c.top - c.base), alb = c.genus === 'Cb' ? 0.92 : c.genus === 'Fs' ? 0.62 : 1.0;
+    const stormy = S.wx === 'storm' ? 0.72 : 1;
+    for (const q of c.puffs) {
+      const y = c.base + q[1], hr = Math.min(1, Math.max(0, q[1] / depth));
+      let n = [q[0], q[1] - depth * 0.35, q[2]]; const nl = Math.hypot(...n) || 1; n = n.map(v => v / nl);
+      const lit = Math.max(0, n[0] * sun[0] + n[1] * sun[1] + n[2] * sun[2]);
+      const self = 0.72 + 0.28 * hr;   // bases of clouds are darker: light has to pass through more cloud
+      const col = [0, 1, 2].map(k => alb * stormy * (L.amb[k] * (1.0 + 0.4 * hr) + L.sunCol[k] * (0.45 + 0.6 * lit) * self));
+      list.push({ x: c.x + q[0], y, z: c.z + q[2], r: q[3], sq: q[5] || 1, tier: q[4], col, rot: hash(q[0] | 0, q[2] | 0, q[3] | 0) * 6.283, cb: c.genus === 'Cb' });
+    }
+  }
+  cloudData = list;
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3)); g.setIndex([0, 1, 2, 0, 2, 3]);
+  const n = list.length;
+  g.setAttribute('iPos', new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3));
+  g.setAttribute('iSize', new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2));
+  g.setAttribute('iCol', new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3));
+  g.setAttribute('iRot', new THREE.InstancedBufferAttribute(new Float32Array(n), 1));
+  g.instanceCount = n;
+  cloudObj = new THREE.Mesh(g, cloudMat); cloudObj.frustumCulled = false; cloudObj.renderOrder = 3; grp.add(cloudObj);
+  sortClouds(true);
+  // sheet layers: a lit top and a darker underside, textured by the tileable coverage mask
+  for (const sh of w.sheets) {
+    if (sh.tod_only && !sh.tod_only.includes(S.tod)) continue;
+    const mk = sheetMask(sh), N = sh.mask.size, cnv = document.createElement('canvas'); cnv.width = cnv.height = N;
+    const id = cnv.getContext('2d').createImageData(N, N);
+    for (let k = 0; k < N * N; k++) { id.data[k * 4] = id.data[k * 4 + 1] = id.data[k * 4 + 2] = 255; id.data[k * 4 + 3] = mk[k]; }
+    cnv.getContext('2d').putImageData(id, 0, 0);
+    const span = sh.mask.span, size = 90000, base = hex(sh.color);
+    for (const side of ['under', 'top']) {
+      const tex = new THREE.CanvasTexture(cnv); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(size / span, size / span); tex.offset.set(0.5 - size / span / 2, 0.5 - size / span / 2);
+      const k = side === 'top' ? [0, 1, 2].map(i => base[i] * Math.min(1.1, L.amb[i] + L.sunCol[i] * Math.max(0.15, sun[1])))
+                               : [0, 1, 2].map(i => base[i] * (L.amb[i] * 1.1 + L.sunCol[i] * 0.18) * (sh.genus === 'Ns' ? 0.7 : 1));
+      const op = sh.genus === 'Ci' || sh.genus === 'Cs' ? 0.55 : sh.genus === 'Fg' ? 0.8 : 0.96;
+      const mat = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(...k.map(v => Math.min(1, v))), transparent: true, opacity: op, depthWrite: false, side: side === 'top' ? THREE.FrontSide : THREE.BackSide });
+      const pl = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat); pl.rotation.x = -Math.PI / 2;
+      pl.position.y = side === 'top' ? sh.top : sh.base; pl.renderOrder = 2; grp.add(pl);
+      pl.userData.sheet = sh;
+    }
+  }
+  // rain shafts (or virga that dries up before the ground) under cumulonimbus
+  const virga = w.precipitation === 'virga';
+  for (const c of w.clouds) if (c.rain) {
+    const P = [], R = c.rain.radius, top = c.base, len = virga ? top * 0.45 : top + 60, L2 = 400;
+    for (let k = 0; k < 700; k++) { const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * R, y = top - Math.random() * (len + L2);
+      const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r; P.push(x, y, -z, x + 6, y - 90, -z); }
+    const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    const ls = new THREE.LineSegments(g2, new THREE.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: virga ? 0.25 : 0.4 }));
+    ls.userData.rain = { L: L2, top, len }; grp.add(ls);
+  }
+}
+let lastSort = new THREE.Vector3(1e9, 0, 0);
+function sortClouds(force) {
+  if (!cloudData || !cloudObj) return;
+  const cp = camera.position; if (!force && cp.distanceTo(lastSort) < 250) return; lastSort.copy(cp);
+  const d = cloudData.map((p, k) => [(p.x - cp.x) ** 2 + (p.y - cp.y) ** 2 + (-p.z - cp.z) ** 2, k]).sort((a, b) => b[0] - a[0]);
+  const g = cloudObj.geometry, P = g.attributes.iPos.array, Sz = g.attributes.iSize.array, C = g.attributes.iCol.array, R = g.attributes.iRot.array;
+  d.forEach(([, k], i) => { const p = cloudData[k]; P[i * 3] = p.x; P[i * 3 + 1] = p.y; P[i * 3 + 2] = -p.z; Sz[i * 2] = p.r * 1.4; Sz[i * 2 + 1] = p.r * 1.4 * p.sq; C.set(p.col, i * 3); R[i] = p.rot; });
+  for (const a of ['iPos', 'iSize', 'iCol', 'iRot']) g.attributes[a].needsUpdate = true;
+}
+
+// ---------- map assembly ----------
+let flyPath = null, bolt = null, flashT = 0, nextBolt = 3;
+function buildWorld() {
+  const m = MAPS[S.map]; decode(m);
+  if (world) { scene.remove(world); world.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  world = new THREE.Group(); scene.add(world);
+  world.terrain = new THREE.Mesh(terrainGeometry(m), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })); world.add(world.terrain);
+  // horizon ground/sea beyond the map edge
+  const far = new THREE.Mesh(new THREE.CircleGeometry(95000, 48), new THREE.MeshBasicMaterial({ color: m.sky_far_ground }));
+  far.rotation.x = -Math.PI / 2; far.position.y = (m.water_level ?? 40) - 3; world.add(far); world.far = far;
+  const sites = new THREE.Group(); world.add(sites);
+  for (const b of m.bases) {
+    const g = new THREE.Group(); boxAt(g, 90, 0.6, 2000, 0, 0, 0, '#4f5357');
+    for (let z = -900; z < 900; z += 120) boxAt(g, 3, 0.7, 60, 0, 0, z, '#e8e8e0');
+    boxAt(g, 80, 0.7, 30, 0, 0, -985, TEAMB[b.team]); boxAt(g, 80, 0.7, 30, 0, 0, 985, TEAMB[b.team]);
+    boxAt(g, 120, 0.5, 600, 140, 0, 0, '#6d726e');
+    g.position.copy(G2T(b.x, b.elev, b.z)); g.rotation.y = -b.heading * Math.PI / 180; sites.add(g);
+  }
+  for (const t of m.targets) {
+    const g = targetMesh(t.type, t.team), y = t.type === 'ship' ? 0 : hAt(m, t.x, t.z);
+    g.position.copy(G2T(t.x, y, t.z)); g.rotation.y = -t.heading * Math.PI / 180; g.scale.setScalar(1.6); sites.add(g);
+  }
+  for (const c of m.carriers) { const g = carrierMesh(); g.position.copy(G2T(c.x, 0, c.z)); g.rotation.y = -c.heading * Math.PI / 180; sites.add(g); }
+  addProps(world, m); addLights(world, m);
+  // markers
+  const mk = new THREE.Group(); world.markers = mk; world.add(mk);
+  const NAMES = { sam: 'SAM', fuel: 'Fuel', radar: 'Radar', hangar: 'Hangar', ship: 'Frigate' };
+  for (const b of m.bases) { const s = labelSprite((b.team ? 'Red' : 'Blue') + ' airfield', TEAMC[b.team]); s.position.copy(G2T(b.x, b.elev + 260, b.z)); mk.add(s); }
+  for (const c of m.carriers) { const s = labelSprite((c.team ? 'Red' : 'Blue') + ' carrier', '#ffd25a'); s.position.copy(G2T(c.x, 260, c.z)); mk.add(s); }
+  for (const t of m.targets) { const s = labelSprite(NAMES[t.type], TEAMC[t.team]); s.scale.multiplyScalar(0.75); s.position.copy(G2T(t.x, (t.type === 'ship' ? 0 : hAt(m, t.x, t.z)) + 140, t.z)); mk.add(s); }
+  const tk = m.tanker, P = []; for (let a = 0; a <= 64; a++) { const q = a / 64 * 6.283; P.push(G2T(tk.x + Math.cos(q) * tk.radius, tk.alt, tk.z + Math.sin(q) * tk.radius)); }
+  world.orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(P), new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 300, gapSize: 200, transparent: true, opacity: 0.8 }));
+  world.orbit.computeLineDistances(); world.add(world.orbit);
+  // a low fly-through loop that clears the terrain by 350 m
+  const pts = []; for (let a = 0; a < 240; a++) { const q = a / 240 * 6.283; const x = Math.sin(q * 2) * 4200 + Math.cos(q) * 1500, z = Math.sin(q) * 9800;
+    let h = 0; for (let d = -800; d <= 800; d += 400) h = Math.max(h, hAt(m, x + d, z), hAt(m, x, z + d)); pts.push([x, h + 350, z]); }
+  for (let it = 0; it < 6; it++) for (let k = 0; k < pts.length; k++) { const a = pts[(k + pts.length - 1) % pts.length], b = pts[(k + 1) % pts.length]; pts[k][1] = Math.max(pts[k][1], (a[1] + b[1]) / 2 - 15); }
+  flyPath = new THREE.CatmullRomCurve3(pts.map(p => G2T(...p)), true);
+  applyLook(); drawChart(); renderInfo();
+}
+function rebuildClouds() {
+  for (const o of world.children.filter(o => o.userData.cloudLayer)) { world.remove(o); o.traverse(c => { if (c.geometry) c.geometry.dispose(); }); }
+  const g = new THREE.Group(); g.userData.cloudLayer = true; world.add(g); world.clouds = g;
+  buildClouds(g, MAPS[S.map]); g.visible = document.getElementById('optClouds').checked;
+}
+function applyLook() {
+  const m = MAPS[S.map], L = lighting(m), t = L.t, w = L.w;
+  rebuildClouds(); shadeTerrain(m);
+  const fogC = new THREE.Color(t.fog); if (w.dust) fogC.lerp(new THREE.Color('#b08a5c'), 0.75);
+  if (S.wx === 'overcast' || S.wx === 'storm') fogC.lerp(new THREE.Color(t.fog).multiplyScalar(0.62).lerp(new THREE.Color('#8a93a0'), S.tod === 'night' ? 0.05 : 0.4), 0.6);
+  fog.color.copy(fogC); fog.far = Math.min(60000, w.visibility_km * 1000 * 1.2 / t.fog_density); fog.near = fog.far * 0.08;
+  cloudMat.uniforms.fogColor.value.copy(fogC); cloudMat.uniforms.fogNear.value = fog.near; cloudMat.uniforms.fogFar.value = fog.far * 1.15;
+  const overcast = S.wx === 'overcast' || S.wx === 'storm';
+  const top = new THREE.Color(t.sky_top), hor = new THREE.Color(t.sky_horizon);
+  if (overcast) { const grey = new THREE.Color(t.fog).multiplyScalar(S.wx === 'storm' ? 0.55 : 0.8); top.lerp(grey, 0.75); hor.lerp(fogC, 0.7); }
+  if (w.dust) { top.lerp(new THREE.Color('#9c7a52'), 0.6); hor.lerp(fogC, 0.9); }
+  skyMat.uniforms.top.value.copy(top); skyMat.uniforms.hor.value.copy(hor);
+  const sd = G2T(...L.sun).normalize(); skyMat.uniforms.sunDir.value.copy(sd); skyMat.uniforms.sunCol.value.set(t.sun_color); skyMat.uniforms.glow.value = overcast ? 0.15 : (S.tod === 'night' ? 0.25 : 1);
+  sunSprite.position.copy(sd).multiplyScalar(70000); sunSprite.material.color.set(t.sun_color); sunSprite.material.opacity = overcast ? 0.08 : 1;
+  sunSprite.scale.setScalar(S.tod === 'night' ? 2600 : 5200);
+  stars.material.opacity = t.stars * (overcast ? 0.05 : S.wx === 'scattered' ? 0.75 : 1);
+  sunLight.color.setRGB(...L.sunCol.map(v => Math.min(1.2, v))); sunLight.position.copy(sd).multiplyScalar(1000); sunLight.intensity = 1;
+  hemi.color.setRGB(...L.amb.map(v => Math.min(1, v * 1.2)));
+  world.far.material.color.set(m.sky_far_ground).multiply(new THREE.Color(...[0, 1, 2].map(k => Math.min(1, L.amb[k] + L.sunCol[k] * Math.max(0, L.sun[1])))));
+  lightMat.uniforms.uOn.value = t.lights;
+  renderer.setClearColor(fogC);
+  updateToggles(); renderWx(); hud();
+}
+function updateToggles() {
+  if (!world) return;
+  world.markers.visible = document.getElementById('optMarkers').checked;
+  world.orbit.visible = document.getElementById('optOrbit').checked;
+  if (world.clouds) world.clouds.visible = document.getElementById('optClouds').checked;
+}
+
+// ---------- camera ----------
+function homeCamera() {
+  const m = MAPS[S.map], b = m.bases[0], c = m.carriers[0];
+  const tx = c ? (b.x + c.x) / 2 : 0, tz = c ? (b.z + c.z) / 2 : -2500;
+  const k = Math.min(1, MAPS[S.map].weather.presets[S.wx].visibility_km * 1000 / 16000);
+  // in thick weather start under the lowest solid layer, the way a pilot would see it
+  const w = MAPS[S.map].weather.presets[S.wx]; let alt = 1200 + 4000 * k;
+  for (const sh of w.sheets) if (sh.coverage >= 0.55 && sh.genus !== 'Ci' && sh.genus !== 'Cs' && sh.genus !== 'Fg') alt = Math.min(alt, Math.max(sh.base - 120, 220));
+  const cx = tx - 9000 * Math.max(0.35, k), cz = tz - 12000 * Math.max(0.35, k);
+  let gmax = 0; for (let d = -1500; d <= 1500; d += 500) gmax = Math.max(gmax, hAt(m, cx + d, cz), hAt(m, cx, cz + d));
+  alt = Math.max(alt, gmax + 250);
+  const ty = alt < 1500 ? Math.max(hAt(m, tx, tz), alt - 600) : 300;
+  controls.target.copy(G2T(tx, ty, tz)); camera.position.copy(G2T(cx, alt, cz)); controls.update();
+}
+let flyT = 0;
+function tick(dt, now) {
+  if (S.cam === 'fly' && flyPath) {
+    flyT = (flyT + dt * 0.0045) % 1;
+    const p = flyPath.getPointAt(flyT), q = flyPath.getPointAt((flyT + 0.006) % 1);
+    camera.position.copy(p); camera.lookAt(q.x, q.y - 40, q.z);
+  } else controls.update();
+  skyG.position.copy(camera.position);
+  sortClouds(false);
+  lightMat.uniforms.uT.value = now / 1000;
+  if (world && world.clouds) for (const o of world.clouds.children) if (o.userData.rain) { const r = o.userData.rain; o.position.y = -((now / 1000 * 220) % r.L); }
+  // lightning: a flash inside a cumulonimbus and a jagged bolt to the ground (rate sped up 6x for the preview)
+  const w = MAPS[S.map].weather.presets[S.wx];
+  if (w.lightning_per_min > 0 && document.getElementById('optClouds').checked) {
+    nextBolt -= dt;
+    if (nextBolt <= 0) {
+      nextBolt = Math.random() * 60 / (w.lightning_per_min * 6) * 2;
+      const cbs = w.clouds.filter(c => c.genus === 'Cb');
+      if (cbs.length) {
+        const c = cbs[Math.floor(Math.random() * cbs.length)], m = MAPS[S.map]; decode(m);
+        const x0 = c.x + (Math.random() - .5) * 2000, z0 = c.z + (Math.random() - .5) * 2000, gy = Math.max(hAt(m, x0, z0), m.water_level ?? -1e9);
+        const P = []; let x = x0, z = z0; for (let y = c.base + 200; y > gy; y -= 120) { P.push(G2T(x, y, z)); x += (Math.random() - .5) * 220; z += (Math.random() - .5) * 220; } P.push(G2T(x, gy, z));
+        if (bolt) { scene.remove(bolt); bolt.geometry.dispose(); }
+        bolt = new THREE.Line(new THREE.BufferGeometry().setFromPoints(P), new THREE.LineBasicMaterial({ color: 0xf4f0ff, fog: false })); scene.add(bolt);
+        flashT = 0.22;
+      }
+    }
+  }
+  if (flashT > 0) { flashT -= dt; const f = flashT > 0.12 ? 1.6 : flashT > 0.06 ? 0.2 : 1.0; cloudMat.uniforms.uFlash.value = Math.max(0, f * (flashT > 0 ? 1 : 0)); if (bolt) bolt.visible = flashT > 0 && flashT < 0.2; }
+  else { cloudMat.uniforms.uFlash.value = 0; if (bolt) bolt.visible = false; }
+  hudPos();
+}
+let lastT = performance.now();
+function loop(now) { const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now; tick(dt, now); renderer.render(scene, camera); requestAnimationFrame(loop); }
+
+// ---------- HUD and panels ----------
+const fmt = n => Math.round(n).toLocaleString('en-US');
+function hud() {
+  const m = MAPS[S.map], t = m.time_of_day[S.tod], w = m.weather.presets[S.wx];
+  const el = Math.round(Math.asin(t.sun[1]) * 180 / Math.PI);
+  document.getElementById('hudR').innerHTML = `${t.label.toUpperCase()} · ${S.tod === 'night' ? 'MOON' : 'SUN'} ${el}°<br>${w.label.toUpperCase()} · VIS ${w.visibility_km} KM<br>WIND ${String(w.wind.from_deg).padStart(3, '0')}° / ${Math.round(w.wind.speed_mps * 1.944)} KT`;
+}
+function hudPos() {
+  const m = MAPS[S.map]; if (!m._H) return; const p = camera.position, gx = p.x, gz = -p.z, gh = Math.max(hAt(m, gx, gz), m.water_level ?? -1e9);
+  document.getElementById('hudL').innerHTML = `${m.name.toUpperCase()}<br>ALT ${fmt(p.y)} M · AGL ${fmt(p.y - gh)} M<br>X ${fmt(gx)} Z ${fmt(gz)}`;
+}
+const GENUS = { Cu: 'Cumulus', Cb: 'Cumulonimbus', Fs: 'Stratus fractus', Sc: 'Stratocumulus', St: 'Stratus', As: 'Altostratus', Ns: 'Nimbostratus', Ci: 'Cirrus', Cs: 'Cirrostratus', Fg: 'Valley fog' };
+const PRECIP = { none: 'None', drizzle: 'Drizzle', rain: 'Moderate to heavy rain', showers: 'Heavy showers', virga: 'Virga (rain that dries before it lands)' };
+function renderWx() {
+  const m = MAPS[S.map], w = m.weather.presets[S.wx];
+  const rows = w.layers.map(l => `<tr><td>${GENUS[l.genus]}<span class="code"> ${l.genus}</span>${l.note ? ' <small>(' + l.note + ')</small>' : ''}</td><td class="num">${fmt(l.base)}</td><td class="num">${fmt(l.top)}</td><td class="num">${l.oktas}/8</td></tr>`).join('');
+  document.getElementById('wxCard').innerHTML = `<h2>Weather · ${m.weather.climate}</h2>
+    <table><thead><tr><th>Cloud</th><th class="num">Base m</th><th class="num">Top m</th><th class="num">Cover</th></tr></thead><tbody>${rows || '<tr><td colspan="4">Sky clear of cloud</td></tr>'}</tbody></table>
+    <dl class="kv" style="margin-top:10px"><dt>Visibility</dt><dd>${w.visibility_km} km${w.dust ? ', blowing dust' : ''}</dd>
+    <dt>Wind</dt><dd>from ${String(w.wind.from_deg).padStart(3, '0')}° at ${Math.round(w.wind.speed_mps * 1.944)} kt</dd>
+    <dt>Precipitation</dt><dd>${PRECIP[w.precipitation]}</dd><dt>Turbulence</dt><dd>${['Smooth', 'Light', 'Moderate', 'Severe'][Math.min(3, Math.round(w.turbulence * 3.4))]}</dd>
+    <dt>Lightning</dt><dd>${w.lightning_per_min ? '~' + w.lightning_per_min + ' strikes a minute' : 'None'}</dd><dt>Cloud puffs</dt><dd>${fmt(w.puff_count)}</dd></dl>`;
+}
+function renderInfo() {
+  const m = MAPS[S.map], st = m.stats, T = { sam: 'SAM site', fuel: 'Fuel depot', radar: 'Radar', hangar: 'Hangar', ship: 'Frigate' };
+  const tl = t => { const c = {}; m.targets.filter(x => x.team === t).forEach(x => c[x.type] = (c[x.type] || 0) + 1); return Object.entries(c).map(([k, v]) => `${v} × ${T[k]}`).join(', '); };
+  const used = [...new Set(m._M)].map(k => m.palette[k]);
+  document.getElementById('info').innerHTML = `<h2>${m.name} <span class="req">· you asked for “${m.request}”</span></h2>
+    <p class="blurb">${m.blurb}</p>
+    <dl class="kv"><dt>Size</dt><dd>${(m.arena.x * 2 / 1000).toFixed(0)} × ${(m.arena.z * 2 / 1000).toFixed(0)} km arena, terrain ${(m.heightmap.spacing * (m.heightmap.samples - 1) / 1000).toFixed(1)} km square</dd>
+    <dt>Highest point</dt><dd>${fmt(st.peak)} m</dd><dt>Water</dt><dd>${st.water_pct}% of the arena</dd>
+    <dt>Blue targets</dt><dd>${tl(0)}</dd><dt>Red targets</dt><dd>${tl(1)}</dd>
+    <dt>Carriers</dt><dd>${m.carriers.length ? m.carriers.length + ', one per side, each with two frigate escorts' : 'None (land only)'}</dd>
+    <dt>Spawns</dt><dd>${m.spawns.filter(s => s.team === 0).map(s => s.kind === 'air' ? 'airborne' : 'on ' + s.kind).join(', ')}</dd>
+    <dt>Tanker</dt><dd>orbit ${fmt(m.tanker.radius)} m radius at ${fmt(m.tanker.alt)} m</dd>
+    <dt>Scenery</dt><dd>${fmt(st.props)} props, ${fmt(st.lights)} night lights</dd></dl>
+    <h2 style="margin-top:14px">Surfaces</h2>
+    <div class="legend" style="margin-top:0">${used.map(p => `<span><span class="sw" style="background:${p.color}"></span>${p.name.replace('_', ' ')}</span>`).join('')}</div>
+    <p class="note">Carriers are the CVN-90 Stormhaven from the hangar. Players can spawn on its bow catapult; at night its deck, angled-deck edges and landing lens are lit.</p>`;
+}
+// top-down chart
+function drawChart() {
+  const m = MAPS[S.map], cv2 = document.getElementById('chart'), g = cv2.getContext('2d'), Wd = cv2.width, C = m._N - 1;
+  const img = g.createImageData(C, C), pal = m.palette.map(p => hex(p.color));
+  for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) {
+    const k = j * C + i, h = m._H[j * m._N + i], hx = m._H[j * m._N + i + 1], hz = m._H[(j + 1) * m._N + i];
+    const shade = Math.max(0.55, Math.min(1.35, 1 + ((h - hx) * 0.7 + (hz - h) * 0.7) / 260)), c = pal[m._M[k]];
+    const o = ((C - 1 - j) * C + i) * 4; img.data[o] = c[0] * 255 * shade; img.data[o + 1] = c[1] * 255 * shade; img.data[o + 2] = c[2] * 255 * shade; img.data[o + 3] = 255;
+  }
+  const off = document.createElement('canvas'); off.width = off.height = C; off.getContext('2d').putImageData(img, 0, 0);
+  g.imageSmoothingEnabled = false; g.drawImage(off, 0, 0, Wd, Wd);
+  const o = m.heightmap.origin[0], span = m.heightmap.spacing * C, P = (x, z) => [(x - o) / span * Wd, (1 - (z - o) / span) * Wd], sc = Wd / span;
+  g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 1;
+  for (let v = -12000; v <= 12000; v += 2000) { const [a] = P(v, 0), [, b] = P(0, v); g.beginPath(); g.moveTo(a, 0); g.lineTo(a, Wd); g.moveTo(0, b); g.lineTo(Wd, b); g.stroke(); }
+  g.setLineDash([10, 6]); g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 2;
+  const [ax, az] = P(-m.arena.x, m.arena.z); g.strokeRect(ax, az, m.arena.x * 2 * sc, m.arena.z * 2 * sc);
+  const tk = m.tanker, [tx, tz] = P(tk.x, tk.z); g.beginPath(); g.arc(tx, tz, tk.radius * sc, 0, 7); g.stroke(); g.setLineDash([]);
+  for (const b of m.bases) { const [x, z] = P(b.x, b.z); g.fillStyle = '#2b2e31'; g.fillRect(x - 3, z - 1000 * sc, 6, 2000 * sc); g.fillStyle = TEAMC[b.team]; g.fillRect(x - 6, z - 1000 * sc - 6, 12, 6); g.fillRect(x - 6, z + 1000 * sc, 12, 6); }
+  for (const c of m.carriers) { const [x, z] = P(c.x, c.z); g.fillStyle = '#ffd25a'; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, z - 12 * (c.heading ? -1 : 1)); g.lineTo(x + 6, z + 8 * (c.heading ? -1 : 1)); g.lineTo(x - 6, z + 8 * (c.heading ? -1 : 1)); g.closePath(); g.fill(); g.stroke(); }
+  for (const t of m.targets) { const [x, z] = P(t.x, t.z); g.fillStyle = TEAMC[t.team]; g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); if (t.type === 'ship') { g.moveTo(x, z - 6); g.lineTo(x + 5, z); g.lineTo(x, z + 6); g.lineTo(x - 5, z); } else g.rect(x - 4.5, z - 4.5, 9, 9); g.fill(); g.stroke(); }
+  for (const s of m.spawns) if (s.kind === 'air') { const [x, z] = P(s.x, s.z), d = s.heading ? 1 : -1; g.strokeStyle = TEAMC[s.team]; g.lineWidth = 3; g.beginPath(); g.moveTo(x, z); g.lineTo(x, z + d * 22); g.moveTo(x - 6, z + d * 14); g.lineTo(x, z + d * 22); g.lineTo(x + 6, z + d * 14); g.stroke(); }
+  g.font = '600 15px "Chakra Petch", sans-serif'; g.fillStyle = '#fff'; g.strokeStyle = 'rgba(0,0,0,.7)'; g.lineWidth = 3;
+  for (const b of m.bases) { const [x, z] = P(b.x, b.z); const lbl = b.team ? 'RED' : 'BLUE'; g.strokeText(lbl, x + 12, z); g.fillText(lbl, x + 12, z); }
+  g.strokeText('N ↑ (red side)', 10, 20); g.fillText('N ↑ (red side)', 10, 20);
+}
+document.getElementById('chart').addEventListener('click', e => {
+  const m = MAPS[S.map], r = e.currentTarget.getBoundingClientRect(), o = m.heightmap.origin[0], span = m.heightmap.spacing * (m._N - 1);
+  const x = o + (e.clientX - r.left) / r.width * span, z = o + (1 - (e.clientY - r.top) / r.height) * span;
+  setCam('orbit'); const d = camera.position.clone().sub(controls.target); controls.target.copy(G2T(x, Math.max(0, hAt(m, x, z)), z)); camera.position.copy(controls.target).add(d.setLength(Math.min(d.length(), 9000))); controls.autoRotate = false; controls.update();
+});
+
+// ---------- controls ----------
+function seg(id, items, key, labels, on) {
+  const el = document.getElementById(id); el.innerHTML = '';
+  items.forEach((v, k) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = labels[k]; b.setAttribute('aria-pressed', S[key] === v); b.id = id + '-' + v;
+    b.onclick = () => { S[key] = v; [...el.children].forEach(c => c.setAttribute('aria-pressed', c === b)); save(); on(); }; el.appendChild(b); });
+}
+function setCam(v) { S.cam = v; [...document.getElementById('cam').children].forEach(c => c.setAttribute('aria-pressed', c.id === 'cam-' + v)); controls.enabled = v === 'orbit';
+  document.getElementById('hint').textContent = v === 'fly' ? 'Flying a low loop over the map · press Orbit to take the controls back' : 'Drag to orbit · scroll to zoom · click the chart to look there';
+  if (v === 'orbit') homeCameraIfLost(); }
+function homeCameraIfLost() { if (camera.position.distanceTo(controls.target) > 40000 || S.cam === 'orbit') { const d = camera.position.clone().sub(controls.target); if (d.length() < 400) homeCamera(); } }
+seg('tod', TODS, 'tod', ['Dawn', 'Day', 'Dusk', 'Night'], applyLook);
+seg('wx', WXS, 'wx', ['Clear', 'Scattered', 'Overcast', 'Storm'], () => { applyLook(); if (S.cam === 'orbit') homeCamera(); });
+seg('cam', ['orbit', 'fly'], 'cam', ['Orbit', 'Fly'], () => { if (S.cam === 'orbit') { homeCamera(); } setCam(S.cam); });
+for (const id of ['optMarkers', 'optOrbit', 'optClouds']) document.getElementById(id).addEventListener('change', updateToggles);
+document.getElementById('optShadows').addEventListener('change', () => shadeTerrain(MAPS[S.map]));
+function thumbs() {
+  const nav = document.getElementById('maps');
+  for (const id of IDS) {
+    const m = MAPS[id]; decode(m);
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'mapbtn'; b.id = 'map-' + id; b.setAttribute('aria-pressed', S.map === id);
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), C = m._N - 1, pal = m.palette.map(p => p.color);
+    for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) { g.fillStyle = pal[m._M[(127 - j * 2) * C + i * 2]]; g.fillRect(i, j, 1, 1); }
+    const t = document.createElement('div'); t.innerHTML = `<b>${m.name}</b><small>${m.request}</small>`;
+    b.append(c, t); b.onclick = () => { S.map = id; [...nav.children].forEach(x => x.setAttribute('aria-pressed', x === b)); save(); buildWorld(); homeCamera(); };
+    nav.appendChild(b);
+  }
+}
+thumbs(); resize(); buildWorld(); homeCamera(); requestAnimationFrame(loop);
+</script>

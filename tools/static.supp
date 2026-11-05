@@ -1,0 +1,126 @@
+# tools/static.supp - the findings of tools/static (cppcheck, clang-tidy) that are not bugs, each with its reason.
+# One per line: tool check path # reason. tool is cppcheck, clang-tidy or *; check and path take * and ?.
+# The audit behind every line, with each finding looked at one by one: docs/audits/static-2026-11-02.md.
+# A line for one file covers only the findings reviewed there; a new one in another file fails until it is looked at.
+
+# ---- by design everywhere: the C11-only rule and the game's own idioms ----
+clang-tidy clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling * # Annex K (*_s) is optional in C11, missing on glibc and macOS, and the game is C11 only
+clang-tidy cert-err33-c * # printf-family logging and tool outputs; the writes that can lose a player's data (settings, songs) go through plat_save_end, which checks every write and the close
+clang-tidy bugprone-narrowing-conversions * # float maths in a float game: int to float and double to float on purpose, ranges known
+clang-tidy bugprone-signed-bitwise * # colour and bit packing on ints whose values are never negative
+clang-tidy bugprone-unchecked-string-to-number-conversion * # atoi/atof on command-line flags and settings: bad text reads as 0, then clamped by the caller
+clang-tidy bugprone-implicit-widening-of-multiplication-result * # each product reviewed: bounded by mesh, map, image or buffer sizes far below INT_MAX
+clang-tidy bugprone-float-loop-counter * # integer steps (exact in float) or probes and geometry that set no count; the one that set a count (compose arpeggio) is fixed
+clang-tidy clang-analyzer-security.FloatLoopCounter * # the same float loops, as the analyzer reports them
+clang-tidy concurrency-mt-unsafe * # getenv, strtok, localeconv run on the main thread or only read; nothing in the game calls setenv, setlocale or putenv
+clang-tidy bugprone-suspicious-string-compare * # strcmp/memcmp used as "differs" in a condition, on purpose
+clang-tidy bugprone-assignment-in-if-condition * # deliberate (t -= dt) <= 0 timers and (x = alloc()) != NULL, all parenthesised
+clang-tidy bugprone-switch-missing-default-case * # switches over bounded codes; a code with no case has nothing to do
+clang-tidy bugprone-unhandled-code-paths * # the same switches (mesh.c, doctrinetest.c, ui.c)
+clang-tidy misc-confusable-identifiers * # maths names (l, I, O) in separate scopes; no two are ever mixed up in one expression
+clang-tidy clang-analyzer-optin.performance.Padding * # field order kept for reading; no struct here is big or hot enough to repack
+clang-tidy misc-no-recursion * # tree walkers (glTF nodes, JSON, D3D12 sample counts, livepilot's match) on depth-limited input
+clang-tidy misc-unused-parameters * # callbacks and table functions that share one signature
+clang-tidy performance-type-promotion-in-math-fn tests/* # tests check in double on purpose
+cppcheck unusedStructMember * # members kept for the file formats and APIs they mirror (Wayland, X11, WAV, personas)
+cppcheck constVariable * # style: const-correctness only
+cppcheck constVariablePointer * # style: const-correctness only
+cppcheck constParameterPointer * # style: const-correctness only
+cppcheck constParameterCallback * # a callback's parameter type is fixed by its table
+cppcheck constStatement * # (void)a, (void)b; to mark unused parameters
+cppcheck funcArgNamesDifferent * # style: a declaration's parameter names differ from the definition's
+cppcheck variableScope * # style: where a variable is declared
+cppcheck shadowVariable * # every case built clean with -Wshadow -Werror; these are cppcheck's own wider rule (a struct member, a nested scope)
+cppcheck shadowFunction * # a local named like a function in another file (cic, gpu, synth); never called in that scope
+cppcheck strtokCalled * # main thread only (btpad's argv), livepilot has no threads
+
+# ---- looked at one by one: false positives, each in its file ----
+clang-tidy clang-analyzer-core.NullDereference src/audit.c # drone mode always creates the drone (game.c:61, 319-320), and sortie modes always have a seat 0 or a drone
+clang-tidy clang-analyzer-core.NullDereference src/flighttest.c # drone mode always creates the drone (game.c:61, 319-320)
+cppcheck nullPointer src/audit.c # the same drone pointer
+cppcheck nullPointer src/flighttest.c # the same drone pointer
+clang-tidy clang-analyzer-core.UndefinedBinaryOperatorResult src/audit.c # hp0, thp0, prevHp and the PNG rows are filled for every index read; nplanes and ntargets do not change in a match
+clang-tidy clang-analyzer-core.UndefinedBinaryOperatorResult src/compose.c # tones[0] is always set: note i itself is the first chord tone
+clang-tidy clang-analyzer-core.UndefinedBinaryOperatorResult tests/test_figure.c # the PNG rows are written in full before they are summed
+clang-tidy clang-analyzer-unix.cstring.NullArg src/audit.c # the same getenv value is checked non-NULL by the && just before
+clang-tidy clang-analyzer-security.ArrayBound src/core/game.h # jet is always 0..NJETS-1 or DRONE_JET (game.c:330-331)
+clang-tidy clang-analyzer-security.ArrayBound src/core/json.c # the loop stops at the string's NUL
+clang-tidy clang-analyzer-security.ArrayBound src/core/sim.c # every append checks MAX_MISSILES first; both teams always have a plane
+clang-tidy clang-analyzer-security.ArrayBound src/net.c # n never passes sizeof b (put8 and getn clamp it)
+clang-tidy clang-analyzer-security.ArrayBound src/paint.c # the stroke's buffer reserves (n + 1) * 14 points per contour, at most 4 + 10 per segment
+clang-tidy clang-analyzer-security.ArrayBound src/ui.c # reached only when the text is longer than the box, so cut is inside it
+clang-tidy clang-analyzer-security.ArrayBound tests/* # test tools on their own files: indices bounded by the sizes they check (check_cmp's modulo, ear_check's FFT table)
+clang-tidy clang-analyzer-security.ArrayBound tools/livepilot/livepilot.c # a film with no frame fails before its last frame is read
+clang-tidy clang-analyzer-core.uninitialized.ArraySubscript src/stores.c # ob[0..nbody-1] is filled just before, nbody <= NST
+clang-tidy clang-analyzer-core.CallAndMessage src/intro.c # actors that are not ships are read with stride 7 and sample() fills all 7
+clang-tidy clang-analyzer-core.CallAndMessage tests/ear_check.c # wav_read needs a rate of at least 8000, so the model is always set up on the first file
+clang-tidy clang-analyzer-core.uninitialized.Assign tests/ear_check.c # re[0..N-1] is filled just before
+clang-tidy clang-analyzer-core.DivideZero src/paint.c # the blur's radius is at least 1 here, so cnt >= 3
+clang-tidy clang-analyzer-unix.Malloc src/intro.c # segs[0].k is the same block as first, kept for the intro's life
+clang-tidy clang-analyzer-deadcode.DeadStores * # a last += or a default that is overwritten: harmless, reviewed (compose, figure, flighttest, livepilot)
+cppcheck unreadVariable * # the same last stores; on Vulkan ub is read through lc.pBindings
+clang-tidy clang-analyzer-optin.core.EnumCastOutOfRange src/platform/gx_d3d12.c # D3D12 resource states are flags, OR-ed on purpose
+clang-tidy clang-analyzer-optin.osx.cocoa.localizability.NonLocalizedStringChecker src/platform/plat_mac.m # the game's own menu text, not localised
+clang-tidy clang-analyzer-optin.taint.TaintedAlloc tests/ear_check.c # a test tool reading the project's own WAV files
+clang-tidy clang-analyzer-optin.portability.UnixAPI tests/* # sizes from the test's own FFT and tmpfile, never 0 in practice; a 0 only reads nothing
+clang-tidy clang-analyzer-unix.Errno tests/test_glb.c # errno is never read; ftell on tmpfile does not fail
+clang-tidy bugprone-unsafe-functions tests/test_glb.c # rewind on a tmpfile the test just wrote
+clang-tidy misc-redundant-expression * # x == x and x - x: NaN and infinity checks on purpose (fmath, audit, cheat, flighttest, main); livepilot's "" : "" is harmless
+cppcheck duplicateExpression src/core/fmath.c # (x - x) / (x - x) makes a NaN on purpose
+clang-tidy bugprone-branch-clone * # two branches with the same body kept apart for reading (sim, plat_keys, plat_win, livepilot)
+cppcheck duplicateExpressionTernary tools/livepilot/livepilot.c # the same "" : "": harmless
+clang-tidy bugprone-integer-division * # grid rows and column pairs: integer division on purpose
+clang-tidy bugprone-signed-char-misuse * # MIDI notes held in int8_t are 0..127, never negative
+clang-tidy bugprone-suspicious-memory-comparison src/core/glb.c # identity is wanted bit for bit; a -0 only takes the general path
+clang-tidy bugprone-suspicious-memory-comparison src/synth.c # the patch's floats from level on, contiguous with no padding; the same bits mean the default patch
+clang-tidy bugprone-not-null-terminated-result * # memcpy of fixed tags into binary headers (WAV, CPace, watch keys, fuzz seeds), not strings
+clang-tidy bugprone-macro-parentheses * # each macro used only with plain names, or the argument is a declarator that cannot take parentheses
+clang-tidy bugprone-misplaced-widening-cast src/intro.c # nflares + 1 is small; the cast is for calloc's size_t
+clang-tidy bugprone-inc-dec-in-conditions * # i + 1 < argc && argv[++i]: sequenced by &&
+clang-tidy bugprone-reserved-identifier * # _POSIX_C_SOURCE and _DARWIN_C_SOURCE: the feature macros the C library asks for
+clang-tidy cert-int09-c src/platform/plat.h # key codes with mixed initialisers checked: no two the same
+clang-tidy bugprone-assignment-in-selection-statement tools/livepilot/livepilot.c # (okr = game_read(...)) as the loop's test, on purpose
+clang-tidy bugprone-command-processor tools/livepilot/livepilot.c # the report opener on the tester's own machine, a fixed command
+clang-tidy misc-use-internal-linkage src/platform/plat_win.c # DEFINE_GUID makes these; the macro cannot be static
+clang-tidy performance-no-int-to-ptr src/platform/plat_win.c # Windows handle constants such as (HANDLE)-4, as the API defines them
+clang-tidy readability-non-const-parameter src/platform/* # the type the OS callback is declared with
+cppcheck uninitvar * # arrays filled up to n before they are read with n (mesh faces, plane names), reviewed
+cppcheck negativeIndex * # the index is 0 or 1 (1 - k with k < 2) or DRONE_JET, never -1
+cppcheck arrayIndexOutOfBounds src/gpu.c # ci and cj are clamped below MAP_CELLS just before
+cppcheck floatConversionOverflow src/figure.c # the empty box returns first since 410e6fc; cppcheck does not follow that return
+cppcheck knownConditionTrueFalse * # cppcheck misses that sim_update changes the plane, and its float range analysis is wrong here
+cppcheck nullPointerOutOfMemory src/platform/plat_wayland.c # mmap returns MAP_FAILED, checked, never NULL
+cppcheck resourceLeak src/platform/plat_win.c # dwmapi and XInput stay loaded for the program's life, on purpose
+cppcheck incompleteArrayFill * # memset of the array by its own sizeof
+cppcheck invalidPointerCast * # the JSON arena on double storage, and offsetof a float field of Patch
+cppcheck duplicateCondition * # two ifs on the same flag doing different things
+cppcheck duplicateAssignExpression src/command.c # fz = rx = cosf(h): one value for two names in a 2-D rotation
+cppcheck redundantInitialization src/figure.c # a default overwritten in both branches
+cppcheck clarifyCalculation src/platform/plat_win.c # (lp & (1 << 24)) ? 0x100 : 0, parenthesised as meant
+cppcheck truncLongCastAssignment src/room.c # a colour product stored in a double; precision does not matter
+cppcheck unassignedVariable src/cockpit.c # an unused scratch buffer, marked (void)
+
+# ---- clang 21 (the Linux VM) names some checks by their CERT alias only: the same findings and reasons as above ----
+clang-tidy cert-err34-c * # = bugprone-unchecked-string-to-number-conversion: atoi/atof on flags and settings, bad text reads as 0 and is clamped
+clang-tidy cert-flp30-c * # = bugprone-float-loop-counter: integer steps or probes and geometry that set no count; the one that set a count is fixed (ec2317a)
+clang-tidy cert-env33-c tools/livepilot/livepilot.c # = bugprone-command-processor: the report opener on the tester's own machine, a fixed command
+clang-tidy cert-int09-c src/platform/plat_x11.c # the X11 event codes, each as the protocol numbers it (KeyPress 2 .. ClientMessage 33)
+
+cppcheck unmatchedSuppression nofile # cppcheck 2.18 skips unusedFunction when run with -j N, so the --suppress=unusedFunction that tools/static passes is unmatched
+# ---- the Linux platform files and the Linux build, looked at one by one ----
+clang-tidy clang-analyzer-core.NonNullParamChecker src/audit.c # getenv read twice: the second is the same value the first was checked non-NULL; nothing calls setenv
+clang-tidy clang-analyzer-core.NonNullParamChecker src/eyes.c # the same twice-read getenv (A4C_EYES_EVERY)
+clang-tidy clang-analyzer-core.NonNullParamChecker src/main.c # the same twice-read getenv (A4C_EVERY)
+clang-tidy clang-analyzer-security.ArrayBound src/platform/plat_wayland.c # each read is limited to cap - n - 1, so n < cap and s[n] = 0 is inside
+clang-tidy performance-no-int-to-ptr src/platform/plat_wayland.c # an output's index as the listener's user data, as Wayland's API takes it
+clang-tidy performance-no-int-to-ptr src/platform/plat_x11.c # the X11 window id in PlatNative's pointer field, as the API defines it
+# the review fixes' tests and the Windows save (2026-11-03)
+clang-tidy performance-no-int-to-ptr src/platform/plat_win32.c # _get_osfhandle gives the file's HANDLE as an intptr_t, as the API defines it
+clang-tidy bugprone-suspicious-include tests/* # a unit test includes the .c it tests, to reach its static functions
+clang-tidy misc-use-internal-linkage tests/* # stand-ins for functions the tested .c calls from elsewhere: they must be external to take their place
+clang-tidy readability-non-const-parameter tests/test_config.c # a stand-in with plat.h's own signature (plat_config_dir writes into buf)
+clang-tidy clang-analyzer-optin.taint.GenericTaint tests/test_relay_sweep.c # it runs the relay named on its own command line, from ctest
+clang-tidy bugprone-suspicious-memory-comparison tests/test_sfx.c # the mix in one piece and in 512-frame pieces must be the same bits, not just equal floats
+clang-tidy bugprone-casting-through-void src/core/json.c # the allocator's header before its blocks: -Wcast-align's way through void *, alignment certain (safe-c-2026-11-02.md)
+clang-tidy bugprone-casting-through-void src/editor.c # a Patch's float field at its offsetof: -Wcast-align's way through void *, alignment certain (safe-c-2026-11-02.md)
+clang-tidy bugprone-casting-through-void src/platform/plat_win.c # GetProcAddress's FARPROC to the named function's own type (-Wcast-function-type's way through void *); WASAPI's byte buffer to float only after fill has checked the address is aligned for float (C11 6.3.2.3), else through an aligned chunk and memcpy

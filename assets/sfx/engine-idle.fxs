@@ -1,0 +1,44 @@
+# engine-idle: jet engine idle: low filtered rumble, soft pulse throb, faint turbine whine (loop)
+a4c-sfx 1
+play loop 384
+volume f
+wave mutew
+  08 +0
+  00 +0
+  end
+instrument mute ad=00 sr=00 wave=mutew
+wave rumw
+  81 =22
+  81 =24
+  81 =21
+  81 =23
+  loop 0
+wave throbw
+  41 +0
+  end
+wave whinew
+  11 +0
+  end
+pulse throbp
+  set 200 01
+  add 008 64
+  add -008 64
+  loop 1
+filter rumf
+  set lp 180 6 1
+  add 020 32
+  add -020 32
+  loop 1
+instrument rum ad=a0 sr=f0 wave=rumw filter=rumf flags=filteron
+instrument throb ad=a0 sr=a0 wave=throbw pulse=throbp
+instrument whine ad=a0 sr=30 wave=whinew
+command wob vib 0c 05
+track 1
+  C-4:rum + + + + + + + + + + + + + + +
+  @loop + + + + + + + + + + + + + + + +
+track 2
+  A-1:throb + + + + + + + + + + + + + + +
+  @loop + + + + + + + + + + + + + + + +
+track 3
+  A-5:whine:wob + + + + + + + + + + + + + + +
+  @loop + + + + + + + + + + + + + + + +

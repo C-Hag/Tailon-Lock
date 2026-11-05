@@ -1,0 +1,706 @@
+#!/usr/bin/env python3
+"""tools/handson - the AI test pilots' hands-on checklist: the items a person checks by hand on each computer
+(docs/TEST_GUIDE.md section 5, items 1-17), done by the game's own test hooks instead of hands, then the CPU
+pilots' own checklist (docs/AI_PILOT_CHECKLIST.md sections 1-7, items 21-27) from one round of the audit, the test
+pilots and the cheater. Original code for this project;
+Python 3.8+ standard library only.
+
+usage: tools/handson [--build DIR] [--report FILE] [--only N[,N...]] [--cert]
+
+Each item drives a real copy of the game (offscreen video, so it runs without a screen): keys pressed and held
+(--key), clicks (--click), window events (--event: focus, hide, show, a 2 s hitch, quit), and it reads what
+happened from the game's own log (A4C_STATE=1 logs every screen, sound and window change; A4C_PLANES=1 where each
+jet ended up; --watch the instrument and picture checks; A4C_MIX_DUMP the sound mix). Every item ends PASS, FAIL
+or SKIP with its evidence; the report is Markdown (--report, default build/handson/report.md). Exits 1 if an
+item failed. --cert also writes certs/<commit>-hands-on-<system>.md, a box ticked only on PASS (or n/a) with its
+evidence and hash, for tools/certify release.
+
+The network items (13-15) run two copies here on UDP 27960 and 27961 (the LAN port and its beacons), so they skip
+while another copy is hosting.
+
+The settings each run uses are a copy in build/handson/cfg, never the player's own."""
+import os
+import re
+import shutil
+import signal
+import struct
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, 'build', 'handson')
+CFG = os.path.join(OUT, 'cfg')
+EXE = None
+BUILD = None
+
+# the main menu's buttons in a 1280x720 window (ui.c lays them out)
+BUTTON = {'start': (640, 430), 'hangar': (491, 460), 'settings': (640, 460), 'network': (788, 460),
+          'intro': (528, 490), 'exit': (752, 490)}
+
+
+def fresh_cfg(extra=''):
+    """A clean settings file: air start, no intro, so every run begins the same."""
+    d = os.path.join(CFG, 'tailonlock')
+    shutil.rmtree(CFG, ignore_errors=True)
+    os.makedirs(d)
+    with open(os.path.join(d, 'settings.ini'), 'w') as f:
+        f.write('intro=0\nstart=air\n' + extra)
+
+
+def env(**more):
+    e = dict(os.environ, XDG_CONFIG_HOME=CFG, A4C_CONFIG_DIR=os.path.join(CFG, 'tailonlock'), A4C_VIDEO='offscreen',
+             A4C_AUDIO='dummy', A4C_STATE='1')
+    e.update({k: str(v) for k, v in more.items()})
+    return e
+
+
+def run(args, timeout=120, **more):
+    """Runs the game; returns (exit code, log text)."""
+    try:
+        p = subprocess.run([EXE] + args, env=env(**more), capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout + p.stderr
+    except subprocess.TimeoutExpired as e:
+        return 'timeout', (e.stdout or b'').decode(errors='replace') if isinstance(e.stdout, bytes) else (e.stdout or '')
+
+
+def states(log):
+    """The STATE lines as (what, frame)."""
+    return [(m.group(1), int(m.group(2))) for m in re.finditer(r'STATE (.+?) at frame (\d+)', log)]
+
+
+def first(log, what):
+    for w, f in states(log):
+        if w == what:
+            return f
+    return None
+
+
+def planes(log):
+    """A4C_PLANES: name -> (x, y, z, speed) where each jet ended up."""
+    out = {}
+    for m in re.finditer(r'plane (.+?): alive \d+ taxi \d+ cat \d+ pos (\S+) (\S+) (\S+) speed (\S+)', log):
+        out[m.group(1)] = tuple(float(v) for v in m.group(2, 3, 4, 5))
+    return out
+
+
+# ---- the items -------------------------------------------------------------------------------------------------
+def item1():
+    """Window: the right size, fullscreen by F11 and by Alt+Enter, and back."""
+    fresh_cfg()
+    code, log = run(['--frames', '400', '--key', '20:esc', '--key', '60:f11', '--key', '120:f11', '--key', '180:alt+enter',
+                     '--key', '240:alt+enter'])
+    sizes = [w for w, _ in states(log) if w.startswith('window ')]
+    ok = len(sizes) >= 5 and sizes[0] == 'window 1280x720' and sizes[1] != sizes[0] and sizes[2] == sizes[0] \
+        and sizes[3] != sizes[0] and sizes[4] == sizes[0]
+    return ok, 'window sizes in turn: ' + ', '.join(s[7:] for s in sizes)
+
+
+def item2():
+    """Mouse: each main-menu button does what it says where the pointer is."""
+    out, ok = [], True
+    for name, want in (('start', 'play'), ('hangar', 'page hangar'), ('network', 'page network')):
+        fresh_cfg()
+        x, y = BUTTON[name]
+        code, log = run(['--frames', '200', '--click', '60:%d:%d' % (x, y)])
+        hit = first(log, want)
+        ok = ok and hit is not None
+        out.append('%s at (%d, %d): %s' % (name, x, y, 'frame %d' % hit if hit else 'nothing'))
+    fresh_cfg()
+    x, y = BUTTON['exit']
+    t0 = time.time()
+    code, log = run(['--frames', '2000', '--click', '60:%d:%d' % (x, y)])
+    quick = time.time() - t0 < 30 and 'STATE' in log and not re.search(r'frame (1[0-9]{3})', log)
+    ok = ok and code == 0
+    out.append('exit at (%d, %d): exit code %s' % (x, y, code))
+    return ok, '; '.join(out)
+
+
+def item3():
+    """Keyboard: both 2-player key sets fly their jets, Esc pauses, M mutes."""
+    fresh_cfg()
+    out, fly = [], True
+    for keys, who in ((('s', 'd'), 'PLAYER 1'), (('down', 'right'), 'PLAYER 2')):
+        base = planes(run(['--play', '2p', '--seed', '3', '--frames', '240'], A4C_PLANES=1)[1])
+        for k in keys:
+            moved = planes(run(['--play', '2p', '--seed', '3', '--frames', '240', '--key', '30:%s:150' % k], A4C_PLANES=1)[1])
+            mine = sum(abs(moved[who][j] - base[who][j]) for j in range(3)) if who in moved and who in base else 0
+            other = [n for n in base if n != who and n in moved]
+            theirs = sum(abs(moved[other[0]][j] - base[other[0]][j]) for j in range(3)) if other else 0
+            fly = fly and mine > 20 and theirs < 1
+            out.append('%s moved %s %.0f m (the other jet %.0f m)' % (k, who, mine, theirs))
+    fresh_cfg()
+    log = run(['--play', '1p', '--frames', '200', '--key', '40:m', '--key', '100:esc'])[1]
+    muted = first(log, 'sound off') is not None
+    paused = first(log, 'pause') is not None
+    ok = fly and muted and paused
+    return ok, 'keys held 2.5 s: %s; M: %s; Esc: %s' % ('; '.join(out), 'muted' if muted else 'nothing',
+                                                          'paused' if paused else 'nothing')
+
+
+def mix_stats(path):
+    """Peak, the biggest jump between samples and the longest run of silence (s) in a float stereo 48 kHz mix."""
+    data = open(path, 'rb').read()
+    n = len(data) // 4
+    vals = struct.unpack('<%df' % n, data[:n * 4])
+    left = vals[0::2]
+    peak = max((abs(v) for v in left), default=0)
+    jump = max((abs(left[i] - left[i - 1]) for i in range(1, len(left))), default=0)
+    run_, longest = 0, 0
+    for v in left:
+        run_ = run_ + 1 if abs(v) < 1e-5 else 0
+        longest = max(longest, run_)
+    return peak, jump, longest / 48000.0
+
+
+def item4():
+    """Sound: music and effects with no clicks or dropouts, and the sound back after the focus comes back."""
+    fresh_cfg()
+    raw = os.path.join(OUT, 'mix.raw')
+    code, log = run(['--play', '1p', '--frames', '1500', '--key', '60:space:120', '--event', '700:focus-lost',
+                     '--event', '760:focus-gained', '--key', '800:esc'], A4C_MIX_DUMP=raw)
+    if not os.path.exists(raw):
+        return False, 'no mix was written'
+    peak, jump, silent = mix_stats(raw)
+    ok = 0 < peak <= 1.0 and jump < 0.5 and silent < 0.5
+    return ok, 'peak %.2f, biggest step between samples %.3f, longest silence %.2f s (gun fired, focus lost and back)' % (
+        peak, jump, silent)
+
+
+def item5():
+    """The intro plays to the menu by itself and can be skipped at any moment."""
+    out, ok = [], True
+    for f in (30, 400, 1500, 3000):
+        fresh_cfg()
+        code, log = run(['--play', 'intro', '--frames', str(f + 40), '--key', '%d:esc' % f])
+        at = first(log, 'menu')
+        ok = ok and at is not None and at <= f + 3
+        out.append('Esc at %d: menu at %s' % (f, at))
+    fresh_cfg()
+    code, log = run(['--play', 'intro', '--frames', '5200'], timeout=600)
+    at = first(log, 'menu')
+    ok = ok and at is not None
+    out.append('left alone: menu at %s' % at)
+    return ok, '; '.join(out)
+
+
+def item6():
+    """Both renderers at every graphics level, with the watch's picture checks against the 3D world."""
+    out, ok = [], True
+    for r in ('modern', 'retro'):
+        for gfx in ('low', 'medium', 'high', 'ultra'):
+            fresh_cfg()
+            code, log = run(['--watch', '--view', 'cockpit', '--renderer', r, '--gfx', gfx, '--frames', '900', '--seed', '5'])
+            bad = [m for m in re.findall(r'(BANK DEG|PITCH DEG|ENEMY BOX PX|RANGE KM|LOCK DEG|LEAD MISS M) OFF ([0-9.]+)%', log)
+                   if float(m[1]) > 2]
+            ran = 'CHECK' in log and code == 0
+            ok = ok and ran and not bad
+            out.append('%s/%s %s' % (r, gfx, 'ok' if ran and not bad else 'FAIL ' + str(bad or code)))
+    return ok, ', '.join(out)
+
+
+def item7():
+    """A setting survives quitting and starting again."""
+    fresh_cfg()
+    run(['--play', '1p', '--frames', '120', '--key', '40:m'])
+    log = run(['--frames', '30'])[1]
+    off = first(log, 'sound off')
+    return off == 1, 'sound muted with M, then a fresh start: %s' % ('sound off from frame 1' if off == 1 else 'sound on again')
+
+
+def item8():
+    """Quitting by the menu's EXIT and by the window's close button: a clean exit and nothing left running."""
+    out, ok = [], True
+    for how, args in (('menu EXIT', ['--frames', '600', '--click', '60:%d:%d' % BUTTON['exit']]),
+                      ('close button', ['--play', '1p', '--frames', '600', '--event', '120:quit'])):
+        fresh_cfg()
+        t0 = time.time()
+        p = subprocess.Popen([EXE] + args, env=env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        try:
+            p.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            p.kill()
+        left = subprocess.run(['pgrep', '-f', EXE], capture_output=True, text=True).stdout.split()
+        clean = p.returncode == 0 and str(p.pid) not in left
+        ok = ok and clean
+        out.append('%s: exit code %s in %.1f s%s' % (how, p.returncode, time.time() - t0, '' if clean else ', STILL RUNNING'))
+    return ok, '; '.join(out)
+
+
+def skip(why):
+    return lambda: (None, why)
+
+
+def item12():
+    """Minimised (or asleep) mid-match: the match pauses, a 2 s hitch does not hang it, and it carries on."""
+    fresh_cfg()
+    raw = os.path.join(OUT, 'mix12.raw')
+    code, log = run(['--play', '1p', '--frames', '900', '--event', '200:hide', '--event', '230:stall', '--event', '260:show',
+                     '--key', '300:esc'], A4C_MIX_DUMP=raw)
+    paused = first(log, 'pause')
+    back = [f for w, f in states(log) if w == 'play' and f > 260]
+    peak = mix_stats(raw)[0] if os.path.exists(raw) else 0
+    ok = code == 0 and paused is not None and bool(back) and peak > 0
+    return ok, 'hidden at 200: paused at %s; shown, Esc at 300: playing at %s; exit code %s; sound peak %.2f' % (
+        paused, back[0] if back else None, code, peak)
+
+
+def item16():
+    """Killed mid-match: the settings file is intact and read at the next start."""
+    fresh_cfg('sound=0\n')
+    p = subprocess.Popen([EXE, '--play', '1p', '--frames', '100000'], env=env(), stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+    time.sleep(4)
+    p.send_signal(signal.SIGKILL)
+    p.wait()
+    log = run(['--frames', '30'])[1]
+    off = first(log, 'sound off')
+    return off == 1, 'killed after 4 s; next start: %s' % ('settings read (sound still off)' if off == 1 else 'settings lost')
+
+
+def item17():
+    """Readable at 1280x800: the menu and the cockpit, as pictures for a person to look at."""
+    fresh_cfg()
+    shots = []
+    for name, args in (('menu', ['--frames', '60']), ('cockpit', ['--play', '1p', '--frames', '300'])):
+        path = os.path.join(OUT, 'readable-%s.bmp' % name)
+        run(args + ['--window', '1280x800', '--screenshot', path])
+        if os.path.exists(path):
+            shots.append(path)
+    return None, 'pictures for review: ' + ', '.join(os.path.relpath(s, ROOT) for s in shots)
+
+
+# ---- the network items: two copies on this computer, through tools/playtest's own helpers --------------------
+def playtest():
+    """tools/playtest as a module (its game_env, game_args, wait_code, compare and bad-net proxy)"""
+    import importlib.machinery
+    import importlib.util
+    path = os.path.join(ROOT, 'tools', 'playtest')
+    loader = importlib.machinery.SourceFileLoader('playtest', path)
+    spec = importlib.util.spec_from_loader('playtest', loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def lan_ports_free():
+    """the LAN game port and the beacons' are free (the certificate's network runs use them too)"""
+    import socket
+    for port in (27960, 27961):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.bind(('', port))
+        except OSError:
+            return False
+        finally:
+            s.close()
+    return True
+
+
+def side(pt, d, who, args, games):
+    """starts one side in its own folder; returns (process, log path)"""
+    home = os.path.join(d, who + '-home')
+    os.makedirs(home, exist_ok=True)
+    log = os.path.join(d, who + '.log')
+    e = pt.game_env(home, log)
+    e['A4C_STATE'] = '1'
+    out = open(os.path.join(d, who + '.out'), 'w')
+    return subprocess.Popen([EXE] + args, env=e, stdout=out, stderr=subprocess.STDOUT, cwd=d), log
+
+
+def match_args(pt, seed, games, lives=1):
+    """a short match: one jet each, one life (the CPU pilots finish it in a minute or two)"""
+    return pt.game_args(seed, ['match=vs', 'size=1v1', 'start=air'], games, 900) + ['--set', 'planes=%d' % lives]
+
+
+def finish(procs, timeout):
+    end = time.monotonic() + timeout
+    for p in procs:
+        try:
+            p.wait(timeout=max(1, end - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+
+
+def text(path):
+    try:
+        return open(path, encoding='utf-8', errors='replace').read()
+    except OSError:
+        return ''
+
+
+def item_dir(n):
+    d = os.path.join(OUT, 'item%d' % n)
+    shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(d)
+    return d
+
+
+def item13():
+    """LAN: the host's game shows up in the other copy's list, which joins it with the code; a match, then a rematch,
+    and both copies agree on both."""
+    if not lan_ports_free():
+        return None, 'UDP 27960/27961 in use (another copy or the certificate is hosting): run again when free'
+    pt, d = playtest(), item_dir(13)
+    host, hlog = side(pt, d, 'host', ['--host'] + match_args(pt, 13, 2), 2)
+    code = pt.wait_code(hlog, host)
+    if not code:
+        finish([host], 1)
+        return False, 'the host made no game code'
+    guest, glog = side(pt, d, 'guest', ['--join', 'lan', '--code', code] + match_args(pt, 13, 2), 2)
+    finish([host, guest], 900)
+    listed = re.search(r'net: in the LAN list: (.+)', text(glog))
+    rows, probs = pt.compare(hlog, glog, 2, host.returncode, guest.returncode)
+    ok = bool(listed) and not probs and len(rows) == 2
+    return ok, 'the guest\'s list showed "%s"; joined with code %s; %d matches (the second a rematch) agreed%s' % (
+        listed.group(1) if listed else 'nothing', code, len(rows), '; ' + '; '.join(probs) if probs else '')
+
+
+def item14():
+    """A wrong code is refused with a message on both sides; the right code then joins and plays."""
+    if not lan_ports_free():
+        return None, 'UDP 27960/27961 in use (another copy or the certificate is hosting): run again when free'
+    pt, d = playtest(), item_dir(14)
+    host, hlog = side(pt, d, 'host', ['--host'] + match_args(pt, 14, 1), 1)
+    code = pt.wait_code(hlog, host)
+    if not code:
+        finish([host], 1)
+        return False, 'the host made no game code'
+    wrong = '%06d' % ((int(code) + 1) % 1000000)
+    bad, blog = side(pt, d, 'wrong', ['--join', '127.0.0.1', '--code', wrong, '--seconds', '12'] + match_args(pt, 14, 1), 1)
+    finish([bad], 30)
+    refused = re.search(r'net: ((?:WRONG GAME CODE|THE HOST DID NOT LET US IN)[^\n]*)', text(blog))
+    told = re.search(r'net: (SOMEONE TRIED A WRONG CODE[^\n]*)', text(hlog))
+    guest, glog = side(pt, d, 'guest', ['--join', '127.0.0.1', '--code', code] + match_args(pt, 14, 1), 1)
+    finish([host, guest], 600)
+    rows, probs = pt.compare(hlog, glog, 1, host.returncode, guest.returncode)
+    ok = bool(refused) and bool(told) and not probs and len(rows) == 1
+    return ok, 'code %s refused: guest "%s", host "%s"; then code %s: %d match agreed%s' % (
+        wrong, refused.group(1) if refused else 'no message', told.group(1) if told else 'no message', code, len(rows),
+        '; ' + '; '.join(probs) if probs else '')
+
+
+def item15():
+    """The cable pulled mid-match (a proxy between the copies drops everything): CONNECTION LOST on both within 6 s,
+    both back at the menu, and a new game hosted on the same port then plays."""
+    if not lan_ports_free():
+        return None, 'UDP 27960/27961 in use (another copy or the certificate is hosting): run again when free'
+    pt, d = playtest(), item_dir(15)
+    host, hlog = side(pt, d, 'host', ['--host'] + match_args(pt, 15, 1, lives=5), 1)
+    code = pt.wait_code(hlog, host)
+    if not code:
+        finish([host], 1)
+        return False, 'the host made no game code'
+    proxy = pt.BadNet(('127.0.0.1', 27960), 15, delay=(0.001, 0.002), loss=0, dup=0)
+    guest, glog = side(pt, d, 'guest', ['--join', '127.0.0.1:%d' % proxy.port, '--code', code] + match_args(pt, 15, 1, lives=5), 1)
+    end = time.monotonic() + 60
+    while time.monotonic() < end and not ('STATE play' in text(hlog) and 'STATE play' in text(glog)):
+        time.sleep(0.2)
+    time.sleep(8)  # well into the match
+    proxy.blackhole = True
+    t0, lost = time.monotonic(), {}
+    while time.monotonic() < t0 + 15 and len(lost) < 2:
+        for who, log in (('host', hlog), ('guest', glog)):
+            if who not in lost and 'CONNECTION LOST' in text(log):
+                lost[who] = time.monotonic() - t0
+        time.sleep(0.1)
+    time.sleep(1)
+    menu = {who: bool(re.search(r'CONNECTION LOST.*?STATE menu', text(log), re.S)) for who, log in (('host', hlog), ('guest', glog))}
+    finish([host, guest], 1)
+    proxy.close()
+    # the new game: the same port, a match to the end
+    host2, hlog2 = side(pt, d, 'host2', ['--host'] + match_args(pt, 16, 1), 1)
+    code2 = pt.wait_code(hlog2, host2)
+    rows = []
+    if code2:
+        guest2, glog2 = side(pt, d, 'guest2', ['--join', '127.0.0.1', '--code', code2] + match_args(pt, 16, 1), 1)
+        finish([host2, guest2], 600)
+        rows, probs = pt.compare(hlog2, glog2, 1, host2.returncode, guest2.returncode)
+    else:
+        finish([host2], 1)
+    ok = len(lost) == 2 and max(lost.values()) <= 6.5 and all(menu.values()) and len(rows) == 1
+    return ok, 'link cut: CONNECTION LOST on the host after %s s, the guest after %s s; back at the menu: host %s, guest %s; ' \
+        're-hosted on UDP 27960: %d match played' % (
+            '%.1f' % lost['host'] if 'host' in lost else 'never', '%.1f' % lost['guest'] if 'guest' in lost else 'never',
+            'yes' if menu['host'] else 'no', 'yes' if menu['guest'] else 'no', len(rows))
+
+
+def btpad(only):
+    """tools/btpad's scenarios (the game's Bluetooth pad simulator, src/btpad.c): (all passed, their evidence)"""
+    d = item_dir(9 if '1' in only.split(',') else 11)
+    rep = os.path.join(d, 'btpad.md')
+    p = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'btpad'), '--build', BUILD, '--only', only, '--report', rep],
+                       capture_output=True, text=True, timeout=1800)
+    with open(os.path.join(d, 'btpad.log'), 'w') as f:
+        f.write(p.stdout + p.stderr)
+    rows = re.findall(r'^\s*(\d+) (.+?)\s+(PASS|FAIL)\s+(.*)$', p.stdout, re.M)
+    ok = p.returncode == 0 and len(rows) == len(only.split(',')) and all(r[2] == 'PASS' for r in rows)
+    return ok, '; '.join('%s: %s %s' % (r[1].strip(), r[2], r[3]) for r in rows) or 'no scenario ran: ' + (p.stdout + p.stderr)[-200:]
+
+
+def item9():
+    """A gamepad: seen when paired before the start, the menus by the pad alone, two pads each its own jet in 2P,
+    and pads switched off and on again during a match (the pad simulator, as Bluetooth pads)."""
+    return btpad('1,2,6,8')
+
+
+def item11():
+    """A gamepad lost mid-match: the match pauses, takes it back with a 3-2-1, each pad keeps its seat, in 2P a lost
+    pad 2 pauses both."""
+    return btpad('5,7,10')
+
+
+def item28():
+    """The tanker call: key 4 calls the side's tanker once; the HUD says READY, INBOUND, then ON STATION, and a
+    second press does not call another."""
+    fresh_cfg()
+    code, log = run(['--play', '1p', '--frames', '2400', '--key', '60:4', '--key', '400:4'])
+    seen = [(w, f) for w, f in states(log) if w.startswith('TANKER')]
+    names = [w for w, _ in seen]
+    want = ['TANKER READY', 'TANKER INBOUND', 'TANKER ON STATION']
+    ok = code == 0 and names[:3] == want and names.count('TANKER INBOUND') == 1
+    return ok, 'the HUD: %s; exit code %s' % (', '.join('%s at %d' % (w, f) for w, f in seen) or 'no tanker line', code)
+
+
+# ---- the AI pilots' checklist (docs/AI_PILOT_CHECKLIST.md): one round's evidence, read once -------------------
+ROUND = {}
+
+
+def ai_round():
+    """The round's runs, once: the audit with every death, the test pilots and the cheater."""
+    if ROUND:
+        return ROUND
+    fresh_cfg()
+    # the certificate's own audit (112 matches a jet, every jet and the drone, every death), one process a jet side by
+    # side, so the digest compared in item 26 is of the matches its reference was taken from
+    jets = ['af40', 'lf27', 'ecf90', 'ja46', 'sy26', 'vk33', 'ks55', 'nf24', 'dr7']
+    logs = [os.path.join(OUT, 'audit-%s.log' % j) for j in jets]
+    procs = [subprocess.Popen([EXE, '--audit', '--part', 'sorties', '--sorties', '112', '--only', j, '--out', lg],
+                              env=env(A4C_AUDIT_DEATHS=1), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+             for j, lg in zip(jets, logs)]
+    codes = [q.wait(timeout=3600) for q in procs]
+    ROUND['audit'] = ''.join(open(lg, encoding='utf-8', errors='replace').read() for lg in logs if os.path.exists(lg))
+    ROUND['audit_code'] = max(codes)
+    for name, args in (('pilots', ['--matches', '200', '--seed', '9']), ('cheat', ['--pilot', 'cheat', '--matches', '90', '--seed', '9'])):
+        rep = os.path.join(OUT, name + '.md')
+        q = subprocess.run([EXE, '--test-pilots', '--report', rep] + args, env=env(), capture_output=True, text=True, timeout=1800)
+        ROUND[name] = open(rep).read() if os.path.exists(rep) else ''
+        ROUND[name + '_log'] = q.stdout + q.stderr
+    d = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'certify'), 'digest'] + logs, capture_output=True, text=True)
+    ROUND['digest'] = (d.returncode, (d.stdout + d.stderr).strip().splitlines()[-1:] or [''])
+    return ROUND
+
+
+def deaths(log, how=None):
+    return [l for l in re.findall(r'death t=.*', log) if how is None or (': %s at' % how) in l]
+
+
+def mission(report, name):
+    m = re.search(r'\| %s \| (\d+) \| (\d+) \| ([^|]*)\|' % re.escape(name), report[report.find('## Over every match'):])
+    return (int(m.group(1)), int(m.group(2)), m.group(3).strip()) if m else (0, 0, '')
+
+
+def matches(log):
+    return sum(int(n) for n in re.findall(r'(\d+) matches \(\d+ over', log))
+
+
+def ai1():
+    """Getting airborne: every take-off flies away; nobody crashes in the first minute."""
+    r = ai_round()
+    ok_, failed, note = mission(r['pilots'], 'Take-off')
+    early = [l for l in deaths(r['audit'], 'CRASHED') if float(re.search(r'spawned (\d+) s', l).group(1)) < 60]
+    return failed == 0 and not early, 'test pilots: %d take-offs, %d failed %s; audit: %d crashes in the first minute%s' % (
+        ok_ + failed, failed, note, len(early), ' (first: %s)' % early[0][:160] if early else '')
+
+
+def ai2():
+    """Flying: at most one crash into the ground in 50 matches; no physics fault."""
+    r = ai_round()
+    n = max(1, matches(r['audit']))
+    crashes = deaths(r['audit'], 'CRASHED')
+    faults = sum(int(f) for f in re.findall(r'(\d+) faults', r['audit']))
+    return len(crashes) * 50 <= n and faults == 0, '%d crashes in %d audit matches (1 in %.0f); %d physics faults%s' % (
+        len(crashes), n, n / max(1, len(crashes)), faults, '; first crash: ' + crashes[0][:160] if crashes else '')
+
+
+def ai3():
+    """Fuel, landing and rearming: home in time, lands, refuels and rearms, no flameout."""
+    r = ai_round()
+    # dry before sudden death (TANKER_STAYS, 30 minutes): after it nobody refuels anywhere, by the rules
+    dry_all = [l for l in deaths(r['audit'], 'CRASHED') if re.search(r'fuel 0 ', l)]  # crashed for want of fuel
+    dry = [l for l in dry_all if int(re.search(r'death t=(\d+)', l).group(1)) < 1800]
+    land, ref, rearm = (mission(r['pilots'], m) for m in ('Landing', 'Refuel at base', 'Rearm'))
+    cpu_land = [x for x in land[2].split(';') if 'CPU' in x]
+    ok = not dry and ref[1] == 0 and rearm[1] == 0 and not cpu_land
+    return ok, 'audit: %d jets down with an empty tank before sudden death (%d after it); test pilots: landings %d/%d (CPU failures: %d), refuels %d/%d, rearms %d/%d' % (
+        len(dry), len(dry_all) - len(dry), land[0], land[0] + land[1], len(cpu_land), ref[0], ref[0] + ref[1], rearm[0], rearm[0] + rearm[1])
+
+
+def ai4():
+    """Fighting: every jet wins 30-70 % (the drone may win more, not every match); no friendly fire; the cheater's
+    rule watch finds nothing."""
+    r = ai_round()
+    bad = []
+    for jet, won, lost in re.findall(r'^(\w+)\s+.*?won (\d+), lost (\d+)', r['audit'], re.M):
+        w, l = int(won), int(lost)
+        share = w / max(1, w + l)
+        if (jet != 'dr7' and not 0.3 <= share <= 0.7) or (jet == 'dr7' and l == 0):
+            bad.append('%s %.0f%%' % (jet, share * 100))
+    cheat = [l.strip() for l in r['cheat_log'].splitlines() if 'FINDING' in l]
+    return not bad and not cheat, 'win shares outside 30-70 %%: %s; cheater findings: %s' % (', '.join(bad) or 'none',
+                                                                                         '; '.join(cheat) or 'none')
+
+
+def match_length(log):
+    """(matches, mean minutes, share over 10 min, share over 30 min) over every aircraft's length line"""
+    n = mins = o10 = o30 = 0.0
+    for m in re.finditer(r'^\s+(\w+)\s+length\s+(\d+) matches: mean ([\d.]+) min, over 10 min (\d+) %, over 30 min (\d+) %', log, re.M):
+        if m.group(1) == 'all':
+            continue
+        k = int(m.group(2))
+        n, mins, o10, o30 = n + k, mins + k * float(m.group(3)), o10 + k * int(m.group(4)) / 100, o30 + k * int(m.group(5)) / 100
+    return (int(n), mins / n, 100 * o10 / n, 100 * o30 / n) if n else (0, 0, 0, 0)
+
+
+def ai5():
+    """Matches: every match ends, every mode with every jet; a match lasts 7.25 minutes at most on average (the owner,
+    2026-11-04: "Yes 7.25", with the runway rule; it was 7.0, and 6.5 before) and few reach the 30-minute sudden
+    death."""
+    r = ai_round()
+    fails = re.findall(r'\[FAIL\] (matches.*)', r['audit'])
+    timeouts = sum(int(t) for t in re.findall(r'(\d+) timeouts\)', r['audit']))
+    n, mean, o10, o30 = match_length(r['audit'])
+    ok = not fails and timeouts == 0 and n > 0 and mean <= 7.25 and o30 <= 5
+    return ok, '%d audit matches, %d timeouts; length: mean %.1f min (target 7.25 at most), over 10 min %.0f %%, over 30 min %.0f %% (5 at most)%s' % (
+        matches(r['audit']), timeouts, mean, o10, o30, '; ' + fails[0] if fails else '')
+
+
+def ai6():
+    """The same game everywhere: the audit's digest is the reference."""
+    code, last = ai_round()['digest']
+    return code == 0, 'tools/certify digest: ' + (last[0] if last else 'no output')
+
+
+def ai7():
+    """What the pilot sees: the instruments read the jet's own motion (the test pilots' gauge check)."""
+    r = ai_round()
+    rows = re.findall(r'\| (AIRSPEED KT|CLIMB FT/MIN|SLIP DEG|G|ALTITUDE FT|FUEL %) \| ([0-9.]+)% \|', r['pilots'])
+    bad = [(n, v) for n, v in rows if float(v) > 3]
+    return bool(rows) and not bad, 'share of the time off: ' + ', '.join('%s %s%%' % rv for rv in rows) + \
+        ' (the picture check is item 6; the views stills are --audit --part views)'
+
+
+ITEMS = [
+    (1, 'Window, fullscreen (F11, Alt+Enter)', item1),
+    (2, 'Mouse clicks land where the pointer is', item2),
+    (3, 'Keyboard: both 2P key sets, pause, M mutes', item3),
+    (4, 'Music and effects: no clicks or dropouts, sound back after focus loss', item4),
+    (5, 'Intro plays to the menu and can be skipped', item5),
+    (6, 'Both renderers at every graphics level, picture checks', item6),
+    (7, 'A setting survives quit and restart', item7),
+    (8, 'Quit by menu and close button: clean exit', item8),
+    (9, 'Gamepad before and during play, two pads in 2P', item9),
+    (10, 'HOTAS bindings saved', lambda: ('n/a', 'n/a until supported: the game has no HOTAS support yet')),
+    (11, 'Pad unplugged mid-match', item11),
+    (12, 'Minimise or sleep mid-match', item12),
+    (13, 'LAN: host, list, join by code, play, rematch', item13),
+    (14, 'A wrong code is refused, then the right one works', item14),
+    (15, 'Network lost mid-match: CONNECTION LOST in about 6 s', item15),
+    (16, 'Force-quit and restart: settings intact', item16),
+    (17, 'Readable at 1280x800', item17),
+    (28, 'Tanker call: key 4 once a match, the HUD\'s states', item28),
+    # the AI pilots' checklist, docs/AI_PILOT_CHECKLIST.md sections 1-7
+    (21, 'AI: getting airborne', ai1),
+    (22, 'AI: flying (crashes, physics)', ai2),
+    (23, 'AI: fuel, landing and rearming', ai3),
+    (24, 'AI: fighting (win shares, the cheater\'s rule watch)', ai4),
+    (25, 'AI: every match ends, every mode and jet, match length', ai5),
+    (26, 'AI: the same game everywhere (audit digest)', ai6),
+    (27, 'AI: what the pilot sees (instruments)', ai7),
+]
+
+
+def evidence_hash(n, evidence):
+    """sha256 over the evidence line and every file the item left in its folder (build/handson/itemN)"""
+    import hashlib
+    h = hashlib.sha256(evidence.encode('utf-8'))
+    d = os.path.join(OUT, 'item%d' % n)
+    for root, _, files in sorted(os.walk(d)):
+        for name in sorted(files):
+            if name.endswith('.log') or name.endswith('.out'):
+                h.update(name.encode('utf-8'))
+                with open(os.path.join(root, name), 'rb') as f:
+                    h.update(f.read())
+    return h.hexdigest()
+
+
+def write_cert(rows):
+    """certs/<commit>-hands-on-<system>.md: docs/TEST_GUIDE.md section 5, a box ticked only on PASS (or n/a, for what
+    the game does not support yet) with its evidence line and hash; tools/certify release reads the boxes"""
+    import platform
+    sysname = {'Darwin': 'macos', 'Linux': 'linux', 'Windows': 'windows'}.get(platform.system(), platform.system().lower())
+    rc = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True)
+    full = rc.stdout.strip() or 'unknown'
+    path = os.path.join(ROOT, 'certs', '%s-hands-on-%s.md' % (full[:12], sysname))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('# Hands-on checks, %s, commit %s\n\nFlown by tools/handson (docs/TEST_GUIDE.md section 5), %s. A box is '
+                'ticked only on PASS, with its evidence and the sha256 of the evidence and its logs; n/a is a feature '
+                'the game does not have yet.\n\n' % (sysname, full, time.strftime('%Y-%m-%d %H:%M')))
+        for n, name, verdict, ev, digest in rows:
+            if n > 17:
+                continue
+            box = 'x' if verdict in ('PASS', 'N/A') else ' '
+            f.write('- [%s] %d. %s: %s. %s (sha256 %s)\n' % (box, n, name, verdict, ev, digest[:16]))
+    return path
+
+
+def main():
+    global EXE, BUILD
+    args = sys.argv[1:]
+    BUILD = os.path.join(ROOT, 'build', 'linux-release')
+    report = os.path.join(OUT, 'report.md')
+    only, cert = None, False
+    i = 0
+    while i < len(args):
+        if args[i] == '--build':
+            BUILD = os.path.abspath(args[i + 1])
+            i += 1
+        elif args[i] == '--report':
+            report = os.path.abspath(args[i + 1])
+            i += 1
+        elif args[i] == '--only':
+            only = {int(v) for v in args[i + 1].split(',')}
+            i += 1
+        elif args[i] == '--cert':
+            cert = True
+        i += 1
+    EXE = os.path.join(BUILD, 'tailonlock')
+    mac = os.path.join(BUILD, 'TailonLock.app', 'Contents', 'MacOS', 'TailonLock')  # the macOS build is an app
+    if not os.path.isfile(EXE) and os.path.isfile(mac):
+        EXE = mac
+    os.makedirs(OUT, exist_ok=True)
+    rows, failed = [], 0
+    for n, name, fn in ITEMS:
+        if only and n not in only:
+            continue
+        t0 = time.time()
+        ok, evidence = fn()
+        verdict = 'SKIP' if ok is None else 'N/A' if ok == 'n/a' else 'PASS' if ok else 'FAIL'
+        failed += verdict == 'FAIL'
+        print('[%2d] %-4s %s (%.0f s)\n     %s' % (n, verdict, name, time.time() - t0, evidence), flush=True)
+        rows.append((n, name, verdict, evidence, evidence_hash(n, evidence)))
+    with open(report, 'w') as f:
+        f.write('# Hands-on checklist, flown by the test pilots\n\n%s, build %s\n\n| # | Item | Result | Evidence |\n'
+                '|---|---|---|---|\n' % (time.strftime('%Y-%m-%d %H:%M'), os.path.relpath(BUILD, ROOT)))
+        for n, name, verdict, ev, _ in rows:
+            f.write('| %d | %s | %s | %s |\n' % (n, name, verdict, ev.replace('|', '/')))
+    print('report: ' + os.path.relpath(report, ROOT))
+    if cert:
+        print('certificate: ' + os.path.relpath(write_cert(rows), ROOT))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

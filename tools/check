@@ -1,0 +1,935 @@
+#!/usr/bin/env python3
+"""tools/check - the local code checker: the gate every brick of docs/BUILD_PLAN.md passes.
+Original code for this project.
+
+usage: tools/check [--quick] [--baseline] [--new-sound] [--serial] [--only N[,N...]]
+  --quick     stages 1-4 only
+  --baseline  take the reference data (golden dumps, pictures, sound, frame time) from this build;
+              brick 0 only, with the old libraries in place
+  --new-sound   after the main theme's score or the synth was changed on purpose: stage 8 takes its reference
+              render again, but only if the render passes the ear check
+  --serial    one stage after another (normally stages 2-8 and 10 run side by side after the build,
+              and the timing stage 9 runs alone at the end)
+  --only      run just these stages (for working on one; a gate run is the full check)
+
+Prints PASS or FAIL for every stage and exits 1 if any stage failed. The whole report is saved to
+build/check/<date>-<commit>.txt (with -dirty when the tree has uncommitted changes).
+
+The stages:
+   1 build       release and ASan+UBSan, with GCC and with Clang, -Wall -Wextra -Werror on our code
+   2 tests       the unit tests (ctest) in the GCC release and the Clang ASan builds
+   3 golden      every JSON the game reads, dumped by our own reader and compared byte for byte with the
+                 reference dumps (taken with the old reader in brick 0); every game mesh, and the same mesh
+                 written to and read back from our own .glb, against its reference dump; the opening film
+                 keeps every shot's subjects in frame (assets/intro/tools/frame_check.js --strict); the figure
+                 engine makes the same triangles in C and in the browser game (assets/figure/parity.js)
+   4 deps        what the binaries link and load, what CMake fetches, what the sources include
+   5 cleanroom   no third-party names past the allow-list, no licence headers, no personal or machine
+                 terms, the homage line the only reference to the original game
+   6 headless    the 900-frame intro and 3,000 frames of each game mode under ASan: no crash, no leak
+   7 picture     menu, cockpit and title card against their references, on the GPU (the game's own renderer,
+                 headless) and with the software renderer: under 0.5 % of pixels differ
+   8 sound       the main theme played live by the synth through the player, round its loop, against this
+                 machine's reference render (2 LSB), and the ear check on it: OK or NOTE, no clicks, no
+                 sudden jumps, true peak at most -1 dBTP, -20 LUFS within 1 LU
+   9 perf        frame time of a fixed flight scene, software and GPU, at most 5 % above the baseline; a GPU
+                 table of every map at every time of day (logged)
+  10 windows     MinGW cross-build of TailonLock.exe and its import table: system DLLs only
+  11 floppy      the floppy build's size: the stripped game plus the files it loads at run time (not the
+                 recorded music, which is an extra), and the browser game without its recorded music, each
+                 packed and xz-compressed, against 1.44 MB (a report until the F track is done, then a fail)
+"""
+import datetime
+import gzip
+import hashlib
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, 'build', 'check')
+GOLD = os.path.join(ROOT, 'tests', 'golden')
+REF = os.path.join(OUT, 'ref')            # the large references, kept on this machine only (hashes in GOLD)
+JOBS = str(os.cpu_count() or 4)
+
+# ---- the allow-list: outside code still in the game, each until the brick that replaces it --------------
+# names: patterns that may appear in the sources while the entry is here; include: headers; cmake: what
+# CMake fetches or builds; dir: where it is vendored. Delete an entry in the brick that removes the library.
+ALLOW = {}  # nothing from outside is in the game now (the last library left in brick 20)
+# never allowed: other projects' names
+FOREIGN = [r'cJSON', r'(?i)monocypher', r'cgltf', r'\bstb_[a-z]', r'miniaudio', r'\bglfw', r'raylib', r'\bsokol_', r'lodepng', r'tinyobj',
+           r'(?i)\bimgui\b', r'libsodium', r'tweetnacl', r'mbedtls', r'(?i)\bopenssl\b', r'\bjsmn\b', r'yyjson',
+           r'\bglad\b', r'nuklear']
+# the libraries a Linux binary may link or load: the OS interfaces and the GPU driver
+LINUX_OK = [r'^linux-vdso\.so', r'^ld-linux', r'^libc\.so', r'^libm\.so', r'^libpthread\.so', r'^libdl\.so',
+            r'^librt\.so', r'^libwayland-client\.so', r'^libX11\.so', r'^libasound\.so', r'^libvulkan\.so',
+            r'^libGL\.so', r'^libEGL\.so', r'^libgcc_s\.so']
+WINDOWS_OK = ['kernel32', 'user32', 'gdi32', 'winmm', 'imm32', 'ole32', 'oleaut32', 'version', 'advapi32',
+              'setupapi', 'shell32', 'ws2_32', 'bcrypt', 'msvcrt', 'ucrtbase', 'cfgmgr32', 'hid', 'dinput8',
+              'xinput1_4', 'xinput9_1_0', 'dxgi', 'd3d11', 'd3d12', 'ntdll', 'comdlg32', 'shlwapi', 'uuid',
+              'dwmapi', 'uxtheme', 'avrt', 'mmdevapi']
+# C, POSIX and OS headers our sources may include
+SYSTEM_HEADERS = r'^(assert|ctype|errno|float|inttypes|limits|locale|math|setjmp|signal|stdalign|stdarg|stdatomic|' \
+    r'stdbool|stddef|stdint|stdio|stdlib|stdnoreturn|string|tgmath|threads|time|uchar|wchar|wctype|' \
+    r'unistd|fcntl|dirent|dlfcn|poll|pthread|netdb|termios|sched|strings|glob|' \
+    r'sys/[a-z_]+|netinet/[a-z_]+|arpa/[a-z_]+|linux/[a-z_]+|mach-o/dyld|objc/runtime|objc/message|' \
+    r'windows|winsock2|ws2tcpip|bcrypt|shlobj|direct|io|process|mmsystem|xinput|hidsdi|hidusage|initguid|d3d12|' \
+    r'd3d12sdklayers|dxgi1_6|audioclient|mmdeviceapi|' \
+    r'wayland-client|wayland-client-protocol|X11/[A-Za-z_]+|alsa/asoundlib)\.h$'
+# Personal and machine terms, and the names of the original game and of other works, are not written here:
+# a guard that lists them would itself put them in the repository. They come from a private, untracked file
+# (.check-private at the top of the tree, or the file A4C_CHECK_PRIVATE names), one rule a line:
+#   personal REGEX     a term that must not appear anywhere (a name, a host, a machine, a path)
+#   original REGEX     a name of the original game or of another work: allowed only in the homage line
+#   homage TEXT        the one line of README.md that may name the original game
+# Without the file, stage 5 still runs every check below that needs no private term, and says so.
+PERSONAL_GENERIC = r'/home/[A-Za-z]|/Users/[A-Za-z]|@gmail\.com|@[A-Za-z0-9-]+\.lan\b'
+FORBIDDEN_FILES = r'(?i)\.(sid|sf2|prg|d64|t64|crt|ttf|otf|woff2?|m4a)$'
+
+
+def private_terms():
+    p = os.environ.get('A4C_CHECK_PRIVATE') or os.path.join(ROOT, '.check-private')
+    rules = {'personal': [], 'original': [], 'homage': []}
+    if not os.path.exists(p):
+        return None
+    for line in open(p, encoding='utf-8'):
+        line = line.rstrip('\n')
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        kind, _, rest = line.partition(' ')
+        if kind in rules and rest:
+            rules[kind].append(rest)
+    return rules
+
+
+LICENCE = r'SPDX-License-Identifier|Permission is hereby granted|Copyright \([cC]\)|THE SOFTWARE IS PROVIDED|' \
+    r'Redistribution and use in source'
+# files allowed to name the libraries being replaced: the plan, the credits
+NAMES_DOCS = ['docs/BUILD_PLAN.md', 'README.md', 'docs/THIRD_PARTY.md', 'tools/check']
+
+BUILDS = {
+    'gcc-release': dict(cc='gcc', type='Release', san=False),
+    'gcc-asan': dict(cc='gcc', type='Debug', san=True),
+    'clang-release': dict(cc='clang', type='Release', san=False),
+    'clang-asan': dict(cc='clang', type='Debug', san=True),
+}
+SHOTS = {  # name: arguments; each a fixed number of ticks with the retro (software) renderer
+    'menu': ['--frames', '200', '--cmd', 'k', '--seed', '1'],
+    'cockpit': ['--play', '1p', '--frames', '600', '--seed', '1'],
+    'titlecard': ['--play', 'intro', '--frames', '3735'],
+    'hangar': ['--frames', '200', '--cmd', 'kh', '--seed', '1'],
+}
+MODES = ['1p', '2p', 'coop', 'defend', 'defend1', 'drone', 'demo']
+PERF = ['--play', '1p', '--frames', '1500', '--seed', '1', '--cmd', 'g']
+MAPS = ['twin-isles', 'dune-sea', 'high-valley', 'iron-coast']
+TODS = ['dawn', 'day', 'dusk', 'night']
+THEME = ('fullburn', 200)
+
+report = []
+
+
+_tls = threading.local()
+
+
+def say(s=''):
+    """a report line: printed at once when one stage runs, kept in the stage's own buffer when several do"""
+    buf = getattr(_tls, 'buf', None)
+    if buf is None:
+        print(s, flush=True)
+        report.append(s)
+    else:
+        buf.append(s)
+
+
+def run(cmd, env=None, cwd=None, timeout=3600):
+    e = dict(os.environ)
+    e.update(env or {})
+    try:
+        p = subprocess.run(cmd, cwd=cwd or ROOT, env=e, capture_output=True, text=True, timeout=timeout,
+                           errors='replace')
+        return p.returncode, p.stdout + p.stderr
+    except subprocess.TimeoutExpired as x:
+        out = (x.stdout or b'') + (x.stderr or b'')
+        return 124, out.decode(errors='replace') if isinstance(out, bytes) else out
+    except FileNotFoundError as x:
+        return 127, str(x)
+
+
+def bdir(name):
+    return os.path.join(OUT, name)
+
+
+def game_env(tmp, gpu=False):
+    """a scratch settings folder, no display, no sound card (the platform layer's offscreen window: the GPU
+    renderer draws into a picture in memory, the software one keeps its framebuffer)"""
+    return {'XDG_CONFIG_HOME': tmp, 'HOME': tmp, 'A4C_VIDEO': 'offscreen', 'A4C_AUDIO': 'dummy'}
+
+
+def sha(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for c in iter(lambda: f.read(1 << 20), b''):
+            h.update(c)
+    return h.hexdigest()
+
+
+def tracked(*patterns):
+    # new files not yet added count too (not the ignored ones), so a gate run before `git add` sees them
+    rc, out = run(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--'] + list(patterns))
+    return [l for l in out.splitlines() if l]
+
+
+# ---- 1 build ---------------------------------------------------------------------------------------------
+def fetched_sources():
+    """-D options for sources CMake fetches: none any more (brick 20)"""
+    return []
+
+
+def build_one(name, conf, toolchain=None):
+    d = bdir(name)
+    logp = os.path.join(OUT, 'logs', name + '.log')
+    # Ninja where it is installed, else make (as tools/certify does): a machine without Ninja still runs the gate
+    gen = 'Ninja' if shutil.which('ninja') else 'Unix Makefiles'
+    if not os.path.exists(os.path.join(d, 'build.ninja' if gen == 'Ninja' else 'Makefile')):
+        cmd = ['cmake', '-S', ROOT, '-B', d, '-G', gen, '-DCMAKE_BUILD_TYPE=' + conf['type'], '-DA4C_WERROR=ON']
+        if toolchain:
+            cmd.append('-DCMAKE_TOOLCHAIN_FILE=' + toolchain)
+        else:
+            cmd += ['-DCMAKE_C_COMPILER=' + conf['cc'], '-DA4C_SANITIZE=' + ('ON' if conf['san'] else 'OFF')]
+        cmd += fetched_sources()
+        rc, out = run(cmd)
+        open(logp, 'w').write(out)
+        if rc:
+            return False, 'configure failed (%s)' % os.path.relpath(logp, ROOT)
+    rc, out = run(['cmake', '--build', d, '-j', JOBS])
+    open(logp, 'a').write(out)
+    if rc and re.search(r'cannot find \S*lib(asan|ubsan)', out):
+        return False, 'GCC sanitizer runtimes missing: sudo dnf install -y libasan libubsan'
+    if rc:
+        errs = [l for l in out.splitlines() if re.search(r'error:|warning:', l)][:6]
+        return False, 'build failed: ' + ' | '.join(errs)
+    warns = [l for l in out.splitlines() if re.search(r'(?<!-W)\bwarning:', l) and '/_deps/' not in l]
+    if warns:
+        return False, 'warnings: ' + ' | '.join(warns[:4])
+    return True, 'ok'
+
+
+def stage_build():
+    os.makedirs(os.path.join(OUT, 'logs'), exist_ok=True)
+    ok_all = True
+    first = 'gcc-release'
+    ok, msg = build_one(first, BUILDS[first])  # first, so it fetches the sources once
+    say('    %-14s %s' % (first, msg))
+    ok_all &= ok
+    with ThreadPoolExecutor(3) as ex:
+        res = {n: ex.submit(build_one, n, c) for n, c in BUILDS.items() if n != first}
+        for n, f in res.items():
+            ok, msg = f.result()
+            say('    %-14s %s' % (n, msg))
+            ok_all &= ok
+    return ok_all
+
+
+# ---- 2 tests ---------------------------------------------------------------------------------------------
+def stage_tests():
+    ok_all = True
+    for name in ('gcc-release', 'clang-asan'):
+        tmp = tempfile.mkdtemp(prefix='check-cfg-')
+        env = {'XDG_CONFIG_HOME': tmp, 'HOME': tmp, 'ASAN_OPTIONS': 'detect_leaks=1',
+               'UBSAN_OPTIONS': 'halt_on_error=1:print_stacktrace=1'}
+        rc, out = run(['ctest', '--test-dir', bdir(name), '--output-on-failure', '-j', '4'], env=env)
+        shutil.rmtree(tmp, ignore_errors=True)
+        m = re.search(r'(\d+)% tests passed, (\d+) tests failed out of (\d+)', out)
+        summary = m.group(0) if m else 'no ctest summary'
+        bad = rc != 0 or 'runtime error:' in out or not m or m.group(2) != '0'
+        say('    %-14s %s' % (name, summary))
+        if bad:
+            for l in [l for l in out.splitlines() if 'Failed' in l or 'runtime error' in l or 'ERROR' in l][:8]:
+                say('      ' + l)
+        ok_all &= not bad
+    return ok_all
+
+
+# ---- 3 golden data ---------------------------------------------------------------------------------------
+def json_inputs():
+    """every tracked JSON file, plus the two tables the game reads out of .js files"""
+    items = [(p, None) for p in tracked('*.json')]
+    items += [('assets/jets/jets_game.js', ('[', ']')), ('assets/jets/carrier_game.js', ('{', '}'))]
+    return items
+
+
+def stage_golden(baseline):
+    dumper = os.path.join(bdir('gcc-release'), 'json_dump')
+    manifest_p = os.path.join(GOLD, 'json.sha256')
+    manifest = {}
+    if os.path.exists(manifest_p):
+        for l in open(manifest_p):
+            h, p = l.rstrip('\n').split('  ', 1)
+            manifest[p] = h
+    new = {}
+    ok_all = True
+    bad = []
+    for path, table in json_inputs():
+        rc, out = run([dumper, path] + list(table or ()))
+        if rc != 0:
+            bad.append('%s: dumper failed' % path)
+            ok_all = False
+            continue
+        key = path + (' %s%s' % table if table else '')
+        data = out.encode()
+        new[key] = hashlib.sha256(data).hexdigest()
+        refp = os.path.join(REF, 'json', path.replace('/', '__') + '.txt')
+        if baseline:
+            os.makedirs(os.path.dirname(refp), exist_ok=True)
+            open(refp, 'wb').write(data)
+            continue
+        if manifest.get(key) != new[key]:
+            ok_all = False
+            why = 'not in the manifest' if key not in manifest else 'differs'
+            if os.path.exists(refp):
+                old = open(refp, 'rb').read().decode().splitlines()
+                cur = out.splitlines()
+                at = next((i for i, (a, b) in enumerate(zip(old, cur)) if a != b), min(len(old), len(cur)))
+                why += ' from line %d: %r -> %r' % (at + 1, old[at] if at < len(old) else '<end>',
+                                                    cur[at] if at < len(cur) else '<end>')
+            bad.append('%s: %s' % (key, why))
+    if baseline:
+        os.makedirs(GOLD, exist_ok=True)
+        with open(manifest_p, 'w') as f:
+            for k in sorted(new):
+                f.write('%s  %s\n' % (new[k], k))
+    gone = sorted(set(manifest) - set(new)) if not baseline else []
+    for g in gone:
+        bad.append('%s: in the manifest, no longer dumped' % g)
+        ok_all = False
+    invalid = [k for k in new if hashlib.sha256(b'invalid\n').hexdigest() == new[k]]
+    say('    %d JSON inputs dumped, %d identical to the references%s' %
+        (len(new), len(new) - len(bad) if not baseline else len(new), ' (baseline taken)' if baseline else ''))
+    if invalid:
+        say('    unparsable: ' + ', '.join(invalid))
+        ok_all = False
+    # the meshes (brick 7): today's source meshes as canonical dumps, and the same meshes through our own .glb
+    # writer and reader; both must match the reference hashes
+    ok_all &= golden_meshes(baseline, bad)
+    glb = tracked('*.glb', '*.gltf')
+    say('    %d .glb/.gltf files tracked' % len(glb))
+    for b in bad[:10]:
+        say('      ' + b)
+    # the opening film's framing: every shot keeps its subjects in the letterboxed frame (assets/intro/tools)
+    rc, out = run(['node', os.path.join(ROOT, 'assets', 'intro', 'tools', 'frame_check.js'), '--strict'])
+    lines = [l for l in out.splitlines() if 'OUT from' in l or 'leave the frame' in l]
+    say('    intro framing: %s' % ('every shot keeps its subjects in frame' if rc == 0 else 'subjects leave the frame'))
+    for l in lines[:6]:
+        say('      ' + l.strip()[:150])
+    ok_all = ok_all and rc == 0
+    # the figure engine: the C game's and the browser game's make the same triangles (assets/figure/parity.js)
+    rc, out = run(['node', os.path.join(ROOT, 'assets', 'figure', 'parity.js'), os.path.join(bdir('gcc-release'), 'test_figure')])
+    say('    figure engine, C against the browser game: %s' % ('the same triangles for every crew pose' if rc == 0 else 'DIFFERENT'))
+    rc2, out2 = run([sys.executable, os.path.join(ROOT, 'tools', 'sync_figure.py'), '--check'])
+    say('    ' + out2.strip())
+    ok_all = ok_all and rc2 == 0
+    for l in out.splitlines():
+        if rc and l.strip():
+            say('      ' + l.strip()[:150])
+    ok_all = ok_all and rc == 0
+    return ok_all
+
+
+def golden_meshes(baseline, bad):
+    rel = bdir('gcc-release')
+    exe, dumper = os.path.join(rel, 'tailonlock'), os.path.join(rel, 'glb_dump')
+    work = tempfile.mkdtemp(prefix='check-meshes-')
+    src, glbd = os.path.join(work, 'src'), os.path.join(work, 'glb')
+    os.makedirs(src)
+    os.makedirs(glbd)
+    env = game_env(work)
+    r1, o1 = run([exe, '--dump-meshes', src], env=env, timeout=300)
+    r2, o2 = run([exe, '--export-glb', glbd], env=env, timeout=300)
+    if r1 or r2:
+        bad.append('meshes: the game could not dump or export them')
+        shutil.rmtree(work, ignore_errors=True)
+        return False
+    manifest_p = os.path.join(GOLD, 'meshes.sha256')
+    manifest = {}
+    if os.path.exists(manifest_p):
+        for l in open(manifest_p):
+            h, p = l.rstrip('\n').split('  ', 1)
+            manifest[p] = h
+    ids = sorted(f[:-4] for f in os.listdir(src) if f.endswith('.txt'))
+    new, same_src, same_glb = {}, 0, 0
+    for i in ids:
+        d = open(os.path.join(src, i + '.txt'), 'rb').read()
+        new[i] = hashlib.sha256(d).hexdigest()
+        rc, out = run([dumper, os.path.join(glbd, i + '.glb')])
+        rt = out.encode()
+        if baseline:
+            continue
+        if manifest.get(i) == new[i]:
+            same_src += 1
+        else:
+            bad.append('mesh %s: the source mesh differs from its reference' % i)
+        if rc == 0 and hashlib.sha256(rt).hexdigest() == manifest.get(i):
+            same_glb += 1
+        else:
+            bad.append('mesh %s: through our .glb it differs from its reference' % i)
+    # the .glb files the game loads (brick 8): each must hold its reference mesh exactly
+    shipped, same_shipped = 0, 0
+    if not baseline:
+        for p in tracked('assets/jets/*.glb'):
+            i = os.path.basename(p)[:-4]
+            shipped += 1
+            rc, out = run([dumper, os.path.join(ROOT, p)])
+            if rc == 0 and hashlib.sha256(out.encode()).hexdigest() == manifest.get(i):
+                same_shipped += 1
+            else:
+                bad.append('%s: not the reference mesh (re-export with --export-glb assets/jets)' % p)
+    shutil.rmtree(work, ignore_errors=True)
+    if baseline:
+        with open(manifest_p, 'w') as f:
+            for k in sorted(new):
+                f.write('%s  %s\n' % (new[k], k))
+        say('    %d meshes: references taken' % len(ids))
+        return True
+    gone = sorted(set(manifest) - set(new))
+    for g in gone:
+        bad.append('mesh %s: in the manifest, no longer exported' % g)
+    say('    %d meshes: %d sources and %d .glb round trips identical to the references' % (len(ids), same_src, same_glb))
+    say('    the game loads %d .glb meshes, %d identical to the references' % (shipped, same_shipped))
+    return bool(ids) and same_src == same_glb == len(ids) == len(manifest) and same_shipped == shipped
+
+
+# ---- 4 dependencies --------------------------------------------------------------------------------------
+def allowed_lib(soname):
+    return any(re.search(p, soname) for p in LINUX_OK)
+
+
+def stage_deps():
+    ok_all = True
+    rel = bdir('gcc-release')
+    # what the binaries link
+    for exe in ('tailonlock', 'test_core', 'a4c_relay', 'json_dump', 'check_cmp'):
+        p = os.path.join(rel, exe)
+        if not os.path.exists(p):
+            continue
+        rc, out = run(['ldd', p])
+        libs = [l.split()[0] for l in out.splitlines() if l.strip() and not l.strip().startswith('statically')]
+        bad = [l for l in libs if not allowed_lib(os.path.basename(l))]
+        say('    %-11s links %s%s' % (exe, ', '.join(os.path.basename(l) for l in libs) or '(nothing)',
+                                     ('   NOT ALLOWED: ' + ', '.join(bad)) if bad else ''))
+        ok_all &= not bad
+    # what it may load at run time (library names in the binary, for dlopen)
+    data = open(os.path.join(rel, 'tailonlock'), 'rb').read()
+    names = sorted(set(m.decode() for m in re.findall(rb'lib[A-Za-z0-9_+-]+\.so(?:\.[0-9]+)*', data)))
+    extra = [n for n in names if not allowed_lib(n)]
+    if extra:
+        say('    loads at run time, NOT ALLOWED: ' + ', '.join(extra))
+        ok_all = False
+    # what CMake fetches, finds or vendors
+    cm = ''.join(open(os.path.join(ROOT, p)).read() for p in tracked('CMakeLists.txt', '*.cmake', '*/CMakeLists.txt'))
+    fetched = re.findall(r'FetchContent_Declare\(\s*(\w+)', cm) + re.findall(r'find_package\(\s*(\w+)', cm)
+    listed = {c for e in ALLOW.values() for c in e['cmake']}
+    for f in fetched:
+        if f not in listed:
+            say('    CMake fetches or finds %s: NOT ALLOWED' % f)
+            ok_all = False
+    vendored = sorted({p.split('/')[1] for p in tracked('third_party/*') if p.count('/') >= 2})
+    for v in vendored:
+        if not any(e['dir'] == 'third_party/' + v for e in ALLOW.values()):
+            say('    third_party/%s is vendored: NOT ALLOWED' % v)
+            ok_all = False
+    # what the sources include
+    inc_bad = []
+    srcs = tracked('src/*.c', 'src/*.h', 'relay/*.c', 'relay/*.h', 'tests/*.c', 'tests/*.h')
+    for p in srcs:
+        for i, line in enumerate(open(os.path.join(ROOT, p), errors='replace'), 1):
+            m = re.match(r'\s*#\s*include\s*([<"])([^>"]+)[>"]', line)
+            if not m:
+                continue
+            h = m.group(2)
+            if m.group(1) == '"' and any(os.path.exists(os.path.join(ROOT, d, h))
+                                         for d in ('src', os.path.dirname(p))):
+                continue
+            if re.search(SYSTEM_HEADERS, h) or any(re.search(r, h) for e in ALLOW.values() for r in e['include']):
+                continue
+            inc_bad.append('%s:%d %s' % (p, i, h))
+    for b in inc_bad[:10]:
+        say('    include NOT ALLOWED: ' + b)
+    ok_all &= not inc_bad
+    say('    allow-list: ' + ', '.join('%s (until brick %d)' % (k, v['brick']) for k, v in ALLOW.items()))
+    return ok_all
+
+
+# ---- 5 clean room ----------------------------------------------------------------------------------------
+def grep(pattern, exclude=()):
+    """[(path, line number, line)] for tracked text files, outside the excluded paths"""
+    spec = ['--', '.'] + [':!' + e for e in exclude]
+    rc, out = run(['git', 'grep', '--untracked', '-n', '-I', '-P', pattern] + spec)
+    hits = []
+    for l in out.splitlines():
+        m = re.match(r'([^:]+):(\d+):(.*)', l)
+        if m:
+            hits.append((m.group(1), int(m.group(2)), m.group(3)))
+    return hits
+
+
+def in_blob(line, pattern):
+    """every match sits inside a long base64 run (embedded binary data, not words)"""
+    # git grep -P takes an inline (?i) anywhere, Python only at the start: drop them and match without case
+    ms = list(re.finditer(pattern.replace('(?i)', ''), line, re.I))
+    blobs = [(m.start(), m.end()) for m in re.finditer(r'[A-Za-z0-9+/=]{60,}', line)]
+    return ms and all(any(a <= m.start() and m.end() <= b for a, b in blobs) for m in ms)
+
+
+def stage_cleanroom():
+    ok_all = True
+    vendored = [e['dir'] for e in ALLOW.values() if e['dir']]
+    # other projects' names: the allow-listed ones may appear while listed, the rest never
+    hits = grep('|'.join(FOREIGN), exclude=vendored + ['docs/BUILD_PLAN.md', 'tools/check'])
+    say('    foreign names (never allowed): %d hits' % len(hits))
+    for p, n, l in hits[:8]:
+        say('      %s:%d %s' % (p, n, l.strip()[:120]))
+    ok_all &= not hits
+    for k, e in ALLOW.items():
+        hits = grep('|'.join(e['names']), exclude=vendored + NAMES_DOCS)
+        files = sorted({p for p, _, _ in hits})
+        say('    %s names: %d lines in %d files (allow-listed until brick %d)' % (k, len(hits), len(files), e['brick']))
+        # since brick 9 the game reaches it only through the platform backend and the GPU renderer
+        inside = e.get('inside')
+        if inside:
+            out = sorted({p for p, _, _ in hits if p.startswith('src/') and p not in inside})
+            say('    %s names in src/ outside %s: %d files%s' % (k, ', '.join(inside), len(out),
+                                                            ('   ' + ', '.join(out[:6])) if out else ''))
+            ok_all &= not out
+    # licence headers outside the vendored code
+    hits = grep(LICENCE, exclude=vendored + ['tools/check'])
+    say('    licence headers outside third_party/: %d' % len(hits))
+    for p, n, l in hits[:8]:
+        say('      %s:%d %s' % (p, n, l.strip()[:120]))
+    ok_all &= not hits
+    # files that must never be in the repository: SID tunes and their editor files, C64 images, fonts, and the
+    # owner's own .m4a recordings (they stay on his computer)
+    bad = [p for p in tracked() if re.search(FORBIDDEN_FILES, p)]
+    say('    forbidden file types (.sid .sf2 .prg .d64 .crt, fonts, .m4a recordings): %d' % len(bad))
+    for p in bad[:8]:
+        say('      ' + p)
+    ok_all &= not bad
+    # personal and machine terms: the generic ones here, his own from the private list
+    priv = private_terms()
+    pats = [PERSONAL_GENERIC] + (priv['personal'] if priv else [])
+    pat = '|'.join('(?:%s)' % x for x in pats)
+    hits = [h for h in grep(pat, exclude=['tools/check']) if not in_blob(h[2], pat)]
+    say('    personal or machine terms (%s): %d' % ('generic and %d private' % len(priv['personal']) if priv else
+                                                    'generic only: no private term list', len(hits)))
+    for p, n, l in hits[:8]:
+        say('      %s:%d %s' % (p, n, l.strip()[:120]))
+    ok_all &= not hits
+    # the original game and other works: the homage line only
+    if priv and priv['original']:
+        pat = '|'.join('(?:%s)' % x for x in priv['original'])
+        hits = grep(pat, exclude=vendored + ['tools/check'])
+        other = [h for h in hits if not (h[0] == 'README.md' and h[2].strip() in priv['homage'])]
+        homage = len(hits) - len(other)
+        say('    the original game and other works: %d homage line%s, %d other hits' %
+            (homage, '' if homage == 1 else 's', len(other)))
+        for p, n, l in other[:8]:
+            say('      %s:%d %s' % (p, n, l.strip()[:120]))
+        ok_all &= homage == 1 and not other
+    else:
+        say('    the original game and other works: skipped (no private term list)')
+    return ok_all
+
+
+# ---- 6 headless under ASan -------------------------------------------------------------------------------
+def asan_run(args):
+    exe = os.path.join(bdir('clang-asan'), 'tailonlock')
+    tmp = tempfile.mkdtemp(prefix='check-cfg-')
+    env = game_env(tmp)
+    env.update({'ASAN_OPTIONS': 'detect_leaks=1:halt_on_error=1:abort_on_error=0',
+                'UBSAN_OPTIONS': 'halt_on_error=1:print_stacktrace=1',
+                'LSAN_OPTIONS': 'suppressions=' + os.path.join(GOLD, 'lsan-system.supp'),
+                'ASAN_SYMBOLIZER_PATH': shutil.which('llvm-symbolizer') or shutil.which('addr2line') or ''})
+    rc, out = run([exe, '--renderer', 'retro'] + args, env=env, timeout=1800)
+    shutil.rmtree(tmp, ignore_errors=True)
+    errs = [l for l in out.splitlines() if re.search(r'ERROR: (Address|Leak)Sanitizer|runtime error:|SUMMARY:', l)]
+    m = re.search(r'ran (\d+) frames', out)
+    return rc, errs, m.group(1) if m else '?', out
+
+
+def stage_headless():
+    jobs = {'intro': ['--play', 'intro', '--frames', '900']}
+    for mo in MODES:
+        jobs[mo] = ['--play', mo, '--frames', '3000', '--seed', '1', '--cmd', 'g']
+    ok_all = True
+    with ThreadPoolExecutor(len(jobs)) as ex:
+        res = {k: ex.submit(asan_run, a) for k, a in jobs.items()}
+        for k, f in res.items():
+            rc, errs, frames, out = f.result()
+            good = rc == 0 and not errs and frames != '?'
+            say('    %-8s %s frames, exit %d%s' % (k, frames, rc, '' if good else '  ' + ' | '.join(errs[:3])))
+            if not good:
+                open(os.path.join(OUT, 'logs', 'headless-%s.log' % k), 'w').write(out)
+            ok_all &= good
+    return ok_all
+
+
+# ---- 7 pictures ------------------------------------------------------------------------------------------
+_gpu = None
+
+
+def gpu_present():
+    """True when the game's own GPU renderer starts headless here (the driver's offscreen context)"""
+    global _gpu
+    if _gpu is None:
+        exe = os.path.join(bdir('gcc-release'), 'tailonlock')
+        tmp = tempfile.mkdtemp(prefix='check-cfg-')
+        rc, out = run([exe, '--renderer', 'modern', '--frames', '2'], env=game_env(tmp, gpu=True), timeout=300)
+        shutil.rmtree(tmp, ignore_errors=True)
+        # the renderer's own line names its driver and MSAA; 'gpu: no device (...)' and the like are no GPU
+        m = re.search(r'gpu: (\w+)[^\n]*, MSAA \d+x', out)
+        _gpu = m.group(1) if rc == 0 and m else ''
+    return _gpu
+
+
+def shot(args, path, gpu):
+    exe = os.path.join(bdir('gcc-release'), 'tailonlock')
+    tmp = tempfile.mkdtemp(prefix='check-cfg-')
+    rc, out = run([exe, '--renderer', 'modern' if gpu else 'retro'] + args + ['--screenshot', path],
+                  env=game_env(tmp, gpu=gpu), timeout=900)
+    shutil.rmtree(tmp, ignore_errors=True)
+    return rc == 0 and os.path.exists(path)
+
+
+def stage_picture(baseline):
+    ok_all = True
+    work = tempfile.mkdtemp(prefix='check-shots-')
+    cmp_exe = os.path.join(bdir('gcc-release'), 'check_cmp')
+    sets = [('soft', False)]
+    g = gpu_present()
+    if g:
+        sets.insert(0, ('gpu', True))
+        say("    GPU: the game's %s renderer, headless" % g)
+    else:
+        say('    no GPU here: the software set only')
+    jobs = [(st, gpu, n, a) for st, gpu in sets for n, a in SHOTS.items()]
+    with ThreadPoolExecutor(len(jobs)) as ex:  # one batch: the GPU and software shots side by side
+        made = {(st, n): ex.submit(shot, a, os.path.join(work, '%s-%s.bmp' % (st, n)), gpu) for st, gpu, n, a in jobs}
+        made = {k: f.result() for k, f in made.items()}
+    for st, gpu, n, a in jobs:
+        cur = os.path.join(work, '%s-%s.bmp' % (st, n))
+        refgz = os.path.join(GOLD, 'pictures', st, n + '.bmp.gz')
+        label = '%s %s' % (st, n)
+        if not made[(st, n)]:
+            say('    %-14s no screenshot' % label)
+            ok_all = False
+            continue
+        if baseline:
+            os.makedirs(os.path.dirname(refgz), exist_ok=True)
+            with open(cur, 'rb') as f, gzip.open(refgz, 'wb', 9) as gz:
+                gz.write(f.read())
+            say('    %-14s reference taken' % label)
+            continue
+        if not os.path.exists(refgz):
+            say('    %-14s no reference' % label)
+            ok_all = False
+            continue
+        ref = os.path.join(work, '%s-%s-ref.bmp' % (st, n))
+        with gzip.open(refgz, 'rb') as gz, open(ref, 'wb') as f:
+            f.write(gz.read())
+        rc, out = run([cmp_exe, 'bmp', ref, cur])
+        m = re.search(r'share ([0-9.]+)', out)
+        share = float(m.group(1)) if m else 1.0
+        good = rc == 0 and share < 0.005
+        say('    %-14s %.3f %% of pixels differ%s' % (label, 100 * share, '' if good else '  (limit 0.5 %)'))
+        if not good:
+            shutil.copy(cur, os.path.join(OUT, 'logs', '%s-%s-new.bmp' % (st, n)))
+        ok_all &= good
+    shutil.rmtree(work, ignore_errors=True)
+    return ok_all
+
+
+# ---- 8 sound ---------------------------------------------------------------------------------------------
+def stage_sound(baseline, new_sound=False):
+    """the render against its reference in sound.sha256: one line for every system (the synth and the effects use
+    core/fmath, and the notes are sorted into a total order, so every C library gives the same bits); a machine-own
+    line (taken with --baseline or --new-sound from a render that passes the ear check) is still read if there
+    is no common one"""
+    import platform
+    key, secs = THEME
+    exe = os.path.join(bdir('gcc-release'), 'tailonlock')
+    cmp_exe = os.path.join(bdir('gcc-release'), 'check_cmp')
+    ear = os.path.join(bdir('gcc-release'), 'ear_check')
+    machine = '%s-%s' % (sys.platform, platform.machine())
+    os.makedirs(REF, exist_ok=True)
+    cur = os.path.join(OUT, 'logs', key + '-render.wav')
+    tmp = tempfile.mkdtemp(prefix='check-cfg-')
+    env = game_env(tmp)
+    env['A4C_MUSIC_LOOP'] = str(secs)
+    rc, out = run([exe, '--render-music', key, cur], env=env, timeout=900)
+    shutil.rmtree(tmp, ignore_errors=True)
+    if rc or not os.path.exists(cur):
+        say('    render failed')
+        return False
+    rc, rep = run([ear, cur])
+    g = lambda pat: re.search(pat, rep, re.M)
+    tp, lufs, verdict = g(r'true peak ([-+0-9.]+) dBTP'), g(r'integrated ([-+0-9.]+) LUFS'), g(r'^verdict: (\w+)')
+    bad = [l.strip() for l in rep.splitlines() if re.match(r'\s+(WARN|HURT)|.*(click|sudden jump)', l)]
+    if not (tp and lufs and verdict):
+        say('    ear check failed: ' + rep.strip()[-300:])
+        return False
+    ear_ok = verdict.group(1) in ('OK', 'NOTE') and not bad and float(tp.group(1)) <= -1 and abs(float(lufs.group(1)) + 20) <= 1
+    say('    ear check (%d s through the loop): %s, %s LUFS, true peak %s dBTP%s' % (
+        secs, verdict.group(1), lufs.group(1), tp.group(1), ('; ' + '; '.join(bad)) if bad else ''))
+    ref = os.path.join(REF, '%s-render-%s.wav' % (key, machine))
+    hashp = os.path.join(GOLD, 'sound.sha256')
+    lines = [l for l in open(hashp).read().splitlines() if l.strip()] if os.path.exists(hashp) else []
+    label = '%s-render.wav (%d s through the player) on %s' % (key, secs, machine)
+    # one line for every system (the sound uses core/fmath and a total note order), else this machine's own
+    every = '%s-render.wav (%d s through the player) on every system' % (key, secs)
+    want = next((l.split()[0] for l in lines if l.split('  ', 1)[-1] == every), None)
+    if want is None:
+        want = next((l.split()[0] for l in lines if l.endswith(' on ' + machine)), None)
+    if baseline or new_sound or want is None:
+        if not ear_ok:
+            say('    no reference render taken: the render does not pass the ear check')
+            return False
+        shutil.copy(cur, ref)
+        lines = [l for l in lines if not l.endswith(' on ' + machine)] + ['%s  %s' % (sha(ref), label)]
+        open(hashp, 'w').write('\n'.join(sorted(lines, key=lambda l: l.split('  ', 1)[1])) + '\n')
+        say('    reference render taken for %s (%d s)' % (machine, secs))
+        return True
+    if sha(cur) == want:
+        say('    render identical to the reference render (%s)' % machine)
+        return ear_ok
+    if os.path.exists(ref) and sha(ref) == want:
+        rc, out = run([cmp_exe, 'wav', ref, cur])
+        m = re.search(r'maxdiff (\d+)', out)
+        d = int(m.group(1)) if m else 99999
+        say('    render vs the reference render: %s LSB at most (limit 2)' % (m.group(1) if m else out.strip()))
+        return ear_ok and rc == 0 and d <= 2
+    say('    render differs from the reference hash for %s, and the reference render is not on this machine' % machine)
+    return False
+
+
+# ---- 9 performance ---------------------------------------------------------------------------------------
+def frame_ms(extra, gpu):
+    """(ms per frame drawn, ms per frame in all) for one fixed run"""
+    exe = os.path.join(bdir('gcc-release'), 'tailonlock')
+    tmp = tempfile.mkdtemp(prefix='check-cfg-')
+    rc, out = run([exe, '--renderer', 'modern' if gpu else 'retro'] + PERF + extra, env=game_env(tmp, gpu=gpu),
+                  timeout=900)
+    shutil.rmtree(tmp, ignore_errors=True)
+    m = re.search(r'([0-9.]+) ms per frame drawn, ([0-9.]+) ms per frame in all', out)
+    return (float(m.group(1)), float(m.group(2))) if m else None
+
+
+def stage_perf(baseline):
+    """runs alone, after the others: timings with nothing else on the machine"""
+    scenes = [('soft', False, 0)]  # (name, GPU, which number: 0 drawn, 1 in all)
+    if gpu_present():
+        scenes.append(('gpu', True, 1))
+    p = os.path.join(GOLD, 'perf.txt')
+    base = {}
+    if os.path.exists(p):
+        for l in open(p):
+            f = l.split()
+            if len(f) > 1 and not l.startswith('#'):
+                base[f[0]] = float(f[1])
+    ok_all = True
+    lines = []
+    for name, gpu, k in scenes:
+        runs = [frame_ms([], gpu) for _ in range(3)]
+        if None in runs:
+            say('    %s: the flight scene did not report its frame time' % name)
+            ok_all = False
+            continue
+        best = min(r[k] for r in runs)
+        what = 'ms per frame drawn' if k == 0 else 'ms per frame in all'
+        lines.append('%s %.3f %s, best of 3: %s renderer, %s' % (name, best, what, 'modern' if gpu else 'retro',
+                                                                  ' '.join(PERF)))
+        if baseline:
+            say('    %-4s baseline %.3f %s' % (name, best, what))
+        elif name not in base:
+            say('    %-4s no baseline' % name)
+            ok_all = False
+        else:
+            good = best <= base[name] * 1.05
+            say('    %-4s %.3f %s against the baseline %.3f (%+.1f %%, limit +5 %%)' %
+                (name, best, what, base[name], 100 * (best / base[name] - 1)))
+            ok_all &= good
+    if baseline:
+        open(p, 'w').write('# tools/check stage 9 baselines, this machine (retake only in brick 0)\n' + '\n'.join(lines) + '\n')
+    if gpu_present():  # the table: every map at every time of day on the GPU (logged, not gated)
+        say('    GPU frame time per map and time of day (ms per frame in all / fps):')
+        say('      %-12s %s' % ('', ''.join('%15s' % t for t in TODS)))
+        for mp in MAPS:
+            row = []
+            for t in TODS:
+                r = frame_ms(['--map', mp, '--time', t], True)
+                row.append('%8.3f %5.0f' % (r[1], 1000 / r[1]) if r else '%15s' % 'failed')
+            say('      %-12s %s' % (mp, ' '.join(row)))
+    return ok_all
+
+
+# ---- 10 Windows ------------------------------------------------------------------------------------------
+def stage_windows():
+    tc = os.path.join(ROOT, 'cmake', 'mingw64.cmake')
+    ok, msg = build_one('mingw', dict(cc=None, type='Release', san=False), toolchain=tc)
+    say('    MinGW build: ' + msg)
+    if not ok:
+        return False
+    exe = os.path.join(bdir('mingw'), 'TailonLock.exe')
+    if not os.path.exists(exe):
+        say('    no TailonLock.exe')
+        return False
+    rc, out = run(['x86_64-w64-mingw32-objdump', '-p', exe])
+    dlls = sorted(set(re.findall(r'DLL Name:\s*(\S+)', out)), key=str.lower)
+    ok_dll = lambda d: d.lower().removesuffix('.dll') in WINDOWS_OK or d.lower().startswith('api-ms-win-')
+    bad = [d for d in dlls if not ok_dll(d)]
+    say('    TailonLock.exe imports %s%s' % (', '.join(dlls), ('   NOT ALLOWED: ' + ', '.join(bad)) if bad else ''))
+    return rc == 0 and dlls and not bad
+
+
+FLOPPY = 1474560  # bytes on a 1.44 MB floppy
+FLOPPY_HARD = False  # True once the F track is done: then a build over the budget fails
+# what the game reads at run time; the recorded music (*.wav) is an extra, not on the floppy
+FLOPPY_GAME = ['assets/intro/*.json', 'assets/jets/*.glb', 'assets/jets/*_game.js', 'assets/jets/*.json',
+               'assets/maps/*.json', 'assets/maps/*.h16', 'assets/maps/*.mat', 'assets/music/*.json',
+               'assets/music/*.loop']
+FLOPPY_WEB = ['web/index.html', 'web/sfx/*.wav']
+
+
+def packed_size(files):
+    """the files in one tar, xz-compressed at its strongest setting: (bytes, the 6 biggest files raw)"""
+    import io
+    import lzma
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w') as tar:
+        for name, path in files:
+            tar.add(path, arcname=name)
+    xz = lzma.compress(buf.getvalue(), preset=9 | lzma.PRESET_EXTREME)
+    big = sorted(((os.path.getsize(p), n) for n, p in files), reverse=True)[:6]
+    return len(xz), big
+
+
+def stage_floppy():
+    import glob
+    exe = os.path.join(bdir('gcc-release'), 'tailonlock')
+    if not os.path.exists(exe):
+        say('    no release build to measure')
+        return False
+    tmp = tempfile.mkdtemp(prefix='a4c-floppy-')
+    try:
+        game = os.path.join(tmp, 'tailonlock')
+        shutil.copy(exe, game)
+        rc, out = run(['strip', game])
+        if rc:
+            say('    strip failed: ' + out.strip()[:200])
+            return False
+        ok = True
+        for title, pats, extra in (('game', FLOPPY_GAME, [('tailonlock', game)]), ('web', FLOPPY_WEB, [])):
+            files = list(extra)
+            for pat in pats:
+                for p in sorted(glob.glob(os.path.join(ROOT, pat))):
+                    files.append((os.path.relpath(p, ROOT), p))
+            n, big = packed_size(files)
+            over = n > FLOPPY
+            ok = ok and not over
+            say('    %-4s %4d files, %7.0f KB packed of %4.0f KB: %s' % (
+                title, len(files), n / 1024, FLOPPY / 1024,
+                '%.0f KB over' % ((n - FLOPPY) / 1024) if over else '%.0f KB free' % ((FLOPPY - n) / 1024)))
+            say('         biggest: ' + ', '.join('%s %.0f KB' % (nm, b / 1024) for b, nm in big))
+        if not ok and not FLOPPY_HARD:
+            say('    (a report for now: the F track brings it under; see docs/BUILD_PLAN.md)')
+        return ok or not FLOPPY_HARD
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------------------------------------
+def main():
+    args = sys.argv[1:]
+    quick, baseline, serial = '--quick' in args, '--baseline' in args, '--serial' in args
+    only = None
+    if '--only' in args:
+        only = {int(x) for x in args[args.index('--only') + 1].split(',')}
+    stages = [(1, 'build', stage_build), (2, 'tests', stage_tests), (3, 'golden', lambda: stage_golden(baseline)),
+              (4, 'deps', stage_deps), (5, 'cleanroom', stage_cleanroom), (6, 'headless', stage_headless),
+              (7, 'picture', lambda: stage_picture(baseline)), (8, 'sound', lambda: stage_sound(baseline, '--new-sound' in args)),
+              (9, 'perf', lambda: stage_perf(baseline)), (10, 'windows', stage_windows),
+              (11, 'floppy', stage_floppy)]
+    if quick:
+        stages = stages[:4]
+    if only:
+        stages = [s for s in stages if s[0] in only]
+    os.makedirs(os.path.join(OUT, 'logs'), exist_ok=True)
+    rc, head = run(['git', 'rev-parse', '--short', 'HEAD'])
+    rc, dirty = run(['git', 'status', '--porcelain', '--untracked-files=no'])
+    commit = head.strip() + ('-dirty' if dirty.strip() else '')
+    rc, branch = run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
+    t0 = datetime.datetime.now()
+    say('tools/check %s  commit %s on %s  %s' % (' '.join(args), commit, branch.strip(), t0.strftime('%Y-%m-%d %H:%M')))
+    results = {}
+
+    def one(n, name, fn, buffered):
+        if buffered:
+            _tls.buf = []
+        s0 = time.time()
+        try:
+            ok = bool(fn())
+        except Exception as x:  # a broken stage is a failed stage
+            say('    crashed: %r' % x)
+            ok = False
+        lines = getattr(_tls, 'buf', None) or []
+        _tls.buf = None
+        return ok, lines, time.time() - s0
+
+    def show(n, name, res):
+        ok, lines, secs = res
+        say('[%2d] %s' % (n, name))
+        for l in lines:
+            say(l)
+        say('[%2d] %-10s %s  (%.0f s)' % (n, name, 'PASS' if ok else 'FAIL', secs))
+        results[n] = (n, name, ok)
+
+    first = [s_ for s_ in stages if s_[0] == 1]
+    alone = [s_ for s_ in stages if s_[0] == 9]
+    rest = [s_ for s_ in stages if s_[0] not in (1, 9)]
+    for n, name, fn in first:
+        say('[%2d] %s' % (n, name))
+        ok, _, secs = one(n, name, fn, False)
+        say('[%2d] %-10s %s  (%.0f s)' % (n, name, 'PASS' if ok else 'FAIL', secs))
+        results[n] = (n, name, ok)
+    if serial:
+        for n, name, fn in rest:
+            show(n, name, one(n, name, fn, True))
+    elif rest:
+        say('(stages %s side by side)' % ', '.join(str(x[0]) for x in rest))
+        with ThreadPoolExecutor(len(rest)) as ex:
+            futs = [(n, name, ex.submit(one, n, name, fn, True)) for n, name, fn in rest]
+            for n, name, f in futs:
+                show(n, name, f.result())
+    for n, name, fn in alone:
+        show(n, name, one(n, name, fn, True))
+    results = [results[k] for k in sorted(results)]
+    say()
+    for n, name, ok in results:
+        say('  %2d %-10s %s' % (n, name, 'PASS' if ok else 'FAIL'))
+    failed = [r for r in results if not r[2]]
+    partial = quick or only
+    say('%s%s  (%.0f s)' % ('PASS' if not failed else 'FAIL', ' (partial run)' if partial else '',
+                            (datetime.datetime.now() - t0).total_seconds()))
+    rp = os.path.join(OUT, '%s-%s.txt' % (t0.strftime('%Y-%m-%d'), commit))
+    open(rp, 'w').write('\n'.join(report) + '\n')
+    print('report: ' + os.path.relpath(rp, ROOT))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -1,0 +1,152 @@
+{
+ "bars": [
+  65,
+  66,
+  67,
+  68
+ ],
+ "generated": 200,
+ "tried": 331,
+ "rejected": {
+  "stutter": 65,
+  "leap": 65
+ },
+ "weights": {
+  "motif": 0.3,
+  "fit": 0.15,
+  "sync": 0.15,
+  "sing": 0.15,
+  "energy": 0.1,
+  "elab": 0.15
+ },
+ "takes": [
+  {
+   "id": "a",
+   "score": 0.7296,
+   "parts": {
+    "motif": 0.72,
+    "fit": 0.703,
+    "sync": 1.0,
+    "sing": 0.753,
+    "energy": 0.339,
+    "elab": 0.742,
+    "changed": 0.234
+   },
+   "moves": [
+    "bar 66: pentatonic sequence in 3s up, into B-4",
+    "bar 66: pedal lick on B-4",
+    "bar 67: neighbour tone E-5-F#5-E-5 (row 8)",
+    "bar 67: pentatonic sequence in 4s up, into E-5",
+    "bar 67: pentatonic sequence in 4s up, into E-5",
+    "bar 68: rock bend E-5 up to F#5",
+    "bar 68: rhythm: an 8th split into 16ths (row 8)",
+    "bar 68: harmony D#5 under F#5"
+   ],
+   "laid_back": [
+    [
+     65,
+     7
+    ]
+   ],
+   "track1": {
+    "65": "C#4:bz E-4:bz G#4:bz C#5:bz E-5:bz + C#5:bz G#4:bz:sw1 E-5:bz + + +::vib C#5:bz + B-4:bz +",
+    "66": "A-4:bz B-4:bz C#5:bz B-4:bz C#5:bz B-4:bz C#5:bz B-4:bz B-4:bz + + +::vib + + A-4:bz +",
+    "67": "G#4:bz B-4:bz C#5:bz E-5:bz B-4:bz C#5:bz E-5:bz F#5:bz E-5:bz F#5:bz E-5:bz +::vib D#5:bz + E-5:bz +",
+    "68": "E-5:bz ~F#5::bnd073 + + + +::vib + + D#5:bz C#5:bz B-4:bz + F#4:bz + D#4:bz +"
+   },
+   "track2": {
+    "65": "- - - - - - - - - - - - - - - -",
+    "66": "- - - - - - - - - - - - - - - -",
+    "67": "- - - - - - - - - - - - - - - -",
+    "68": "D#5:bzh + + + + + + + - - - - - - - -"
+   }
+  },
+  {
+   "id": "b",
+   "score": 0.7107,
+   "parts": {
+    "motif": 0.662,
+    "fit": 0.734,
+    "sync": 1.0,
+    "sing": 0.587,
+    "energy": 0.377,
+    "elab": 0.841,
+    "changed": 0.25
+   },
+   "moves": [
+    "bar 65: rhythm: a 16th pair to an 8th (row 2)",
+    "bar 66: pentatonic sequence in 4s up, into B-4",
+    "bar 66: rhythm: an 8th split into 16ths (row 14)",
+    "bar 67: pentatonic sequence in 3s up, into E-5",
+    "bar 67: neighbour tone E-5-F#5-E-5 (row 8)",
+    "bar 68: rock bend E-5 up to F#5",
+    "bar 68: rhythm: an 8th split into 16ths (row 10)",
+    "bar 68: harmony D#5 under F#5"
+   ],
+   "laid_back": [
+    [
+     68,
+     11
+    ]
+   ],
+   "track1": {
+    "65": "C#4:bz E-4:bz G#4:bz + E-5:bz + C#5:bz G#4:bz E-5:bz + + +::vib C#5:bz + B-4:bz +",
+    "66": "A-4:bz B-4:bz C#5:bz E-5:bz A-4:bz C#5:bz E-5:bz A-4:bz B-4:bz + + +::vib + + A-4:bz G#4:bz",
+    "67": "G#4:bz B-4:bz C#5:bz B-4:bz B-4:bz E-5:bz C#5:bz D#5:bz E-5:bz F#5:bz E-5:bz +::vib D#5:bz + E-5:bz +",
+    "68": "E-5:bz ~F#5::bnd073 + + + +::vib + + D#5:bz + B-4:bz C#5:bz:sw1 F#4:bz + D#4:bz +"
+   },
+   "track2": {
+    "65": "- - - - - - - - - - - - - - - -",
+    "66": "- - - - - - - - - - - - - - - -",
+    "67": "- - - - - - - - - - - - - - - -",
+    "68": "D#5:bzh + + + + + + + - - - - - - - -"
+   }
+  },
+  {
+   "id": "c",
+   "score": 0.7099,
+   "parts": {
+    "motif": 0.569,
+    "fit": 0.703,
+    "sync": 1.0,
+    "sing": 0.728,
+    "energy": 0.246,
+    "elab": 0.999,
+    "changed": 0.297
+   },
+   "moves": [
+    "bar 65: scale run into E-5 (row 8)",
+    "bar 66: pedal lick on B-4",
+    "bar 66: pentatonic sequence in 3s up, into B-4",
+    "bar 67: pedal lick on E-5",
+    "bar 67: neighbour tone E-5-D#5-E-5 (row 8)",
+    "bar 67: sequence of bar 66's figure",
+    "bar 68: rock bend E-5 up to F#5",
+    "bar 68: rhythm: an 8th split into 16ths (row 12)",
+    "bar 68: harmony D#5 under F#5"
+   ],
+   "laid_back": [],
+   "track1": {
+    "65": "C#4:bz E-4:bz G#4:bz C#5:bz G#4:bz B-4:bz C#5:bz D#5:bz E-5:bz + + +::vib C#5:bz + B-4:bz +",
+    "66": "A-4:bz B-4:bz C#5:bz B-4:bz C#5:bz E-5:bz C#5:bz A-4:bz B-4:bz + + +::vib + + A-4:bz +",
+    "67": "G#4:bz A-4:bz B-4:bz A-4:bz B-4:bz D#5:bz B-4:bz G#4:bz E-5:bz D#5:bz E-5:bz +::vib D#5:bz + E-5:bz +",
+    "68": "E-5:bz ~F#5::bnd073 + + + +::vib + + D#5:bz + B-4:bz + F#4:bz G#4:bz D#4:bz +"
+   },
+   "track2": {
+    "65": "- - - - - - - - - - - - - - - -",
+    "66": "- - - - - - - - - - - - - - - -",
+    "67": "- - - - - - - - - - - - - - - -",
+    "68": "D#5:bzh + + + + + + + - - - - - - - -"
+   }
+  }
+ ],
+ "bend_commands": {
+  "bnd073": 115
+ },
+ "original": {
+  "65": "C#4:bz E-4:bz G#4:bz C#5:bz E-5:bz + C#5:bz G#4:bz E-5:bz + + +::vib C#5:bz + B-4:bz +",
+  "66": "A-4:bz C#5:bz E-5:bz C#5:bz A-4:bz E-4:bz A-4:bz C#5:bz B-4:bz + + +::vib + + A-4:bz +",
+  "67": "G#4:bz B-4:bz E-5:bz G#5:bz E-5:bz B-4:bz G#4:bz B-4:bz E-5:bz + + +::vib D#5:bz + E-5:bz +",
+  "68": "F#5:bz + + +::vib + + + + D#5:bz + B-4:bz + F#4:bz + D#4:bz +"
+ }
+}

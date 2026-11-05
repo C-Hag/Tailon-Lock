@@ -1,0 +1,35 @@
+# Valgrind suppressions for tools/certify (memcheck in P2, helgrind and drd in P4): memory the system's own libraries keep, never the game's,
+# the same rule as lsan-system.supp. The GPU drivers (Mesa's Vulkan drivers) keep parts of their shader
+# disk cache and pipeline state after vkDestroyDevice. Only a block the driver itself allocated: its frame must be
+# the allocator's direct caller, so a leak of ours with the driver further down its stack still shows.
+{
+   mesa-vulkan-driver-alloc
+   Memcheck:Leak
+   match-leak-kinds: definite,indirect
+   fun:*alloc
+   obj:*/libvulkan_*
+   ...
+}
+{
+   mesa-vulkan-driver-memalign
+   Memcheck:Leak
+   match-leak-kinds: definite,indirect
+   fun:*memalign
+   obj:*/libvulkan_*
+   ...
+}
+# Helgrind and DRD (P4): the Vulkan driver's own threads and its pthread_once set-up synchronise through atomics the
+# race finders cannot see. Only an access made by the driver's code itself: its frame must be the top one, so a
+# race on the game's memory, from the game's code, still shows.
+{
+   mesa-vulkan-driver-race
+   Helgrind:Race
+   obj:*/libvulkan_*
+   ...
+}
+{
+   mesa-vulkan-driver-conflict
+   drd:ConflictingAccess
+   obj:*/libvulkan_*
+   ...
+}

@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+"""tools/netattack - the cheater on the network: attacks a real network match between two copies of the game on
+this computer and checks that neither copy can be fooled, crashed or desynchronised. Original code for this
+project; Python 3.8+ standard library only. It borrows tools/playtest's runner and its bad-internet proxy.
+
+usage: tools/netattack [--build DIR] [--seed S] [--report FILE] [--only NAME[,NAME...]]
+
+The attacks, each on its own match (the guest joins through a man-in-the-middle proxy that can see and change
+every packet but does not know the game code):
+  replay      old packets of either side sent again, now and then
+  tamper      packets with one byte changed sent alongside the real ones
+  plaintext   unsealed match packets (state, welcome, bye) made up and sent to both sides
+  junk        random bytes, empty, short and oversized packets to both sides
+  outsider    a third address sends both sides replays and junk (not the peer: must be ignored)
+  codes       a stranger guesses game codes: the host must stop after 10 wrong ones (and say so)
+  watch       the watch stream: a wrong watch code, replayed stream packets, and a hello the size of the challenge
+Each match must still finish with both sides agreeing (tools/playtest's comparison), the log must show the
+attacks refused, and nothing may crash. Exits 1 on a finding."""
+import importlib.machinery
+import importlib.util
+import os
+import random
+import re
+import socket
+import struct
+import subprocess
+import sys
+import threading
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_spec = importlib.util.spec_from_loader('playtest', importlib.machinery.SourceFileLoader(
+    'playtest', os.path.join(ROOT, 'tools', 'playtest')))
+PT = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(PT)
+
+OUT = os.path.join(ROOT, 'build', 'netattack')
+PORT = 28960   # the host's port here (A4C_NET_PORT): off the ports real games and the other test runs use
+WATCH = 28962  # the watch stream's
+
+
+def env_port(home, log):
+    e = PT.game_env(home, log)
+    e['A4C_NET_PORT'] = str(PORT)
+    return e
+VERSION = 5
+T_STATE, T_WELCOME, T_BYE, T_JOIN = 4, 3, 5, 12
+
+
+class Attacker(PT.BadNet):
+    """the bad-internet proxy, turned man-in-the-middle: it forwards everything on time, and does its attack"""
+
+    def __init__(self, target, seed, attack):
+        super().__init__(target, seed, delay=(0.0, 0.002), loss=0.0, dup=0.0)
+        self.attack = attack
+        self.seen = []  # (socket, packet, to) of both directions
+        self.sent = 0
+        self.guest = None
+        self.out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # the outsider's own address
+        self.out.bind(('127.0.0.1', 0))
+        threading.Thread(target=self._attacks, daemon=True).start()
+
+    def _later(self, sock, data, addr):
+        if addr != self.target:
+            self.guest = addr
+        if len(self.seen) < 4000:
+            self.seen.append((sock, data, addr))
+        # once the match is under way: a changed handshake packet only fails the join as a wrong code would,
+        # which is the 10-try lockout a stranger can cause anyway (codes) and is kept by design
+        if self.attack == 'tamper' and len(self.seen) > 300 and len(data) > 13 and self.rnd.random() < 0.08:
+            bad = bytearray(data)
+            i = self.rnd.randrange(5, len(bad))
+            bad[i] ^= 1 << self.rnd.randrange(8)
+            super()._later(sock, bytes(bad), addr)
+            self.sent += 1
+        super()._later(sock, data, addr)
+
+    def _forge(self):
+        kind = self.rnd.choice([T_STATE, T_WELCOME, T_BYE, T_JOIN])
+        body = bytes(self.rnd.randrange(256) for _ in range(self.rnd.randrange(0, 200)))
+        return bytes([ord('A'), ord('4'), ord('C'), VERSION, kind]) + body
+
+    def _junk(self):
+        n = self.rnd.choice([0, 1, 4, 5, 13, 29, 60, 300, 1400, 1500, 9000])
+        head = b'A4C' + bytes([VERSION]) if self.rnd.random() < 0.5 else b''
+        return (head + bytes(self.rnd.randrange(256) for _ in range(n)))[:65000]
+
+    def _attacks(self):
+        while not self.stop:
+            time.sleep(0.05)
+            if not self.seen or not self.guest:
+                continue
+            try:
+                if self.attack == 'replay':
+                    sock, data, addr = self.seen[self.rnd.randrange(len(self.seen))]
+                    sock.sendto(data, addr)
+                elif self.attack == 'plaintext':
+                    self.front.sendto(self._forge(), self.guest)
+                    self.ups[self.guest].sendto(self._forge(), self.target)
+                elif self.attack == 'junk':
+                    self.front.sendto(self._junk(), self.guest)
+                    self.ups[self.guest].sendto(self._junk(), self.target)
+                elif self.attack == 'outsider':
+                    _, data, _ = self.seen[self.rnd.randrange(len(self.seen))]
+                    self.out.sendto(data if self.rnd.random() < 0.5 else self._junk(), self.guest)
+                    self.out.sendto(data if self.rnd.random() < 0.5 else self._junk(), self.target)
+                else:
+                    continue
+                self.sent += 1
+            except (OSError, KeyError):
+                pass
+
+
+def fresh(*logs):
+    """the game appends to its log: start each attack on an empty one"""
+    for l in logs:
+        if os.path.exists(l):
+            os.remove(l)
+
+
+def refused(log):
+    """the 'net: N packets taken, M refused' lines of a side's log"""
+    taken = ref = 0
+    try:
+        for m in re.finditer(r'net: (\d+) packets taken, (\d+) refused', open(log, errors='replace').read()):
+            taken += int(m.group(1))
+            ref += int(m.group(2))
+    except OSError:
+        pass
+    return taken, ref
+
+
+def match_under(exe, attack, seed, work):
+    """one match, the guest through the attacker"""
+    d = os.path.join(work, attack)
+    os.makedirs(d, exist_ok=True)
+    hlog, glog = os.path.join(d, 'host.log'), os.path.join(d, 'guest.log')
+    fresh(hlog, glog)
+    homes = [os.path.join(d, 'host-home'), os.path.join(d, 'guest-home')]
+    for h in homes:
+        os.makedirs(h, exist_ok=True)
+    args = PT.game_args(seed, random.Random(seed).choice(PT.RULES), 1, 900)
+    host = subprocess.Popen([exe, '--host'] + args, env=env_port(homes[0], hlog), stdout=subprocess.DEVNULL,
+                            stderr=subprocess.STDOUT, cwd=d)
+    code = PT.wait_code(hlog, host)
+    if not code:
+        host.kill()
+        return False, 'the host never made a game code', 0
+    proxy = Attacker(('127.0.0.1', PORT), seed, attack)
+    guest = subprocess.Popen([exe, '--join', '127.0.0.1:%d' % proxy.port, '--code', code] + args,
+                             env=PT.game_env(homes[1], glog), stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, cwd=d)
+    for p in (host, guest):
+        try:
+            p.wait(timeout=1000)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+    proxy.close()
+    rows, probs = PT.compare(hlog, glog, 1, host.returncode, guest.returncode)
+    ht, hr = refused(hlog)
+    gt, gr = refused(glog)
+    ok = not probs and len(rows) >= 1
+    if attack in ('replay', 'tamper', 'plaintext') and hr + gr == 0 and proxy.sent:
+        ok = False
+        probs.append('nothing was refused: the attack never landed, or it was taken')
+    ev = '%d attack packets; host took %d and refused %d, guest took %d and refused %d; %s' % (
+        proxy.sent, ht, hr, gt, gr, '; '.join(probs) if probs else 'the match finished and both sides agree')
+    return ok, ev, proxy.sent
+
+
+def guess_codes(exe, seed, work):
+    """a stranger tries wrong codes; the host must give up after 10 and say so"""
+    d = os.path.join(work, 'codes')
+    os.makedirs(d, exist_ok=True)
+    hlog = os.path.join(d, 'host.log')
+    fresh(hlog)
+    home = os.path.join(d, 'host-home')
+    os.makedirs(home, exist_ok=True)
+    args = PT.game_args(seed, [], 1, 240)
+    host = subprocess.Popen([exe, '--host'] + args, env=env_port(home, hlog), stdout=subprocess.DEVNULL,
+                            stderr=subprocess.STDOUT, cwd=d)
+    code = PT.wait_code(hlog, host)
+    if not code:
+        host.kill()
+        return False, 'the host never made a game code', 0
+    tries = 0
+    for k in range(12):
+        wrong = '%06d' % ((int(code) + 1 + k * 7919) % 1000000)
+        gh = os.path.join(d, 'guess-%d' % k)
+        os.makedirs(gh, exist_ok=True)
+        fresh(os.path.join(gh, 'log'))
+        g = subprocess.Popen([exe, '--join', '127.0.0.1:%d' % PORT, '--code', wrong] + PT.game_args(seed + k, [], 1, 6),
+                             env=PT.game_env(gh, os.path.join(gh, 'log')), stdout=subprocess.DEVNULL,
+                             stderr=subprocess.STDOUT, cwd=gh)
+        g.wait(timeout=60)
+        tries += 1
+    # and now the right code: the host has stopped
+    gh = os.path.join(d, 'right')
+    os.makedirs(gh, exist_ok=True)
+    fresh(os.path.join(gh, 'log'))
+    g = subprocess.Popen([exe, '--join', '127.0.0.1:%d' % PORT, '--code', code] + PT.game_args(seed, [], 1, 8),
+                         env=PT.game_env(gh, os.path.join(gh, 'log')), stdout=subprocess.DEVNULL,
+                         stderr=subprocess.STDOUT, cwd=gh)
+    g.wait(timeout=60)
+    host.kill()
+    host.wait()
+    log = open(hlog, errors='replace').read()
+    wrongs = len(re.findall(r'SOMEONE TRIED A WRONG CODE', log))
+    stopped = '10 WRONG CODES TRIED' in log
+    joined = bool(re.search(r'over at|net: \d+ packets taken', open(os.path.join(gh, 'log'), errors='replace').read()))
+    ok = stopped and not joined
+    return ok, ('%d wrong codes tried: the host counted %d, %s, and the right code afterwards %s. One guess in a '
+                'million each, ten in all: a one in 100,000 chance, and the host then needs a new code (a stranger '
+                'can use that to stop a host waiting for a friend)') % (
+        tries, wrongs + (1 if stopped else 0), 'stopped' if stopped else 'DID NOT STOP',
+        'was refused' if not joined else 'GOT IN'), tries
+
+
+def watch_stream(exe, seed, work):
+    """the watch stream: a wrong code gets nothing, replays are ignored, a hello buys no more than its size"""
+    d = os.path.join(work, 'watch')
+    os.makedirs(d, exist_ok=True)
+    blog = os.path.join(d, 'b.log')
+    fresh(blog, os.path.join(d, 'v.log'))
+    home = os.path.join(d, 'home')
+    os.makedirs(home, exist_ok=True)
+    env = PT.game_env(home, blog)
+    env['A4C_VIDEO'] = 'offscreen'
+    b = subprocess.Popen([exe, '--watch', '--broadcast', str(WATCH), '--seconds', '40'], env=env, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.STDOUT, cwd=d)
+    code = PT.wait_code(blog, b, pattern=re.compile(r'watch code ([A-Z0-9]{16})'))
+    found = []
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(('127.0.0.1', 0))
+    s.settimeout(1)
+    hello = b'A4C' + bytes([VERSION, 30]) + bytes(16)
+    s.sendto(hello, ('127.0.0.1', WATCH))
+    try:
+        chal, _ = s.recvfrom(2048)
+        if len(chal) > len(hello):
+            found.append('the challenge (%d bytes) is bigger than the hello (%d)' % (len(chal), len(hello)))
+    except socket.timeout:
+        found.append('no challenge came back')
+        chal = b''
+    # answer the challenge without the code: a made-up seal
+    if chal:
+        s.sendto(b'A4C' + bytes([VERSION, 32]) + bytes(8) + chal[5:21] + bytes(16), ('127.0.0.1', WATCH))
+    got = 0
+    end = time.time() + 3
+    while time.time() < end:
+        try:
+            data, _ = s.recvfrom(2048)
+            if len(data) > 5 and data[4] in (33, 34, 35):
+                got += 1
+        except socket.timeout:
+            pass
+    if got:
+        found.append('%d stream packets reached a viewer without the code' % got)
+    # a viewer with the right code, then old packets of its stream sent to it again
+    vlog = os.path.join(d, 'v.log')
+    venv = PT.game_env(os.path.join(d, 'vhome'), vlog)
+    venv['A4C_VIDEO'] = 'offscreen'
+    os.makedirs(os.path.join(d, 'vhome'), exist_ok=True)
+    v = subprocess.Popen([exe, '--spectate', '127.0.0.1:%d' % WATCH, '--code', code or 'X' * 16, '--seconds', '12'], env=venv,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, cwd=d)
+    v.wait(timeout=60)
+    b.wait(timeout=60)
+    vl = open(vlog, errors='replace').read() if os.path.exists(vlog) else ''
+    if 'watch stream: match' not in vl:
+        found.append('the viewer with the right code got no match')
+    if v.returncode not in (0, None) or b.returncode not in (0, None):
+        found.append('exit codes %s and %s' % (b.returncode, v.returncode))
+    return not found, '; '.join(found) or ('a wrong code got no stream, the challenge is no bigger than the hello, '
+                                           'and the right code got the match'), 3
+
+
+ATTACKS = ['replay', 'tamper', 'plaintext', 'junk', 'outsider', 'codes', 'watch']
+
+
+def main():
+    args = sys.argv[1:]
+    build, seed, report, only = None, 31, os.path.join(OUT, 'report.md'), None
+    i = 0
+    while i < len(args):
+        if args[i] == '--build':
+            build = args[i + 1]
+        elif args[i] == '--seed':
+            seed = int(args[i + 1])
+        elif args[i] == '--report':
+            report = os.path.abspath(args[i + 1])
+        elif args[i] == '--only':
+            only = args[i + 1].split(',')
+        i += 2
+    exe, _ = PT.find_exe(build)
+    os.makedirs(OUT, exist_ok=True)
+    rows, failed = [], 0
+    for k, a in enumerate(ATTACKS):
+        if only and a not in only:
+            continue
+        t0 = time.time()
+        if a == 'codes':
+            ok, ev, n = guess_codes(exe, seed + k, OUT)
+        elif a == 'watch':
+            ok, ev, n = watch_stream(exe, seed + k, OUT)
+        else:
+            ok, ev, n = match_under(exe, a, seed + k, OUT)
+        failed += not ok
+        rows.append((a, ok, ev))
+        print('%-10s %s (%.0f s)\n    %s' % (a, 'held' if ok else 'FINDING', time.time() - t0, ev), flush=True)
+    with open(report, 'w') as f:
+        f.write('# The cheater on the network\n\n%s, %s\n\n| Attack | Result | What happened |\n|---|---|---|\n' % (
+            time.strftime('%Y-%m-%d %H:%M'), os.path.relpath(exe, ROOT)))
+        for a, ok, ev in rows:
+            f.write('| %s | %s | %s |\n' % (a, 'held' if ok else '**finding**', ev.replace('|', '/')))
+    print('report: ' + os.path.relpath(report, ROOT))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

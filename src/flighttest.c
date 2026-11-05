@@ -1,0 +1,690 @@
+/* flighttest.c - a test bench for the flight model (--flight-test). Each
+ * jet flies a set of manoeuvres with simple autopilots, with no enemy in
+ * the sky, and prints what it measured: top speed, climb, sustained turn,
+ * roll rate, stall, ceiling, endurance, take-off, carrier launch and
+ * landing. Every step is also checked for broken physics: NaNs, axes that
+ * are no longer square, a live jet under the ground. */
+#include "flighttest.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "assets.h"
+#include "units.h"
+#include "core/game.h"
+#include "core/jets.h"
+#include "core/sim.h"
+#include "core/world.h"
+
+#define DT (1.0f / 60)
+#define KT KT_PER_MPS
+
+static int problems;
+
+static void check(const Game *g, const Plane *p, const char *test) {
+  static char last[64];
+  const char *bad = NULL;
+  float fl = v3_len(p->f), ul = v3_len(p->u), rl = v3_len(p->r);
+  if (!(p->pos.x == p->pos.x && p->pos.y == p->pos.y && p->pos.z == p->pos.z && p->speed == p->speed)) bad = "NaN position or speed";
+  else if (fabsf(fl - 1) > 0.01f || fabsf(ul - 1) > 0.01f || fabsf(rl - 1) > 0.01f) bad = "axes not unit length";
+  else if (fabsf(v3_dot(p->f, p->u)) > 0.01f || fabsf(v3_dot(p->f, p->r)) > 0.01f) bad = "axes not square";
+  else if (p->alive && !p->taxi && p->pos.y < terrain_h(p->pos.x, p->pos.z) - 1) bad = "alive under the ground";
+  else if (p->speed < 0 || p->speed > 600) bad = "speed out of range";
+  /* once per test and jet: the test names are the same for every jet, and a failure of the jet before must not
+   * hide this one's */
+  char key[sizeof last];
+  snprintf(key, sizeof key, "%d %s", p->jet, test);
+  if (bad && strcmp(last, key) != 0) {
+    snprintf(last, sizeof last, "%s", key);
+    printf("  !! %s: %s at t=%.1f (y %.0f, speed %.0f)\n", test, bad, g->time, p->pos.y, p->speed);
+    problems++;
+  }
+}
+
+/* A match with only our jet in it: the enemies sit out, no targets. */
+static bool realistic;
+
+/* a plane the test cannot do without: stop the whole run with the reason, rather than go on with NULL */
+static Plane *must(Plane *p, const char *what) {
+  if (!p) {
+    fprintf(stderr, "%s: no %s in this game\n", __FILE__, what);
+    exit(2);
+  }
+  return p;
+}
+
+static Plane *setup(Game *g, int jet, bool classic, bool ground) {
+  int jets[2] = { jet, jet };
+  GameRules R = { 0 };
+  R.classic = classic;
+  R.realistic = realistic;
+  R.ground_start = ground;
+  R.load[0][0] = R.load[1][0] = -1;
+  game_new_rules(g, MODE_1P, DIFF_NORMAL, false, jets, 1, &R);
+  for (int i = 0; i < g->nplanes; i++)
+    if (g->planes[i].hidx < 0) {
+      g->planes[i].inactive = true;
+      g->planes[i].alive = false;
+      g->planes[i].lives = 99;
+    }
+  g->ntargets = 0;
+  Plane *p = &g->planes[g->locals[0]];
+  p->lives = 99;
+  p->invuln = 0;
+  return p;
+}
+
+static void place(Plane *p, float alt, float speed) {
+  p->pos = v3(0, alt, -4000);
+  p->f = v3(0, 0, 1);
+  p->u = v3(0, 1, 0);
+  p->r = v3(1, 0, 0);
+  p->speed = speed;
+  p->vel = v3_scale(p->f, speed);
+  p->taxi = p->oncat = false;
+  p->fuel = 100;
+}
+
+static float bank_of(const Plane *p) { return atan2f(-p->r.y, p->u.y); }
+static float hdg_of(const Plane *p) { return atan2f(p->f.x, p->f.z); }
+
+/* stick to hold a pitch angle (radians) and a bank */
+static void hold(Plane *p, float pitch, float bank) {
+  float pe = pitch - asinf(clampf(p->f.y, -1, 1));
+  float be = bank - bank_of(p);
+  p->ctl.pitch = clampf(pe * 4 + fabsf(bank_of(p)) * 0.35f, -1, 1);
+  p->ctl.roll = clampf(be * 3, -1, 1);
+}
+
+static void step(Game *g, Plane *p, const char *test) {
+  p->ctl.gun = p->ctl.msl = p->ctl.flr = p->ctl.fire = p->ctl.sel = p->ctl.map = p->ctl.ap = false;
+  sim_update(g, DT);
+  g->nsounds = 0;
+  check(g, p, test);
+}
+
+static void fly(const char *name, int jet, bool classic) {
+  Game *g = calloc(1, sizeof *g);
+  if (!g) {
+    problems++;
+    return;
+  }
+  Plane *p;
+  char line[512];
+  int n = 0;
+  /* top speed, level at 3000 m */
+  p = setup(g, jet, classic, false);
+  place(p, 3000, 150);
+  p->throttle = 1;
+  float vmax = 0, t90 = -1;
+  for (int i = 0; i < 60 * 60; i++) {
+    hold(p, 0, 0);
+    step(g, p, "top speed");
+    vmax = fmaxf(vmax, p->speed);
+  }
+  p = setup(g, jet, classic, false);
+  place(p, 3000, 150);
+  p->throttle = 1;
+  for (int i = 0; i < 60 * 60 && t90 < 0; i++) {
+    hold(p, 0, 0);
+    step(g, p, "acceleration");
+    if (p->speed >= 0.9f * vmax) t90 = g->time;
+  }
+  /* climb at 30 degrees, full power, from 300 m/s */
+  p = setup(g, jet, classic, false);
+  place(p, 1000, 300);
+  p->throttle = 1;
+  float y0 = p->pos.y;
+  for (int i = 0; i < 20 * 60; i++) {
+    hold(p, 30 * PI_F / 180, 0);
+    step(g, p, "climb");
+  }
+  float climb = (p->pos.y - y0) / 20, vclimb = p->speed;
+  /* ceiling: climb at 20 degrees for 4 minutes */
+  float ymax = 0;
+  for (int i = 0; i < 240 * 60; i++) {
+    hold(p, 20 * PI_F / 180, 0);
+    step(g, p, "ceiling");
+    ymax = fmaxf(ymax, p->pos.y);
+  }
+  /* sustained turn: 75 degrees of bank and pulling, holding height */
+  p = setup(g, jet, classic, false);
+  place(p, 3000, 250);
+  p->throttle = 1;
+  float h0 = 0, gmax = 0, hy0 = 0;
+  for (int i = 0; i < 25 * 60; i++) {
+    float bank = 75 * PI_F / 180;
+    p->ctl.roll = clampf((bank - bank_of(p)) * 3, -1, 1);
+    p->ctl.pitch = clampf(0.9f + (3000 - p->pos.y) * 0.004f, -1, 1);
+    if (i == 10 * 60) {
+      h0 = hdg_of(p);
+      hy0 = p->pos.y;
+    }
+    float before = hdg_of(p);
+    step(g, p, "turn");
+    (void)before;
+
+  }
+  float dh = hdg_of(p) - h0;
+  /* count whole turns: heading unwraps over 15 s */
+  float turn = 0;
+  Game *g2 = calloc(1, sizeof *g2);
+  if (!g2) problems++;
+  else {
+    Plane *q = setup(g2, jet, classic, false);
+    place(q, 3000, 250);
+    q->throttle = 1;
+    float prev = hdg_of(q), acc = 0;
+    for (int i = 0; i < 8 * 60; i++) {
+      /* a hard break: 80 degrees of bank, the stick fully back */
+      q->ctl.roll = clampf((80 * PI_F / 180 - bank_of(q)) * 3, -1, 1);
+      q->ctl.pitch = 1;
+      step(g2, q, "turn rate");
+      gmax = fmaxf(gmax, q->gload);
+      float h = hdg_of(q), d = h - prev;
+      while (d > PI_F) d -= 2 * PI_F;
+      while (d < -PI_F) d += 2 * PI_F;
+      if (i >= 3 * 60) acc += d;
+      prev = h;
+    }
+    turn = fabsf(acc) / 5 * 180 / PI_F;
+    free(g2);
+  }
+  (void)dh;
+  (void)hy0;
+  /* roll rate: full aileron for one second */
+  p = setup(g, jet, classic, false);
+  place(p, 3000, 250);
+  p->throttle = 0.7f;
+  float racc = 0, pb = bank_of(p);
+  for (int i = 0; i < 60; i++) {
+    p->ctl.roll = 1;
+    p->ctl.pitch = 0;
+    step(g, p, "roll");
+    float b = bank_of(p), d = b - pb;
+    while (d > PI_F) d -= 2 * PI_F;
+    while (d < -PI_F) d += 2 * PI_F;
+    racc += d;
+    pb = b;
+  }
+  /* stall: idle, holding height, until the stall warning */
+  p = setup(g, jet, classic, false);
+  place(p, 3000, 200);
+  p->throttle = 0;
+  float tstall = -1, vstall = 0;
+  for (int i = 0; i < 120 * 60 && tstall < 0; i++) {
+    p->ctl.roll = clampf(-bank_of(p) * 3, -1, 1);
+    p->ctl.pitch = clampf((3000 - p->pos.y) * 0.01f - p->f.y * 3, -1, 1);
+    step(g, p, "stall");
+    if (p->stall) {
+      tstall = g->time;
+      vstall = p->speed;
+    }
+  }
+  /* and the recovery: full power, nose down 20 degrees */
+  float lost = p->pos.y, trec = -1;
+  p->throttle = 1;
+  for (int i = 0; i < 30 * 60 && trec < 0; i++) {
+    hold(p, -20 * PI_F / 180, 0);
+    step(g, p, "stall recovery");
+    lost = fminf(lost, p->pos.y);
+    if (!p->stall && p->speed > 150) trec = g->time - tstall;
+  }
+  float hlost = 3000 - lost;
+  /* endurance at full power */
+  p = setup(g, jet, classic, false);
+  place(p, 3000, 300);
+  p->throttle = 1;
+  float tfuel = -1;
+  for (int i = 0; i < 900 * 60 && tfuel < 0; i++) {
+    hold(p, 0, 0);
+    step(g, p, "endurance");
+    if (p->fuel <= 0) tfuel = g->time;
+  }
+  n += snprintf(line + n, sizeof line - n, "%-6s %-7s top %4.0f kt (90%% in %4.1f s)  climb %5.1f m/s (at %3.0f kt)  ceiling %5.0f ft  "
+                "turn %4.1f deg/s at %3.1f g  roll %3.0f deg/s  stall %3.0f kt after %4.1f s, recovers in %4.1f s losing %4.0f m  "
+                "fuel %4.0f s", name, classic ? "classic" : "modern", vmax * KT, t90, climb, vclimb * KT, ymax * FT_PER_M, turn, gmax,
+                fabsf(racc) * 180 / PI_F, vstall * KT, tstall, trec, hlost, tfuel);
+  printf("%s\n", line);
+  free(g);
+}
+
+/* Energy and turning, as the fighter manoeuvre books describe them: the
+ * turn rate across the speeds (it should peak at corner speed), a zoom climb
+ * (speed traded for height, at best v^2 / 2g), a level turn with the stick
+ * fully back (it should bleed down toward the speed it can hold), and an
+ * unloaded dive (no g, the quickest way to gain speed). */
+static void energy_tests(int jet, bool classic) {
+  Game *g = calloc(1, sizeof *g);
+  if (!g) {
+    problems++;
+    return;
+  }
+  const JetType *jt = &JETS[jet];
+  char line[400];
+  int n = snprintf(line, sizeof line, "  turn deg/s by speed:");
+  static const float KTS[] = { 150, 250, 350, 450, 550, 650 };
+  float best = 0, bestkt = 0;
+  for (int k = 0; k < 6; k++) {
+    Plane *p = setup(g, jet, classic, false);
+    place(p, 3000, KTS[k] / KT);
+    p->throttle = 1;
+    /* roll to 90 degrees, then one second of full pull at that speed */
+    float prev = 0, acc = 0;
+    for (int i = 0; i < 90; i++) {
+      p->ctl.roll = clampf((90 * PI_F / 180 - bank_of(p)) * 3, -1, 1);
+      p->ctl.pitch = i >= 30 ? 1 : 0;
+      p->speed = KTS[k] / KT; /* held: the rate at this speed */
+      if (i == 30) prev = hdg_of(p);
+      step(g, p, "turn by speed");
+      if (i >= 30) {
+        float h = hdg_of(p), d = h - prev;
+        while (d > PI_F) d -= 2 * PI_F;
+        while (d < -PI_F) d += 2 * PI_F;
+        acc += d;
+        prev = h;
+      }
+    }
+    float r = fabsf(acc) * 180 / PI_F;
+    if (r > best) { best = r; bestkt = KTS[k]; }
+    n += snprintf(line + n, sizeof line - n, " %.0f kt %.1f", KTS[k], r);
+  }
+  printf("%s; best at %.0f kt, corner speed %.0f kt\n", line, bestkt, jet_corner(jt) * KT);
+  /* zoom: level at 300 m/s, engine at idle, pull up and climb until 120 m/s:
+   * height for speed, a little short of the ideal for the drag */
+  Plane *p = setup(g, jet, classic, false);
+  place(p, 1000, 300);
+  p->throttle = 0;
+  float y0 = p->pos.y, v0 = p->speed;
+  for (int i = 0; i < 60 * 60 && p->speed > 120; i++) {
+    hold(p, 60 * PI_F / 180, 0);
+    step(g, p, "zoom");
+  }
+  float gained = p->pos.y - y0, ideal = (v0 * v0 - p->speed * p->speed) / (2 * 9.81f);
+  /* level turn, stick fully back, full power, for 20 s from 450 kt */
+  p = setup(g, jet, classic, false);
+  place(p, 3000, 450 / KT);
+  p->throttle = 1;
+  float g5 = 0;
+  for (int i = 0; i < 20 * 60; i++) {
+    float want = acosf(clampf(1 / fmaxf(p->gload, 1.01f), -1, 1)); /* the bank that keeps the lift up */
+    p->ctl.roll = clampf((want - bank_of(p)) * 3, -1, 1);
+    p->ctl.pitch = clampf(1 + (3000 - p->pos.y) * 0.003f, -1, 1);
+    step(g, p, "sustained turn");
+    if (i > 15 * 60) g5 = p->gload;
+  }
+  float vsus = p->speed;
+  /* unloaded dive: 30 degrees down, no g, full power, 10 s from 250 kt */
+  p = setup(g, jet, classic, false);
+  place(p, 6000, 250 / KT);
+  p->throttle = 1;
+  for (int i = 0; i < 10 * 60; i++) {
+    hold(p, -30 * PI_F / 180, 0);
+    step(g, p, "unloaded dive");
+  }
+  printf("  idle zoom from 583 kt: %.0f m (ideal %.0f m); full-stick level turn settles at %.0f kt, %.1f g; "
+         "30 degree dive: 250 to %.0f kt in 10 s\n", gained, ideal, vsus * KT, g5, p->speed * KT);
+  free(g);
+}
+
+/* a tap on the gear key (or the flap key), as a pilot would: down for one tick */
+static void press(Game *g, Plane *p, bool gear, const char *test) {
+  if (gear) p->ctl.gear = true;
+  else p->ctl.flap = true;
+  step(g, p, test);
+  p->ctl.gear = p->ctl.flap = false;
+}
+
+/* A 3 degree approach to team 0's runway at low power, from whichever end has open ground under a 1200 m
+ * final, to a stop on the wheels. Realistic: the landing flaps and the gear down first, unless gear is false
+ * (a belly landing). */
+typedef struct { bool touched; float vtd, sink, troll, dstop; } Landing;
+static Landing approach(Game *g, Plane *p, bool classic, bool gear) {
+  Landing L = { false, 0, 0, -1, 0 };
+  const Base *b = &BASES[0];
+  float hy = terrain_h(b->x, b->z);
+  float d = b->dir, worst[2] = { 0, 0 };
+  for (int s = 0; s < 2; s++)
+    for (float k = 0; k <= 1200; k += 50) {
+      float dd = s ? -b->dir : b->dir;
+      worst[s] = fmaxf(worst[s], terrain_h(b->x, b->z - dd * (1000 + k)) - (hy + tanf(3 * PI_F / 180) * k));
+    }
+  if (worst[1] < worst[0]) d = -b->dir;
+  p->pos = v3(b->x, hy + 3 + tanf(3 * PI_F / 180) * 1200, b->z - d * (1000 + 1200));
+  p->f = v3(0, 0, d);
+  p->u = v3(0, 1, 0);
+  p->r = v3_cross(p->u, p->f);
+  p->speed = classic ? 85 : 100;
+  p->throttle = 0.15f;
+  if (realistic) {
+    press(g, p, false, "flaps");
+    step(g, p, "flaps");
+    press(g, p, false, "flaps");
+    if (gear) press(g, p, true, "gear");
+    p->gearT = p->gearDown ? 1 : 0; /* lowered back on the downwind leg */
+    p->flapT = p->flaps;
+  }
+  vec3 td = p->pos;
+  for (int i = 0; i < 120 * 60 && L.troll < 0; i++) {
+    float dist = (p->pos.z - (b->z - d * 1000)) * d; /* past the threshold */
+    float want = hy + 3 + tanf(3 * PI_F / 180) * fmaxf(0, -dist) + (dist > 0 ? -2 : 0);
+    if (!L.touched) {
+      float pitch = clampf((want - p->pos.y) * 0.02f - 0.05f, -0.12f, 0.12f);
+      hold(p, pitch, 0);
+      p->throttle = p->speed > (classic ? 88 : 104) ? 0.05f : 0.35f;
+    } else {
+      p->ctl.pitch = p->ctl.roll = 0;
+      p->throttle = 0;
+    }
+    step(g, p, "landing");
+    if (!p->alive) break;
+    if (p->onGround && !L.touched) {
+      L.touched = true;
+      td = p->pos;
+      L.vtd = p->speed;
+      L.sink = p->vel.y;
+    }
+    if (L.touched && p->speed < 1) {
+      L.troll = g->time;
+      L.dstop = v3_dist(td, p->pos);
+    }
+  }
+  return L;
+}
+
+static void ground_tests(int jet, bool classic) {
+  Game *g = calloc(1, sizeof *g);
+  if (!g) {
+    problems++;
+    return;
+  }
+  /* runway: team 1 starts on its runway; take the player's seat over to it */
+  Plane *p = setup(g, jet, classic, true);
+  p->team = 1;
+  game_spawn(g, p);
+  vec3 start = p->pos;
+  p->throttle = 1;
+  float tlift = -1, dlift = 0;
+  for (int i = 0; i < 60 * 60 && tlift < 0; i++) {
+    p->ctl.pitch = p->speed > (classic ? 82 : 94) ? 0.6f : 0;
+    p->ctl.roll = 0;
+    step(g, p, "take-off");
+    if (!p->taxi) {
+      tlift = g->time;
+      dlift = v3_dist(start, p->pos);
+    }
+  }
+  bool gear_up = !realistic;
+  float ymin = 1e9f;
+  for (int i = 0; i < 10 * 60; i++) {
+    /* realistic, climbing away 15 m up: the gear up, the flaps up from take-off */
+    if (realistic && !gear_up && p->pos.y - terrain_h(p->pos.x, p->pos.z) > 15 && p->vel.y > 0) {
+      press(g, p, true, "gear up");
+      press(g, p, false, "flaps up");
+      gear_up = !p->gearDown && p->flaps == 0;
+    }
+    hold(p, 12 * PI_F / 180, 0);
+    step(g, p, "climb-out");
+    ymin = fminf(ymin, p->pos.y - terrain_h(p->pos.x, p->pos.z));
+  }
+  printf("  runway: airborne after %.1f s and %.0f m, %s; lowest point in climb-out %.0f m above ground%s\n", tlift, dlift,
+         p->alive ? "alive" : "CRASHED", ymin, !realistic ? "" : gear_up && p->gearT == 0 ? "; gear and flaps up" : "; GEAR OR FLAPS STILL OUT");
+  if (realistic && !(gear_up && p->gearT == 0)) problems++;
+  /* carrier: team 0 on the catapult */
+  p = setup(g, jet, classic, true);
+  float deck = p->pos.y;
+  bool oncat = p->oncat;
+  p->throttle = 1;
+  float tl = -1, low = 1e9f;
+  for (int i = 0; i < 30 * 60; i++) {
+    if (!p->taxi) hold(p, 8 * PI_F / 180, 0);
+    step(g, p, "catapult");
+    if (!p->taxi && tl < 0) tl = g->time;
+    if (!p->taxi) low = fminf(low, p->pos.y);
+  }
+  printf("  carrier: %s, airborne after %.1f s, lowest %.0f m (deck %.0f m), %s\n", oncat ? "on the catapult" : "no carrier: runway",
+         tl, low, deck, p->alive ? "alive" : "CRASHED");
+  /* landing: a 3 degree approach to team 0's runway at low power, in the
+   * classic arena (the maps' runways sit among hills, a test for pilots) */
+  const Map *map = MAP;
+  int tod = MAP_TOD, wx = MAP_WX;
+  world_set_map(NULL, TOD_DAY, WX_CLEAR);
+  p = setup(g, jet, classic, false);
+  Landing L = approach(g, p, classic, true);
+  float troll = L.troll;
+  printf("  landing: %s at %.0f kt sinking %.1f m/s, %s (%s), rolled %.0f m to a stop; refuelling %s%s\n",
+         L.touched ? "touched down" : "never touched down", L.vtd * KT, L.sink, p->alive ? "alive" : "CRASHED",
+         p->alive ? "" : p->deathMsg, L.dstop, p->refuel ? "yes" : "no", realistic ? "; gear down, landing flaps" : "");
+  /* and off again from a standstill on the runway */
+  float tgo = -1;
+  for (int i = 0; i < 60 * 60 && p->alive && tgo < 0; i++) {
+    p->throttle = 1;
+    p->ctl.pitch = p->speed > (classic ? 82 : 94) ? 0.6f : 0;
+    p->ctl.roll = 0;
+    float t0 = g->time;
+    step(g, p, "second take-off");
+    (void)t0;
+    if (!p->onGround && p->pos.y > terrain_h(p->pos.x, p->pos.z) + 30) tgo = g->time - troll;
+  }
+  printf("  take-off again from a stop: %s\n", tgo > 0 ? "yes" : "NO");
+  if (tgo < 0)
+    printf("    (alive %d, ground %d, speed %.0f kt, %.0f m up, stall %d)\n", p->alive, p->onGround, p->speed * KT,
+           p->pos.y - terrain_h(p->pos.x, p->pos.z), p->stall);
+  if (tgo < 0) problems++;
+  if (realistic) {
+    /* the gear left up: a belly landing */
+    p = setup(g, jet, classic, false);
+    L = approach(g, p, classic, false);
+    printf("  gear left up: %s\n", p->alive ? "STILL ALIVE (no belly landing)" : "belly landing, crashed");
+    if (p->alive) problems++;
+    /* what the gear and the flaps do: the slowing at 200 kt and idle, level at 1500 m, and whether 85 m/s
+     * (165 kt) holds the wing up */
+    p = setup(g, jet, classic, false);
+    place(p, 1500, 103);
+    const JetType *jt = jet_type(p->jet, true);
+    float ps[3], gt[3] = { 0, 1, 1 }, ft[3] = { 0, 0, 2 };
+    bool st[3];
+    for (int k = 0; k < 3; k++) {
+      p->gearT = gt[k];
+      p->flapT = ft[k];
+      p->gearDown = gt[k] > 0;
+      p->flaps = (int8_t)ft[k];
+      ps[k] = sim_excess_power(g, p, jt, 0.2f);
+      place(p, 1500, 85);
+      p->ctl.pitch = p->ctl.roll = 0;
+      step(g, p, "slow flight");
+      st[k] = p->stall;
+      place(p, 1500, 103);
+    }
+    printf("  gear and flaps at 200 kt, 20%% power: clean %+.2f, gear down %+.2f, and landing flaps %+.2f m/s/s; "
+           "at 165 kt %s clean, %s with landing flaps\n", ps[0], ps[1], ps[2], st[0] ? "stalled" : "flying",
+           st[2] ? "stalled" : "flying");
+    if (!(ps[1] < ps[0] && ps[2] < ps[1]) || st[2]) problems++;
+    /* a CPU pilot home low on fuel: does it put the gear and the flaps out, and land on them? */
+    p = setup(g, jet, classic, false);
+    p->is_ai = true;
+    p->fuel = 15;
+    const Base *hb = &BASES[0];
+    p->pos = v3(hb->x + 6000, terrain_h(hb->x, hb->z) + 1500, hb->z);
+    p->f = v3(-1, 0, 0);
+    p->u = v3(0, 1, 0);
+    p->r = v3_cross(p->u, p->f);
+    p->speed = 200;
+    float gear_at = -1, flaps_at = -1, down_t = -1, down_v = 0;
+    bool gear_td = false;
+    float flaps_td = 0;
+    for (int i = 0; i < 8 * 60 * 60 && down_t < 0 && p->alive; i++) {
+      step(g, p, "CPU landing");
+      if (gear_at < 0 && p->gearDown) gear_at = p->pos.y - terrain_h(p->pos.x, p->pos.z);
+      if (flaps_at < 0 && p->flaps == 2) flaps_at = p->speed;
+      if (p->onGround) {
+        down_t = g->time;
+        down_v = p->speed;
+        gear_td = p->gearT >= 1;
+        flaps_td = p->flapT;
+      }
+    }
+    printf("  CPU landing: %s; gear down at %.0f m, landing flaps at %.0f kt%s\n",
+           down_t >= 0 ? "touched down" : p->alive ? "never touched down" : "CRASHED", gear_at, flaps_at * KT,
+           down_t < 0 ? "" : gear_td ? ", on its wheels" : ", GEAR NOT DOWN AT THE TOUCHDOWN");
+    if (down_t >= 0) printf("    (at %.0f kt, the flaps %.1f notches out)\n", down_v * KT, flaps_td);
+    if (!p->alive)
+      printf("    (%s at %.0f s, %.0f m from the runway's middle, gear %.2f flaps %.2f, speed %.0f kt, final %d)\n", p->deathMsg,
+             g->time, hypotf(p->deathPos.x - hb->x, p->deathPos.z - hb->z), p->gearT, p->flapT, p->speed * KT, p->ai.final_leg);
+    if (down_t >= 0 && !gear_td) problems++; /* the approach itself is ai.c's: reported, not judged */
+  }
+  world_set_map(map, tod, wx);
+  free(g);
+}
+
+/* ---- the drone (Beat the Drone!) ----------------------------------------- */
+/* Just the drone in the sky, level at 3000 m, at speed. */
+static Plane *drone_setup(Game *g, float speed) {
+  int jets[2] = { 0, 0 };
+  GameRules R = { 0 };
+  R.realistic = realistic;
+  game_new_rules(g, MODE_DRONE, DIFF_NORMAL, true, jets, 1, &R);
+  Plane *p = NULL;
+  for (int i = 0; i < g->nplanes; i++) {
+    if (g->planes[i].drone) p = &g->planes[i];
+    else {
+      g->planes[i].inactive = true;
+      g->planes[i].alive = false;
+    }
+  }
+  p = must(p, "drone");
+  p->lives = 99;
+  p->invuln = 0;
+  p->is_ai = false;
+  place(p, 3000, speed);
+  p->throttle = 1;
+  return p;
+}
+
+static void drone_tests(void) {
+  Game *g = malloc(sizeof *g);
+  if (!g) return;
+  printf("DR-7 drone, %s:\n", realistic ? "realistic" : "arcade");
+  /* a full pull without vectoring turns like a jet (a little better: no
+   * pilot, so 14 g) */
+  for (int k = 0; k < 2; k++) {
+    float v0 = k ? 260.0f : 160.0f;
+    Plane *p = drone_setup(g, v0);
+    float h0 = 0, h1 = 0;
+    for (int t = 0; t < 180; t++) {
+      hold(p, 0, 1.4f);
+      if (t >= 60) p->ctl.pitch = 1;
+      if (t == 120) h0 = hdg_of(p);
+      sim_update(g, DT);
+      check(g, p, "drone turn");
+    }
+    h1 = hdg_of(p);
+    float d = fabsf(h1 - h0);
+    if (d > PI_F) d = 2 * PI_F - d;
+    printf("  hard turn from %.0f kt: %.1f deg/s, now %.0f kt\n", v0 * KT, d * 180 / PI_F, p->speed * KT);
+  }
+  /* the Cobra: nose up past the vertical, then let it fall back */
+  {
+    Plane *p = drone_setup(g, 160);
+    float y0 = p->pos.y, maxA = 0, minV = 1e9f, back = -1;
+    int st = STUNT_NONE;
+    for (int t = 0; t < 60 * 8; t++) {
+      bool up = t < 84;
+      p->ctl.vec = up;
+      p->ctl.pitch = up ? clampf((1.55f - p->aoa) * 4, -1, 1) : 0.0f;
+      p->ctl.roll = 0;
+      sim_update(g, DT);
+      check(g, p, "drone cobra");
+      maxA = fmaxf(maxA, p->aoa);
+      minV = fminf(minV, p->speed);
+      if (t > 84 && back < 0 && p->aoa < 0.2f) back = g->time;
+      if (p->lastStunt) st = p->lastStunt;
+    }
+    printf("  cobra from 311 kt: nose %.0f deg off the path, speed down to %.0f kt, nose back in %.1f s, %+.0f m, %s;"
+           " 8 s on %.0f kt\n",
+           maxA * 180 / PI_F, minV * KT, back - 84 * DT, p->pos.y - y0, STUNT_NAMES[st][0] ? STUNT_NAMES[st] : "NOT SEEN",
+           p->speed * KT);
+    if (maxA < 1.2f || st != STUNT_COBRA) problems++;
+  }
+  /* the flip: hold the pull until the nose has gone all the way round */
+  {
+    Plane *p = drone_setup(g, 160);
+    float y0 = p->pos.y, tdone = -1, minV = 1e9f;
+    int st = STUNT_NONE;
+    for (int t = 0; t < 60 * 8; t++) {
+      bool pull = tdone < 0 && fabsf(p->stuntPitch) < 2 * PI_F - 0.15f;
+      if (!pull && tdone < 0) tdone = g->time;
+      p->ctl.vec = pull;
+      p->ctl.pitch = pull ? 1.0f : 0.0f;
+      p->ctl.roll = 0;
+      sim_update(g, DT);
+      check(g, p, "drone flip");
+      minV = fminf(minV, p->speed);
+      if (p->lastStunt) st = p->lastStunt;
+    }
+    printf("  flip from 311 kt: round in %.1f s, speed down to %.0f kt, %+.0f m, %s\n", tdone, minV * KT, p->pos.y - y0,
+           STUNT_NAMES[st][0] ? STUNT_NAMES[st] : "NOT SEEN");
+    if (tdone < 0 || st != STUNT_FLIP) problems++;
+  }
+  /* the J-turn: nose over the top to face back down the path, hold it
+   * there until the path follows */
+  {
+    Plane *p = drone_setup(g, 140);
+    vec3 v0 = v3_norm(p->vel), x0 = p->pos;
+    float trev = -1, ahead = 0;
+    int st = STUNT_NONE;
+    for (int t = 0; t < 60 * 10; t++) {
+      float nose = acosf(clampf(v3_dot(p->f, v0), -1, 1));
+      bool vec = trev < 0;
+      p->ctl.vec = vec;
+      p->ctl.pitch = nose < 2.9f ? 1.0f : 0.0f;
+      p->ctl.roll = 0;
+      sim_update(g, DT);
+      check(g, p, "drone j-turn");
+      ahead = fmaxf(ahead, v3_dot(v3_sub(p->pos, x0), v0));
+      vec3 hv = v3(p->vel.x, 0, p->vel.z);
+      if (trev < 0 && v3_len(hv) > 15 && v3_dot(v3_norm(hv), v0) < -0.94f) trev = g->time;
+      if (p->lastStunt) st = p->lastStunt;
+    }
+    printf("  j-turn from 272 kt: path reversed in %.1f s, %.0f m on past the start, %s; 10 s on %.0f kt\n", trev, ahead,
+           STUNT_NAMES[st][0] ? STUNT_NAMES[st] : "NOT SEEN", p->speed * KT);
+    if (trev < 0 || st != STUNT_JTURN) problems++;
+  }
+  /* hanging on the nozzle: nose straight up, full power, almost no speed */
+  {
+    Plane *p = drone_setup(g, 40);
+    p->f = v3(0, 1, 0);
+    p->u = v3(0, 0, -1);
+    p->vel = v3(0, 0, 40);
+    float y0 = p->pos.y;
+    for (int t = 0; t < 60 * 4; t++) {
+      p->ctl.vec = true;
+      p->ctl.pitch = p->ctl.roll = 0;
+      sim_update(g, DT);
+      check(g, p, "drone hover");
+    }
+    printf("  nose up on the nozzle for 4 s: %+.0f m, %.0f kt\n", p->pos.y - y0, p->speed * KT);
+  }
+  free(g);
+}
+
+int flight_test(void) {
+  int twin = assets_map_find("twin-isles");
+  world_set_map(assets_map(twin), TOD_DAY, WX_CLEAR);
+  printf("flight test on %s, %d jets\n", twin >= 0 ? "twin isles" : "the classic arena", NJETS);
+  for (int c = 0; c < 3; c++)
+    for (int j = 0; j < NJETS; j++) {
+      realistic = c == 2;
+      if (c == 2 && j == 0) printf("realistic handling:\n");
+      fly(JETS[j].id, j, c == 1);
+      energy_tests(j, c == 1);
+      ground_tests(j, c == 1);
+    }
+  for (int c = 0; c < 2; c++) {
+    realistic = c == 1;
+    drone_tests();
+  }
+  printf("%d physics problems\n", problems);
+  return problems ? 1 : 0;
+}

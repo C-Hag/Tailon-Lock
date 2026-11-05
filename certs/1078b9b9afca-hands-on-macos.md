@@ -1,0 +1,23 @@
+# Hands-on checks, macos, commit 1078b9b9afca0f806cd517c097639f042f7c4051
+
+Flown by tools/handson (docs/TEST_GUIDE.md section 5), 2026-11-04 23:18. A box is ticked only on PASS, with its evidence and the sha256 of the evidence and its logs; n/a is a feature the game does not have yet.
+
+- [x] 1. Window, fullscreen (F11, Alt+Enter): PASS. window sizes in turn: 1280x720, 1920x1080, 1280x720, 1920x1080, 1280x720 (sha256 9123c2b93c6b9220)
+- [x] 2. Mouse clicks land where the pointer is: PASS. start at (640, 430): frame 61; hangar at (491, 460): frame 61; network at (788, 460): frame 61; exit at (752, 490): exit code 0 (sha256 72498e44e90d93c5)
+- [x] 3. Keyboard: both 2P key sets, pause, M mutes: PASS. keys held 2.5 s: s moved PLAYER 1 936 m (the other jet 0 m); d moved PLAYER 1 23 m (the other jet 0 m); down moved PLAYER 2 1120 m (the other jet 0 m); right moved PLAYER 2 21 m (the other jet 0 m); M: muted; Esc: paused (sha256 ac25454025fc7485)
+- [x] 4. Music and effects: no clicks or dropouts, sound back after focus loss: PASS. peak 0.04, biggest step between samples 0.008, longest silence 0.00 s (gun fired, focus lost and back) (sha256 8f9960a269897138)
+- [x] 5. Intro plays to the menu and can be skipped: PASS. Esc at 30: menu at 31; Esc at 400: menu at 401; Esc at 1500: menu at 1501; Esc at 3000: menu at 3001; left alone: menu at 3986 (sha256 eb86c9763ed6f5ce)
+- [x] 6. Both renderers at every graphics level, picture checks: PASS. modern/low ok, modern/medium ok, modern/high ok, modern/ultra ok, retro/low ok, retro/medium ok, retro/high ok, retro/ultra ok (sha256 68b4c2f3fd9d1d73)
+- [x] 7. A setting survives quit and restart: PASS. sound muted with M, then a fresh start: sound off from frame 1 (sha256 4c875354868f4891)
+- [x] 8. Quit by menu and close button: clean exit: PASS. menu EXIT: exit code 0 in 0.3 s; close button: exit code 0 in 0.3 s (sha256 dc215cd75051c461)
+- [x] 9. Gamepad before and during play, two pads in 2P: PASS. Seen as a Virtual Wireless Pad: PASS gamepad 1: Virtual Wireless Pad; Menus by the pad alone: PASS intro to menu at frame 63 (A at 60), match at 163 (A at 160), hangar at 163 (down at 120, A at 160); Two pads, each its own jet: PASS pad 1 moved jet 1: True, jet 2: False; pad 2 moved jet 2: True, jet 1: False; Reconnect storm: PASS exit 0, 10 times gone, 12 times taken (2 at the start), 2.8 s (sha256 8a5ab9670b8d5eec)
+- [x] 10. HOTAS bindings saved: N/A. n/a until supported: the game has no HOTAS support yet (sha256 e67c578b92b76b1e)
+- [x] 11. Pad unplugged mid-match: PASS. Link lost mid-match: pause, 3-2-1, go on: PASS link lost at frame 200: paused at 200; pad back at 320; went on at 410 (90 frames of 3-2-1); Start at 460 paused at 463; Seats kept after a pad comes back: PASS after pad 1 came back: pad 2 steers jet 2, pad 1 steers jet 1; 2P: pad 2 lost pauses both: PASS pad 2 lost at 200: paused at 200; back at 260; A during the count, went on at 277 (sha256 69b8a8408f472ed1)
+- [x] 12. Minimise or sleep mid-match: PASS. hidden at 200: paused at 201; shown, Esc at 300: playing at 301; exit code 0; sound peak 0.04 (sha256 81e97714dc52d8d7)
+- [x] 13. LAN: host, list, join by code, play, rematch: PASS. the guest's list showed "PILOT VS at <LAN address>"; joined with code 986244; 2 matches (the second a rematch) agreed (sha256 a7863edc6a280a63)
+- [x] 14. A wrong code is refused, then the right one works: PASS. code 099777 refused: guest "WRONG GAME CODE - CHECK THE 6 DIGITS THE HOST SEES", host "SOMEONE TRIED A WRONG CODE (1 OF 10)"; then code 099776: 1 match agreed (sha256 c15d0f3e25564d19)
+- [x] 15. Network lost mid-match: CONNECTION LOST in about 6 s: PASS. link cut: CONNECTION LOST on the host after 6.0 s, the guest after 6.0 s; back at the menu: host yes, guest yes; re-hosted on UDP 27960: 1 match played (sha256 5b54192c22340808)
+- [x] 16. Force-quit and restart: settings intact: PASS. killed after 4 s; next start: settings read (sound still off) (sha256 d54c6301cc002f30)
+- [x] 17. Readable at 1280x800: SKIP. pictures for review: build/handson/readable-menu.bmp, build/handson/readable-cockpit.bmp (sha256 8535b92283ded0a6) Ticked by hand: readable at 1280x800, confirmed by the owner from the published pictures, 2026-11-04 22:01 UTC.
+
+Edits by hand after the run: item 17 was ticked on the owner's answer, as noted on its line. In item 13 the computer's address on the network is replaced by <LAN address>; that line's sha256 covers the original text.

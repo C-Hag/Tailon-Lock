@@ -1,0 +1,10 @@
+TAILON LOCK AUDIT CERTIFICATE
+kind: release
+system: all
+commit: 1078b9b9afca0f806cd517c097639f042f7c4051
+date: 2026-11-05 06:18
+
+block 1 systems: PASS | linux, macos, windows; linux-macos, linux-windows, macos-windows | seal 3bc112941b4e7405df0f6ad3fc100f40d76443645919d0ceb8e2f3727a1f9ba8
+block 2 hands-on: PASS | 51 hands-on checks ticked on 3 systems | seal 62c35ad05be2bcbb5ce931e26001887a51d3b97817a30bfeb3c92a400855e7cb
+
+seal: 62c35ad05be2bcbb5ce931e26001887a51d3b97817a30bfeb3c92a400855e7cb

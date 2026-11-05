@@ -1,0 +1,10 @@
+TAILON LOCK AUDIT CERTIFICATE
+kind: cross
+system: macos-windows
+commit: 34f73d000cc10c168f060179000935da4e04ee1a
+date: 2026-10-31 21:13
+
+block 1 clean: PASS | clean tree | seal fe6851578bb4d3e86acf637f1cf3316912b195a00b7ca1258a8e634197bc5498
+block 2 matches: PASS | 24 matches, 24 agree | seal c0599eeca72c32243ce88d09947b2d306219dd643c0bddde8bf707abe950285f
+
+seal: c0599eeca72c32243ce88d09947b2d306219dd643c0bddde8bf707abe950285f

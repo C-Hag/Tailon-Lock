@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""tools/btpad - the Bluetooth pad scenarios: a made-up wireless pad (the "Virtual Wireless Pad", no maker's ids)
+played through the game's Bluetooth pad simulator (--btpad, --pad; src/btpad.c) into a real copy of the game.
+Original code for this project; Python 3.8+ standard library only.
+
+usage: tools/btpad [--build DIR] [--report FILE] [--only N[,N...]]
+
+The game reads the pads through its normal pad code, as if they were paired; the simulator adds what the radio
+does: a report every 8 ms, time on the way, lost reports, a link that drops and comes back. Every scenario ends
+PASS or FAIL with its evidence, and the report (Markdown; default build/btpad/report.md) has the time from the
+hand on the pad to the game's answer. Exits 1 if a scenario failed. Each run has its own settings in
+build/btpad/cfg, never the player's own."""
+import os
+import re
+import shutil
+import statistics
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, 'build', 'btpad')
+CFG = os.path.join(OUT, 'cfg')
+FRAME_MS = 1000.0 / 60
+RE_LINE = re.compile(r'^(?:\S+ \S+ \S+\[[\d:]+\] )?(?:[\d.]+ )?(.*)$')
+
+
+def find_exe(build):
+    for d in ([build] if build else [os.path.join(ROOT, 'build', p) for p in ('macos-release', 'linux-release',
+                                                                               'windows-mingw')]):
+        for n in ('TailonLock.app/Contents/MacOS/TailonLock', 'tailonlock', 'TailonLock.exe'):
+            if os.path.isfile(os.path.join(d, n)):
+                return os.path.join(d, n)
+    return None
+
+
+def run(exe, args, frames, tag):
+    """One copy of the game for FRAMES frames, headless; returns (exit code, the log's lines)."""
+    cfg = os.path.join(CFG, tag)
+    shutil.rmtree(cfg, ignore_errors=True)
+    os.makedirs(os.path.join(cfg, 'tailonlock'))
+    with open(os.path.join(cfg, 'tailonlock', 'settings.ini'), 'w') as f:
+        f.write('intro=1\n')
+    env = dict(os.environ, XDG_CONFIG_HOME=cfg, A4C_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), A4C_VIDEO='dummy',
+               A4C_AUDIO='dummy', A4C_STATE='1', A4C_PLANES='1')
+    # the start on the command line too, whatever the settings say: a catapult start would leave the jets still for
+    # the stick scenarios
+    p = subprocess.run([exe, '--frames', str(frames), '--set', 'start=air'] + args, env=env, capture_output=True, text=True,
+                       timeout=300)
+    lines = [RE_LINE.match(l).group(1) for l in (p.stdout + p.stderr).splitlines()]
+    with open(os.path.join(OUT, tag + '.log'), 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    return p.returncode, lines
+
+
+def frame_of(lines, pattern, after=-1):
+    """The frame of the first line matching PATTERN (with a 'frame N' in it) after frame AFTER, or None."""
+    for l in lines:
+        m = re.search(pattern + r'.* at frame (\d+)', l)
+        if m and int(m.group(1)) > after:
+            return int(m.group(1))
+    return None
+
+
+def plane(lines, who):
+    for l in lines:
+        m = re.match(r'plane %s: .* pos (\S+) (\S+) (\S+)' % who, l)
+        if m:
+            return tuple(float(v) for v in m.groups())
+    return None
+
+
+def presses(exe, radio, tag, n=20):
+    """N presses of Start in a match, 30 frames apart: each should flip play and pause once. Returns the times
+    from the hand to the game's answer (ms), the presses the game missed, and the log."""
+    first = 120
+    args = ['--play', '1p', '--btpad', radio] + sum((['--pad', '%d:1:start:3' % (first + 30 * k)] for k in range(n)), [])
+    rc, lines = run(exe, args, first + 30 * n + 60, tag)
+    times, missed = [], 0
+    for k in range(n):
+        f = first + 30 * k
+        g = frame_of(lines, r'STATE (?:play|pause)', f - 1)
+        if g is None or g >= f + 30:
+            missed += 1
+        else:
+            times.append((g - f) * FRAME_MS)
+    return rc, times, missed, lines
+
+
+def ms(times):
+    return '%.0f / %.0f / %.0f ms' % (min(times), statistics.median(times), max(times)) if times else 'none'
+
+
+def s1(exe):
+    """The pad is seen as what it says it is: a Virtual Wireless Pad, paired before the game starts."""
+    rc, lines = run(exe, ['--play', '1p', '--btpad', 'pads=1'], 60, 's1')
+    names = [l for l in lines if l.startswith('gamepad 1:')]
+    return rc == 0 and names == ['gamepad 1: Virtual Wireless Pad'], '; '.join(names) or 'no gamepad line'
+
+
+def s2(exe):
+    """The pad alone: A skips the intro and starts a match from the menu; down then A opens the hangar."""
+    rc, a = run(exe, ['--btpad', 'pads=1', '--pad', '60:1:a', '--pad', '160:1:a'], 220, 's2a')
+    menu, play = frame_of(a, r'STATE menu'), frame_of(a, r'STATE play')
+    rc2, b = run(exe, ['--btpad', 'pads=1', '--pad', '60:1:a', '--pad', '120:1:down', '--pad', '160:1:a'], 220, 's2b')
+    hangar = frame_of(b, r'STATE page hangar')
+    ok = rc == 0 and rc2 == 0 and menu and 60 < menu < 70 and play and 160 < play < 170 and hangar and 160 < hangar < 170
+    return ok, 'intro to menu at frame %s (A at 60), match at %s (A at 160), hangar at %s (down at 120, A at 160)' % (
+        menu, play, hangar)
+
+
+def s3(exe):
+    """A clean link (8 ms reports, 12 ms + up to 4 ms on the way): 20 presses of Start, every one answered."""
+    rc, times, missed, _ = presses(exe, 'pads=1,seed=3', 's3')
+    s3.times = times
+    return rc == 0 and missed == 0, '%d of 20 answered, hand to game min / median / max %s' % (20 - missed, ms(times))
+
+
+def s4(exe):
+    """A bad link (20%% lost, 40 ms + up to 30 ms on the way): 20 presses of 50 ms; the game takes nearly all, never
+    one twice, and nothing stays held."""
+    rc, times, missed, lines = presses(exe, 'pads=1,latency=40,jitter=30,loss=20,seed=4', 's4')
+    flips = sum(1 for l in lines if re.match(r'STATE (play|pause) at frame', l)) - 1  # less the match's start
+    s4.times = times
+    ok = rc == 0 and missed <= 2 and flips == 20 - missed
+    return ok, '%d of 20 answered, %d missed, %d play/pause flips, hand to game %s' % (20 - missed, missed, flips, ms(times))
+
+
+def s5(exe):
+    """1P, the link lost for 2 s mid-match and back by itself: the match pauses under CONTROLLER DISCONNECTED,
+    counts 3-2-1 when the pad is back (1.5 s), and goes on; the pad is the player's again."""
+    rc, lines = run(exe, ['--play', '1p', '--btpad', 'pads=1', '--pad', '200:1:drop=2000', '--pad', '460:1:start'], 520, 's5')
+    lost, back, res = frame_of(lines, r'STATE pad lost'), frame_of(lines, r'STATE pad back'), frame_of(lines, r'STATE resume')
+    again = frame_of(lines, r'STATE pause', 459)
+    ok = rc == 0 and lost and lost <= 203 and back and 315 <= back <= 330 and res and 85 <= res - back <= 95 and \
+        again and again <= 463 and any(l == 'gamepad 1: Virtual Wireless Pad (back)' for l in lines)
+    return ok, 'link lost at frame 200: paused at %s; pad back at %s; went on at %s (%s frames of 3-2-1); Start at 460 ' \
+        'paused at %s' % (lost, back, res, res - back if res and back else '?', again)
+
+
+def s6(exe):
+    """Two pads in 2P: pad 1 steers jet 1 only, pad 2 jet 2 only."""
+    base = ['--seed', '3', '--play', '2p', '--btpad', 'pads=2']
+    _, none = run(exe, base, 600, 's6-none')
+    _, p1 = run(exe, base + ['--pad', '100:1:lx=-1:400'], 600, 's6-pad1')
+    _, p2 = run(exe, base + ['--pad', '100:2:lx=-1:400'], 600, 's6-pad2')
+    j = {k: (plane(v, 'PLAYER 1'), plane(v, 'PLAYER 2')) for k, v in (('none', none), ('p1', p1), ('p2', p2))}
+    ok = all(j[k][0] and j[k][1] for k in j) and j['p1'][0] != j['none'][0] and j['p1'][1] == j['none'][1] and \
+        j['p2'][1] != j['none'][1] and j['p2'][0] == j['none'][0]
+    return ok, 'pad 1 moved jet 1: %s, jet 2: %s; pad 2 moved jet 2: %s, jet 1: %s' % (
+        j['p1'][0] != j['none'][0], j['p1'][1] != j['none'][1], j['p2'][1] != j['none'][1], j['p2'][0] != j['none'][0])
+
+
+def s7(exe):
+    """Two pads in 2P, pad 1's link lost and back: pad 2 must still steer jet 2 (not jump to seat 1), and pad 1
+    jet 1 again when it is back."""
+    base = ['--seed', '3', '--play', '2p', '--btpad', 'pads=2', '--pad', '60:1:drop=500']
+    _, ref = run(exe, base, 600, 's7-none')
+    _, p2 = run(exe, base + ['--pad', '200:2:lx=-1:300'], 600, 's7-pad2')
+    _, p1 = run(exe, base + ['--pad', '200:1:lx=-1:300'], 600, 's7-pad1')
+    j = {k: (plane(v, 'PLAYER 1'), plane(v, 'PLAYER 2')) for k, v in (('ref', ref), ('p1', p1), ('p2', p2))}
+    p2_right = j['p2'][1] != j['ref'][1] and j['p2'][0] == j['ref'][0]
+    p1_right = j['p1'][0] != j['ref'][0] and j['p1'][1] == j['ref'][1]
+    return p2_right and p1_right, 'after pad 1 came back: pad 2 steers jet %s, pad 1 steers jet %s' % (
+        '2' if p2_right else '1' if j['p2'][0] != j['ref'][0] else '?', '1' if p1_right else
+        '2' if j['p1'][1] != j['ref'][1] else '?')
+
+
+def s8(exe):
+    """A reconnect storm: in a 2P match on a lossy link, both pads drop and come back 8 times and are switched off
+    and on: no crash, no hang, both pads there at the end."""
+    steps = []
+    for k, (f, p, ms_) in enumerate([(100, 1, 300), (200, 2, 1500), (260, 1, 100), (400, 1, 2500), (420, 2, 200),
+                                     (700, 2, 800), (760, 1, 50), (900, 2, 3000)]):
+        steps += ['--pad', '%d:%d:drop=%d' % (f, p, ms_)]
+    steps += ['--pad', '1000:1:off', '--pad', '1100:1:on', '--pad', '1150:2:off', '--pad', '1160:2:on']
+    for f in range(120, 1300, 37):
+        steps += ['--pad', '%d:%d:%s' % (f, 1 + f % 2, ['a', 'start', 'lb', 'up', 'b'][f % 5])]
+    t0 = time.time()
+    rc, lines = run(exe, ['--play', '2p', '--btpad', 'pads=2,loss=5,jitter=20,seed=8'] + steps, 1400, 's8')
+    gone = sum(1 for l in lines if re.match(r'gamepad \d: gone', l))
+    added = sum(1 for l in lines if re.match(r'gamepad \d: Virtual Wireless Pad', l))
+    ok = rc == 0 and gone == 10 and added == 12 and any(l.startswith('ran 1400 frames') for l in lines)
+    return ok, 'exit %d, %d times gone, %d times taken (2 at the start), %.1f s' % (rc, gone, added, time.time() - t0)
+
+
+def s9(exe):
+    """Two pads, pad 1 switched off for good during the intro: in the menu the seat is let go, so pad 2 is player
+    1 and flies jet 1."""
+    base = ['--seed', '3', '--btpad', 'pads=2', '--pad', '20:1:off', '--pad', '60:2:a', '--pad', '160:2:a']
+    _, ref = run(exe, base, 600, 's9-none')
+    _, mv = run(exe, base + ['--pad', '220:2:lx=-1:300'], 600, 's9-pad2')
+    who = '(?:PLAYER 1|YOU)'  # a match started from the menu calls the one player's jet YOU
+    moved = plane(ref, who) is not None and plane(mv, who) != plane(ref, who)
+    up = any(l == 'gamepad 2: now seat 1' for l in mv)
+    return moved and up, 'pad 2 moved up to seat 1: %s; pad 2 steers jet 1: %s' % (up, moved)
+
+
+def s10(exe):
+    """2P, pad 2's link lost: the match pauses for both players, and goes on for both when pad 2 is back; Start
+    or A during the count goes on at once."""
+    rc, lines = run(exe, ['--play', '2p', '--btpad', 'pads=2', '--pad', '200:2:drop=1000', '--pad', '275:2:a'], 360, 's10')
+    lost, back, res = frame_of(lines, r'STATE pad lost'), frame_of(lines, r'STATE pad back'), frame_of(lines, r'STATE resume')
+    ok = rc == 0 and lost and lost <= 203 and back and res and res <= 278 and res < back + 85
+    return ok, 'pad 2 lost at 200: paused at %s; back at %s; A during the count, went on at %s' % (lost, back, res)
+
+
+def free_udp_port():
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(('127.0.0.1', 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def s11(exe):
+    """A network match (host and guest on this computer), the host's pad lost: it does not pause (a network
+    match cannot wait for one player), shows PAD LOST, and takes the pad back."""
+    import tempfile
+    d = tempfile.mkdtemp(dir=OUT, prefix='s11-')
+    # the pad drops 300 frames into the match (p300), however fast the menus ran while the guest came in
+    common = ['--cmd', 'b', '--games', '1', '--seconds', '30', '--set', 'intro=0', '--renderer', 'retro']
+    port = free_udp_port()  # not 27960: a game or the live tester may be hosting on this computer
+    env = lambda h: dict(os.environ, XDG_CONFIG_HOME=os.path.join(d, h), HOME=os.path.join(d, h),
+                         A4C_CONFIG_DIR=os.path.join(d, h, 'tailonlock'), A4C_NET_PORT=str(port),
+                         A4C_VIDEO='dummy', A4C_AUDIO='dummy', A4C_STATE='1',
+                         A4C_PLANES='1', A4C_LOG=os.path.join(d, h + '.log'))
+    for h in ('host', 'guest'):
+        os.makedirs(os.path.join(d, h))
+    host = subprocess.Popen([exe, '--host'] + common + ['--btpad', 'pads=1', '--pad', 'p300:1:drop=3000'], env=env('host'),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    code, t0 = None, time.time()
+    while not code and time.time() - t0 < 20 and host.poll() is None:
+        time.sleep(0.2)
+        m = re.search(r'net: game code (\d{6})', open(os.path.join(d, 'host.log')).read()) if os.path.exists(
+            os.path.join(d, 'host.log')) else None
+        code = m and m.group(1)
+    guest = code and subprocess.Popen([exe, '--join', '127.0.0.1:%d' % port, '--code', code] + common, env=env('guest'),
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for p in (host, guest):
+        if p:
+            try:
+                p.wait(timeout=50)
+            except subprocess.TimeoutExpired:
+                p.kill()
+    lines = [RE_LINE.match(l).group(1) for l in open(os.path.join(d, 'host.log')).read().splitlines()]
+    joined = any('PILOT JOINED' in l for l in lines)
+    note_on, note_off = frame_of(lines, r'STATE pad note on'), frame_of(lines, r'STATE pad note off')
+    paused = frame_of(lines, r'STATE (?:pause|pad lost)')
+    ok = bool(code) and joined and note_on and note_off and not paused
+    return ok, 'joined: %s; PAD LOST on at frame %s, off at %s; paused: %s' % (joined, note_on, note_off, paused or 'no')
+
+
+SCENARIOS = [(1, 'Seen as a Virtual Wireless Pad', s1), (2, 'Menus by the pad alone', s2),
+             (3, 'Clean link: every press answered', s3), (4, 'Bad link: 20% lost, 40-70 ms', s4),
+             (5, 'Link lost mid-match: pause, 3-2-1, go on', s5), (6, 'Two pads, each its own jet', s6),
+             (7, 'Seats kept after a pad comes back', s7), (8, 'Reconnect storm', s8),
+             (9, 'A lone pad is player 1 in the menu', s9), (10, '2P: pad 2 lost pauses both', s10),
+             (11, 'Network match: no pause, PAD LOST', s11)]
+
+
+def main():
+    args = sys.argv[1:]
+    build, report, only = None, os.path.join(OUT, 'report.md'), None
+    i = 0
+    while i < len(args):
+        if args[i] == '--build':
+            build = os.path.abspath(args[i + 1])
+        elif args[i] == '--report':
+            report = os.path.abspath(args[i + 1])
+        elif args[i] == '--only':
+            only = {int(v) for v in args[i + 1].split(',')}
+        else:
+            sys.exit(__doc__)
+        i += 2
+    exe = find_exe(build)
+    if not exe:
+        sys.exit('btpad: no game built (try --build DIR)')
+    os.makedirs(OUT, exist_ok=True)
+    rows, failed = [], 0
+    for n, name, fn in SCENARIOS:
+        if only and n not in only:
+            continue
+        try:
+            ok, ev = fn(exe)
+        except Exception as e:  # a scenario that breaks is a failure with its reason, not a stopped run
+            ok, ev = False, 'the scenario broke: %r' % e
+        failed += not ok
+        rows.append((n, name, 'PASS' if ok else 'FAIL', ev))
+        print('%2d %-40s %s  %s' % (n, name, 'PASS' if ok else 'FAIL', ev), flush=True)
+    lat = [t for f in (s3, s4) for t in getattr(f, 'times', [])]
+    with open(report, 'w') as f:
+        f.write('# Bluetooth pad scenarios\n\n%s, %s\n\n' % (time.strftime('%Y-%m-%d %H:%M'), sys.platform))
+        f.write('A made-up wireless pad (no maker\'s ids) through the game\'s Bluetooth pad simulator; the time '
+                'from the hand to the game\'s answer is counted in frames of 16.7 ms.\n\n')
+        f.write('| # | Scenario | Result | Evidence |\n|---|---|---|---|\n')
+        for r in rows:
+            f.write('| %d | %s | %s | %s |\n' % r)
+        if lat:
+            f.write('\nHand to game, every press answered: min / median / max %s (clean link %s; bad link %s).\n' % (
+                ms(lat), ms(getattr(s3, 'times', [])), ms(getattr(s4, 'times', []))))
+    print('report: %s' % os.path.relpath(report, ROOT))
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == '__main__':
+    main()

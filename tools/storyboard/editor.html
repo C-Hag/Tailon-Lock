@@ -1,0 +1,1102 @@
+<title>Tailon Lock Storyboard</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an editing suite. Bar on top, scene list left, the 16:9 viewfinder centre, inspector right, timeline along the bottom. */
+:root {
+  color-scheme: dark;
+  --bg: #11141a; --panel: #181c24; --raise: #212734; --line: #2c3342; --ink: #e6e9ef; --dim: #8e97a8;
+  --accent: #f2a774; --accent-ink: #1a1208; --blue: #7aa8ff; --red: #ff7a5c; --ok: #8fd18a; --warn: #ffd25a;
+  --f-ui: "Barlow", "Helvetica Neue", Arial, sans-serif; --f-head: "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif;
+  --f-num: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 13px/1.35 var(--f-ui); overflow: hidden; }
+#app { height: 100%; display: grid; grid-template-rows: auto 1fr auto; padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+button, select, input, textarea { font: inherit; color: var(--ink); }
+button { background: var(--raise); border: 1px solid var(--line); border-radius: 4px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
+button:hover { border-color: var(--dim); }
+button.on, button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+select, input[type=text], input[type=number], textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; min-width: 0; }
+input[type=number] { font-family: var(--f-num); font-size: 12px; }
+textarea { width: 100%; resize: vertical; min-height: 64px; }
+label { color: var(--dim); }
+h2 { font: 600 12px/1 var(--f-head); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin: 0; }
+/* top bar */
+#bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+#bar .brand { font: 700 15px/1 var(--f-head); letter-spacing: 0.06em; text-transform: uppercase; margin-right: 6px; }
+#bar .brand small { color: var(--accent); font-weight: 600; }
+#bar .grp { display: flex; gap: 4px; align-items: center; }
+#bar .sep { width: 1px; align-self: stretch; background: var(--line); }
+#clock { font: 500 13px var(--f-num); min-width: 12ch; text-align: right; font-variant-numeric: tabular-nums; }
+#barno { font: 12px var(--f-num); color: var(--dim); min-width: 9ch; }
+#bar .grow { flex: 1; }
+/* middle */
+#mid { display: grid; grid-template-columns: 220px 1fr 280px; min-height: 0; }
+#left, #right { background: var(--panel); overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 10px; }
+#left { border-right: 1px solid var(--line); }
+#right { border-left: 1px solid var(--line); }
+#insp { display: flex; flex-direction: column; gap: 10px; }
+#insp p { margin: 0 0 8px; }
+.list { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; }
+.item { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
+.item:hover { background: var(--raise); }
+.item.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .meta { font: 11px var(--f-num); color: var(--dim); }
+.item .eye { background: none; border: 0; padding: 0 2px; color: var(--dim); font-size: 12px; }
+.item.off .nm { color: var(--dim); text-decoration: line-through; }
+.dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.row > select { flex: 1; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 6px; }
+.grid3 label, .field label { display: block; font-size: 11px; margin-bottom: 2px; }
+.grid3 input { width: 100%; }
+.field { display: flex; flex-direction: column; gap: 2px; }
+.field input[type=text] { width: 100%; }
+.hint { color: var(--dim); font-size: 12px; }
+.hint kbd { font: 11px var(--f-num); background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; color: var(--ink); }
+.keys { font: 11px var(--f-num); color: var(--dim); }
+/* stage */
+#stagewrap { position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; background: #07090c; }
+#stage { position: relative; aspect-ratio: 16 / 9; max-width: 100%; max-height: 100%; width: 100%; overflow: hidden; }
+#stage canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.lb { position: absolute; left: 0; right: 0; background: rgba(0, 0, 0, 0.82); pointer-events: none; height: 12.2%; }
+.lb.t { top: 0; } .lb.b { bottom: 0; }
+#osd { position: absolute; left: 10px; top: 8px; font: 12px var(--f-num); color: #fff; text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre; }
+#osd2 { position: absolute; right: 10px; top: 8px; font: 12px var(--f-num); color: var(--warn); text-shadow: 0 1px 2px #000; pointer-events: none; text-align: right; white-space: pre; }
+/* timeline */
+#tl { background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+#tl canvas { display: block; width: 100%; height: 152px; cursor: default; }
+#toast { position: fixed; left: 50%; bottom: 170px; transform: translateX(-50%); background: var(--raise); border: 1px solid var(--accent); padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 5; max-width: 80vw; }
+#toast.show { opacity: 1; }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font: 600 14px var(--f-head); letter-spacing: 0.1em; text-transform: uppercase; }
+#export { position: fixed; inset: 10% 15%; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px; z-index: 6; }
+#export textarea { flex: 1; font: 11px var(--f-num); }
+@media (max-width: 900px) {
+  #mid { grid-template-columns: 1fr; grid-template-rows: auto minmax(200px, 1fr) auto; overflow: auto; }
+  #left, #right { max-height: 30vh; }
+  body { overflow: auto; }
+}
+@media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+
+<div id="app">
+  <div id="bar">
+    <div class="brand">Tailon Lock <small>storyboard</small></div>
+    <div class="grp">
+      <button id="bStart" title="Back to the start (Home)">⏮</button>
+      <button id="bPlay" title="Play or pause (Space)">▶ Play</button>
+      <select id="speed" title="Playback speed"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option></select>
+    </div>
+    <div id="clock">0:00.00</div><div id="barno">bar –</div>
+    <div class="sep"></div>
+    <div class="grp" role="group" aria-label="View">
+      <button id="vFree" class="on" title="Free camera: fly anywhere (1)">Free</button>
+      <button id="vShot" title="Through the selected shot's camera (2)">Shot</button>
+      <button id="vFilm" title="The film: your shots, the intro's where you have none (3)">Film</button>
+    </div>
+    <div class="grp"><button id="vRoom" title="Free camera in the control room instead of the sea">Control room</button></div>
+    <div class="grp"><label for="flyspeed">Fly</label><select id="flyspeed"><option>2</option><option>10</option><option selected>40</option><option>150</option><option>600</option></select><span class="hint">m/s</span></div>
+    <div class="grow"></div>
+    <div class="grp">
+      <label for="music" class="hint" title="Pick fullburn-intro.wav (or any audio) to hear it while you play">Music</label>
+      <input id="music" type="file" accept="audio/*" style="max-width: 150px">
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <button id="bImport" title="Load a storyboard or shot file">Open…</button>
+      <input id="fImport" type="file" accept=".json,application/json" hidden>
+      <button id="bExport" title="Save the shot file to your computer">Save file</button>
+      <button id="bView" title="Send Claude a picture of this view, with the camera's position, time and lens">Show Claude this view</button>
+      <button id="bSend" class="primary" title="Send this storyboard to Claude">Send to Claude</button>
+    </div>
+  </div>
+
+  <div id="mid">
+    <div id="left">
+      <section>
+        <h2>Add</h2>
+        <div class="row" style="margin-top:6px"><select id="addModel" aria-label="Model to add"></select><button id="bAdd" title="Add it in front of the camera">Add</button></div>
+        <div class="row" style="margin-top:6px"><button id="bShot" title="A new shot from the playhead, keyed to this camera (N)">New shot here</button></div>
+      </section>
+      <section id="fromClaude" hidden><h2>From Claude</h2><div class="list" id="lDraft"></div></section>
+      <section><h2>My shots</h2><div class="list" id="lShots"></div></section>
+      <section><h2>My objects</h2><div class="list" id="lObjs"></div></section>
+      <section><h2>Intro shots</h2><div class="list" id="lIShots"></div></section>
+      <section><h2>Intro cast</h2><div class="list" id="lCast"></div></section>
+    </div>
+    <div id="stagewrap">
+      <div id="stage">
+        <div id="loading">Loading the carrier group…</div>
+        <div class="lb t" id="lbT" hidden></div><div class="lb b" id="lbB" hidden></div>
+        <div id="osd"></div><div id="osd2"></div>
+      </div>
+    </div>
+    <div id="right"><div id="insp"></div></div>
+  </div>
+
+  <div id="tl"><canvas id="tlc" aria-label="Timeline"></canvas></div>
+</div>
+<div id="toast" role="status"></div>
+<div id="export" hidden>
+  <div class="row"><h2 style="flex:1">Shot file</h2><button id="bCopy">Copy</button><button id="bClose">Close</button></div>
+  <div class="hint">Your browser would not save the file here. Copy this text and send it to Claude, or save it as a .json file.</div>
+  <textarea id="exportText" readonly></textarea>
+</div>
+
+<script>
+//__INTRO_CORE__
+</script>
+<script>
+window.SB_MODELS = /*__MODELS__*/null;
+window.SB_INTRO = /*__SCRIPT__*/null;
+</script>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+<script type="module">
+import * as THREE from 'three';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+// ---------------------------------------------------------------- data
+// Game coordinates: x east (right), y up, z north (forward); yaw clockwise from +z, pitch nose up, roll right wing
+// down (IntroCore.frame). three.js is right-handed the other way round, so the scene is shown mirrored in x:
+// three = (-x, y, z), and a rotation R becomes M R M with M = diag(-1, 1, 1). Everything stored is in game terms.
+const IC = IntroCore, D2R = Math.PI / 180;
+const MODELS = window.SB_MODELS.models, ENV = window.SB_MODELS.env, INTRO = window.SB_INTRO;
+const CUES = INTRO.music.cues, BAR = CUES.bar, HIT = CUES.band_hit;
+const CARRIER = INTRO.actors.find(a => a.id === 'carrier').ship;
+const DUR = Math.max(INTRO.duration, 70);
+const STORE = 'tailonlock-storyboard-1';
+const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], mul3 = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lensOf = fov => 12 / Math.tan(fov * D2R / 2), fovOf = mm => 2 * Math.atan(12 / mm) / D2R;
+const unwrap = (a, ref) => { while (a - ref > 180) a -= 360; while (a - ref < -180) a += 360; return a; };
+
+let doc = blankDoc();
+function blankDoc() { return { format: 'tailonlock-storyboard', version: 1, title: 'Storyboard', objects: [], shots: [], hidden: [], introShotsInFilm: true }; }
+
+// ---------------------------------------------------------------- frames
+// pose: { p, r, u, f } in game coordinates
+function poseFromAngles(p, yaw, pitch, roll) { const fr = IC.frame(yaw, pitch, roll); return { p, r: fr.r, u: fr.u, f: fr.f }; }
+function anglesOf(P) { return IC.angles(P.f, P.u); }
+// world pose of a local one carried by a frame (actor axes)
+function compose(A, L) {
+  const W = v => add3(add3(mul3(A.r, v[0]), mul3(A.u, v[1])), mul3(A.f, v[2]));
+  return { p: add3(A.p, W(L.p)), r: W(L.r), u: W(L.u), f: W(L.f) };
+}
+function relative(A, P) {
+  const T = v => [dot3(A.r, v), dot3(A.u, v), dot3(A.f, v)];
+  return { p: T(sub3(P.p, A.p)), r: T(P.r), u: T(P.u), f: T(P.f) };
+}
+function carrierFrame(t) { const p = IC.shipPos(CARRIER, t); return poseFromAngles(p, CARRIER.heading, 0, 0); }
+
+// ---------------------------------------------------------------- three.js scene
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+stage.prepend(renderer.domElement);
+const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.05, 90000);
+const world = new THREE.Scene(), room = new THREE.Scene();
+const TOD = ENV.tod;
+const MAT = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, flatShading: true });
+const M3 = v => new THREE.Vector3(-v[0], v[1], v[2]);
+
+function geometryOf(m, recolor) {
+  const pos = [], col = [], c = new THREE.Color();
+  m.f.forEach(([idx, hex], fi) => {
+    c.set(recolor && recolor(fi) || hex);
+    for (let k = 1; k + 1 < idx.length; k++) for (const i of [idx[0], idx[k], idx[k + 1]]) { const v = m.v[i]; pos.push(-v[0], v[1], v[2]); col.push(c.r, c.g, c.b); }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals(); g.computeBoundingSphere();
+  return g;
+}
+const GEO = {};
+function meshOf(model, jersey) {
+  const key = model + (jersey || '');
+  if (!GEO[key]) {
+    const m = MODELS[model]; if (!m) return null;
+    const js = jersey && m.jersey ? new Set(m.jersey) : null;
+    GEO[key] = geometryOf(m, js ? fi => js.has(fi) ? jersey : null : null);
+  }
+  return new THREE.Mesh(GEO[key], MAT);
+}
+
+function buildWorld() {
+  const top = new THREE.Color(TOD.sky_top), hor = new THREE.Color(TOD.sky_horizon), fog = new THREE.Color(TOD.fog);
+  world.background = hor.clone();
+  world.fog = new THREE.FogExp2(fog, 1 / 16000);
+  // sky dome: the horizon glow up to the dawn blue, the sun's glow toward env.sun
+  const sun = ENV.sun, sunV = M3(sun).normalize();
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(80000, 48, 24), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { top: { value: top }, hor: { value: hor }, sun: { value: sunV }, glow: { value: new THREE.Color('#ffd9a8') } },
+    vertexShader: 'varying vec3 d; void main(){ d = normalize(position); vec4 p = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * p; }',
+    fragmentShader: 'uniform vec3 top, hor, sun, glow; varying vec3 d; void main(){ float h = clamp(d.y, 0.0, 1.0); vec3 c = mix(hor, top, pow(h, 0.55)); float s = max(dot(d, sun), 0.0); c += glow * (pow(s, 600.0) * 2.5 + pow(s, 12.0) * 0.35); if (d.y < 0.0) c = hor * 0.9; gl_FragColor = vec4(c, 1.0);\n#include <colorspace_fragment>\n}'
+  }));
+  sky.frustumCulled = false; sky.renderOrder = -1; sky.name = 'sky';
+  world.add(sky);
+  world.userData.sky = sky;
+  world.add(new THREE.HemisphereLight(new THREE.Color(TOD.ambient), new THREE.Color(TOD.water_tint).multiplyScalar(0.5), 1.4 * TOD.ambient_intensity));
+  const dl = new THREE.DirectionalLight(new THREE.Color(TOD.sun_color), 2.2 * TOD.sun_intensity);
+  dl.position.copy(sunV).multiplyScalar(1000); world.add(dl);
+  // the sea
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(200000, 200000), new THREE.MeshLambertMaterial({ color: new THREE.Color('#3f6f9a').lerp(new THREE.Color(TOD.water_tint), 0.22), emissive: new THREE.Color('#1c2c44') }));
+  sea.rotation.x = -Math.PI / 2; sea.name = 'sea'; world.add(sea);
+  // Twin Isles: the terrain grid, land only
+  const T = ENV.terrain, n = T.n, sp = T.spacing, o = T.origin, pos = [], col = [], c = new THREE.Color();
+  const hgt = (i, j) => T.h[j * n + i];
+  for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
+    const q = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]].map(([a, b]) => [o[0] + a * sp, hgt(a, b), o[1] + b * sp]);
+    if (Math.max(...q.map(v => v[1])) < 1) continue;
+    const pal = T.palette[T.mat[j * (n - 1) + i]] || T.palette[0];
+    c.set(pal.water ? '#c8b98a' : pal.color);
+    for (const tri of [[0, 1, 2], [0, 2, 3]]) for (const k of tri) { const v = q[k]; pos.push(-v[0], Math.max(v[1], -3), v[2]); col.push(c.r, c.g, c.b); }
+  }
+  const tg = new THREE.BufferGeometry();
+  tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); tg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); tg.computeVertexNormals();
+  world.add(new THREE.Mesh(tg, MAT));
+  // clouds: soft puffs, the map's plus the intro's extra cumulus, without the cleared ones
+  const cleared = cl => ENV.clear_clouds.some(cc => Math.hypot(cl.x - cc[0], cl.z - cc[1]) < cc[2]);
+  const puffs = [];
+  for (const cl of ENV.clouds) if (!cleared(cl)) for (const p of cl.puffs) puffs.push([cl.x + p[0], cl.base + p[1], cl.z + p[2], p[3]]);
+  const im = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), new THREE.MeshLambertMaterial({ color: '#f3dccd', emissive: '#4a3c4c', transparent: true, opacity: 0.9 }), puffs.length);
+  const mt = new THREE.Matrix4();
+  puffs.forEach((p, i) => { mt.makeScale(p[3], p[3] * 0.8, p[3]); mt.setPosition(-p[0], p[1], p[2]); im.setMatrixAt(i, mt); });
+  world.add(im);
+}
+function buildRoom() {
+  room.background = new THREE.Color('#0b0d10');
+  room.add(new THREE.AmbientLight('#9aa0b0', 1.1));
+  for (const [x, y, z, c] of [[0.6, 2.4, 2, '#ffe2b8'], [-2.5, 2.4, 1, '#ffd6a0'], [3.5, 2.4, 1, '#ffd6a0']]) { const l = new THREE.PointLight(c, 9, 12, 1.5); l.position.copy(M3([x, y, z])); room.add(l); }
+  room.add(meshOf('room'));
+  const sm = new THREE.MeshBasicMaterial({ color: '#2f7a52', side: THREE.DoubleSide });
+  for (const s of MODELS.room.screens) {
+    const a = s.o, b = add3(s.o, s.ex), c = add3(b, s.ey), d = add3(s.o, s.ey), g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([a, b, c, a, c, d].flatMap(v => [-v[0], v[1], v[2] - 0.003]), 3));
+    room.add(new THREE.Mesh(g, sm));
+  }
+}
+
+// ---------------------------------------------------------------- the cast
+// Each thing on stage: { id, src: 'intro' | 'mine', scene: 'world' | 'cic', node, pose(t) -> pose | null }
+const things = new Map();
+function placeNode(node, P) {
+  node.position.copy(M3(P.p));
+  const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(P.r[0], -P.r[1], -P.r[2]), M3(P.u), M3(P.f));
+  node.quaternion.setFromRotationMatrix(m);
+}
+function poseOfNode(node) {
+  const m = new THREE.Matrix4().makeRotationFromQuaternion(node.quaternion), e = m.elements;
+  const c0 = [e[0], e[1], e[2]], c1 = [e[4], e[5], e[6]], c2 = [e[8], e[9], e[10]];
+  return { p: [-node.position.x, node.position.y, node.position.z], r: [c0[0], -c0[1], -c0[2]], u: [-c1[0], c1[1], c1[2]], f: [-c2[0], c2[1], c2[2]] };
+}
+const ACT = Object.fromEntries(INTRO.actors.map(a => [a.id, a]));
+for (const a of INTRO.actors) if (a.keys && a.keys.length) a.tr = IC.track(a.keys);
+const SHOTS = INTRO.shots.map(s => Object.assign({}, s, { tr: IC.track(s.cam) }));
+// the intro's own actors, as the intro plays them (assets/intro/src/intro.js actorFrame)
+function introPose(a, t) {
+  if (a.kind === 'ship') return poseFromAngles(IC.shipPos(a.ship, t), a.ship.heading, 0, 0);
+  if (a.kind === 'static') { const sh = ACT[a.attach].ship; return poseFromAngles(IC.shipLocal(sh, t, a.pos), sh.heading + a.heading, 0, 0); }
+  if (!a.tr) return null;
+  if (a.kind === 'crew') {
+    const k = IC.sample(a.tr, clamp(t, a.keys[0][0], a.keys[a.keys.length - 1][0]), []); if (!k) return null;
+    const sh = ACT[a.attach].ship; return poseFromAngles(IC.shipLocal(sh, t, [k[1], k[2], k[3]]), sh.heading + k[4], 0, 0);
+  }
+  if (a.spawn != null && t < a.spawn) return null;
+  if (a.end != null && t > a.end) return null;
+  const s = IC.sample(a.tr, t, []); if (!s) return null;
+  return poseFromAngles([s[1], s[2], s[3]], s[4], s[5], s[6]);
+}
+// my objects: keys [t, x, y, z, yaw, pitch, roll], held before the first and after the last; carrier-borne ones are
+// in the carrier's frame (x starboard, z bow)
+function minePose(o, t) {
+  if (!o.keys.length) return null;
+  if (o.show && (t < o.show[0] || t > o.show[1])) return null;
+  if (!o._tr || o._v !== o.keys) { o._tr = IC.track(o.keys); o._v = o.keys; }
+  const k = IC.sample(o._tr, clamp(t, o.keys[0][0], o.keys[o.keys.length - 1][0]), []);
+  const L = poseFromAngles([k[1], k[2], k[3]], k[4], k[5], k[6]);
+  return o.attach === 'carrier' ? compose(carrierFrame(t), L) : L;
+}
+function addThing(id, src, scene, node, pose) {
+  node.traverse(n => { n.userData.thing = id; });
+  (scene === 'cic' ? room : world).add(node);
+  things.set(id, { id, src, scene, node, pose });
+}
+function removeThing(id) { const th = things.get(id); if (!th) return; th.node.parent && th.node.parent.remove(th.node); things.delete(id); }
+function buildIntroCast() {
+  for (const a of INTRO.actors) {
+    const node = meshOf(a.kind === 'crew' ? 'crew' : a.model, a.kind === 'crew' ? a.jersey : null) || new THREE.Group();
+    addThing('intro:' + a.id, 'intro', 'world', node, t => introPose(a, t));
+  }
+}
+function syncMine() {
+  for (const [id] of things) if (id.startsWith('mine:') && !doc.objects.some(o => 'mine:' + o.id === id)) removeThing(id);
+  for (const o of doc.objects) {
+    const id = 'mine:' + o.id, th = things.get(id);
+    if (th && th.model === o.model + (o.jersey || '') && th.scene === (o.scene || 'world')) continue;
+    if (th) removeThing(id);
+    const node = meshOf(o.model, o.jersey); if (!node) continue;
+    addThing(id, 'mine', o.scene || 'world', node, t => minePose(o, t));
+    things.get(id).model = o.model + (o.jersey || '');
+  }
+}
+
+// ---------------------------------------------------------------- state
+let T = 0, playing = false, speed = 1, view = 'free', freeScene = 'world', sel = null, selKey = -1;
+let piloting = false, dragging = false, audio = null;
+// the free camera, one per scene: position and angles in game terms
+const free = { world: { p: [4890, 70, -2560], yaw: -12, pitch: -6, roll: 0, fov: 50 }, cic: { p: [0.6, 1.6, 0.4], yaw: 0, pitch: -6, roll: 0, fov: 60 } };
+let cam = free.world;        // the camera the viewport shows and the controls move
+const objById = id => doc.objects.find(o => o.id === id), shotById = id => doc.shots.find(s => s.id === id);
+const selected = () => !sel ? null : sel.type === 'obj' ? objById(sel.id) : sel.type === 'shot' ? shotById(sel.id) : sel.type === 'intro' ? ACT[sel.id] : sel.type === 'ishot' ? SHOTS.find(s => s.name === sel.id) : null;
+function poseOfThing(id, t) { const th = things.get(id); return th ? th.pose(t) : null; }
+function actorPoseById(id, t) { return poseOfThing(objById(id) ? 'mine:' + id : 'intro:' + id, t); }
+
+// a shot's camera at t: keys [t, x, y, z, yaw, pitch, roll, fov], in the frame of `attach` when it has one
+function shotCam(s, t) {
+  if (!s.keys.length) return null;
+  if (!s._tr || s._v !== s.keys) { s._tr = IC.track(s.keys); s._v = s.keys; }
+  const k = IC.sample(s._tr, clamp(t, s.keys[0][0], s.keys[s.keys.length - 1][0]), []);
+  let P = poseFromAngles([k[1], k[2], k[3]], k[4], k[5], k[6]);
+  if (s.attach) { const A = actorPoseById(s.attach, t); if (A) P = compose(A, P); }
+  return { P, fov: k[7], scene: s.scene || 'world' };
+}
+function introCam(s, t) {
+  const k = IC.sample(s.tr, clamp(t, s.t0, s.cam[s.cam.length - 1][0]), []) || s.cam[s.cam.length - 1];
+  let P = poseFromAngles([k[1], k[2], k[3]], k[4], k[5], k[6]);
+  const a = s.attach && ACT[s.attach.actor] ? introPose(ACT[s.attach.actor], t) : null;
+  if (a) {
+    const o = s.attach.offset, d = s.attach.dir, W = v => add3(add3(mul3(a.r, v[0]), mul3(a.u, v[1])), mul3(a.f, v[2]));
+    const f = norm(W(d)), u = norm(sub3(a.u, mul3(f, dot3(a.u, f))));
+    const [yw, pt, rl] = IC.angles(f, u);
+    P = poseFromAngles(add3(a.p, W(o)), yw, pt, rl);
+  }
+  if (s.scene === 'cic') return { P: poseFromAngles(free.cic.p, free.cic.yaw, free.cic.pitch, 0), fov: 60, scene: 'cic' };
+  return { P, fov: k[7], scene: 'world' };
+}
+function norm(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return mul3(v, 1 / l); }
+function filmShot(t) {
+  const mine = doc.shots.filter(s => !s.off && t >= s.t0 && t < s.t1).pop();
+  if (mine) return { mine, name: mine.name };
+  if (!doc.introShotsInFilm) return null;
+  const s = SHOTS.find(s => t >= s.t0 && t < s.t1) || null;
+  return s && !doc.shots.some(m => m.replaces === s.name && !m.off) ? { intro: s, name: s.name } : null;
+}
+
+// ---------------------------------------------------------------- keys
+const EPS = 1 / 50;
+function setKey(list, key) {
+  const t = key[0];
+  let i = list.findIndex(k => Math.abs(k[0] - t) < EPS);
+  if (i >= 0) { const prev = list[i - 1]; if (prev) for (const c of [4, 6]) key[c] = unwrap(key[c], prev[c]); list[i] = key; }
+  else {
+    i = list.findIndex(k => k[0] > t); if (i < 0) i = list.length;
+    const prev = list[i - 1] || list[i]; if (prev) for (const c of [4, 6]) key[c] = unwrap(key[c], prev[c]);
+    list.splice(i, 0, key);
+  }
+  return i;
+}
+// copying keeps the list a new array, so tracks rebuild (o._v !== o.keys)
+const touch = x => { x.keys = x.keys.slice(); changed(); };
+function keyObjectNow(o, P) {
+  if (o.attach === 'carrier') P = relative(carrierFrame(T), P);
+  const [y, p, r] = anglesOf(P);
+  selKey = setKey(o.keys, [r3(T), r2(P.p[0]), r2(P.p[1]), r2(P.p[2]), r2(y), r2(p), r2(r)]);
+  touch(o);
+}
+function keyShotNow(s) {
+  let P = poseFromAngles(cam.p.slice(), cam.yaw, cam.pitch, cam.roll);
+  if (s.attach) { const A = actorPoseById(s.attach, T); if (A) P = relative(A, P); }
+  const [y, p, r] = anglesOf(P);
+  selKey = setKey(s.keys, [r3(T), r2(P.p[0]), r2(P.p[1]), r2(P.p[2]), r2(y), r2(p), r2(r), r2(cam.fov)]);
+  if (T < s.t0) s.t0 = r3(T); if (T >= s.t1) s.t1 = r3(T + 0.5);
+  piloting = false; touch(s);
+  toast(`Camera keyed at ${fmt(T)} in “${s.name}”`);
+}
+
+// ---------------------------------------------------------------- persistence
+let saveTimer = 0;
+function changed(rebuild = true) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(cleanDoc())); } catch (e) { } }, 400);
+  if (rebuild) { syncMine(); renderLists(); renderInspector(); }
+  drawTimeline();
+}
+function cleanDoc() { return JSON.parse(JSON.stringify(doc, (k, v) => k.startsWith('_') ? undefined : v)); }
+function loadDoc(d) {
+  if (d && d.storyboard) d = d.storyboard;
+  if (!d || d.format !== 'tailonlock-storyboard') throw new Error('That file is not a Tailon Lock storyboard.');
+  doc = Object.assign(blankDoc(), d);
+  sel = null; selKey = -1; syncMine(); applyHidden(); renderLists(); renderInspector(); drawTimeline();
+}
+function applyHidden() { for (const a of INTRO.actors) { const th = things.get('intro:' + a.id); if (th) th.hidden = doc.hidden.includes(a.id); } }
+
+// ---------------------------------------------------------------- the shot file (intro_script.json terms)
+function bakeShot(s) {
+  const t1 = s.t1 + 1.2, cam = [];   // keys run 1.2 s past t1, so a dissolve into the next shot has a moving picture
+  for (let t = s.t0; t <= t1 + 1e-6; t += 0.1) {
+    const c = shotCam(s, t); if (!c) break;
+    const [y, p, r] = anglesOf(c.P), prev = cam[cam.length - 1];
+    cam.push([r2(t), r2(c.P.p[0]), r2(c.P.p[1]), r2(c.P.p[2]), r2(prev ? unwrap(y, prev[4]) : y), r2(p), r2(prev ? unwrap(r, prev[6]) : r), r2(c.fov)]);
+  }
+  const out = { name: s.name, t0: s.t0, t1: s.t1, desc: s.desc || '', lens: Math.round(lensOf(s.keys[0] ? s.keys[0][7] : 50)), rig: 'storyboard', cam };
+  if (s.scene === 'cic') out.scene = 'cic';
+  if (s.in && s.in.type !== 'cut') out.in = { type: s.in.type, dur: s.in.dur, ...(s.in.type === 'whip' ? { dir: s.in.dir || 1 } : {}) };
+  if (s.attach && s.keys.length === 1) {
+    const k = s.keys[0], fr = IC.frame(k[4], k[5], k[6]);
+    out.attach = { actor: s.attach, offset: [k[1], k[2], k[3]], dir: fr.f.map(r3), roll: 0 };
+  }
+  if (s.replaces) out.replaces = s.replaces;
+  if (s.subjects && s.subjects.length) out.subjects = s.subjects;
+  return out;
+}
+function bakeObject(o) {
+  const m = MODELS[o.model] || {}, kind = o.scene === 'cic' ? 'room' : m.kind === 'crew' ? 'crew' : m.kind || 'static';
+  const out = { id: o.id, kind, model: o.model, label: o.label || '' };
+  if (o.jersey) out.jersey = o.jersey;
+  if (o.replaces) out.replaces = o.replaces;
+  if (o.show) out.visible = [o.show];
+  if (o.attach === 'carrier' && o.keys.length === 1) {
+    const k = o.keys[0]; Object.assign(out, { attach: 'carrier', pos: [k[1], k[2], k[3]], heading: k[4], pitch: k[5], roll: k[6] });
+  } else if (o.attach === 'carrier') {
+    // carried by a moving ship: baked to world keys every 0.1 s, as the intro stores everything
+    out.keys = []; const t0 = o.keys[0][0], t1 = o.keys[o.keys.length - 1][0];
+    for (let t = t0; t <= t1 + 1e-6; t += 0.1) { const P = minePose(o, t), [y, p, r] = anglesOf(P); out.keys.push([r2(t), r2(P.p[0]), r2(P.p[1]), r2(P.p[2]), r2(y), r2(p), r2(r)]); }
+    out.local_keys = o.keys;
+  } else out.keys = o.keys;
+  return out;
+}
+function shotFile() {
+  return {
+    format: 'ace4combat-intro-shots', version: INTRO.version, from: 'Tailon Lock storyboard', saved: new Date().toISOString(),
+    note: 'Shots and objects in intro_script.json terms: cam keys [t, x, y, z, yaw, pitch, roll, fov], actor keys [t, x, y, z, yaw, pitch, roll], world metres, times from the first music sample. `storyboard` reopens in the editor.',
+    shots: doc.shots.filter(s => s.keys.length).map(bakeShot), actors: doc.objects.filter(o => o.keys.length).map(bakeObject),
+    hide_intro_actors: doc.hidden, storyboard: cleanDoc()
+  };
+}
+
+// ---------------------------------------------------------------- editing commands
+let seq = 1;
+const newId = base => { let id; do id = base + '_' + (seq++); while (objById(id) || shotById(id)); return id; };
+function addObject(model) {
+  const m = MODELS[model], inRoom = currentScene() === 'cic', fr = IC.frame(cam.yaw, 0, 0);
+  const dist = inRoom ? 2 : clamp(m.rad * 4, 6, 400);
+  let p = add3(cam.p, mul3(fr.f, dist));
+  if (!inRoom && m.kind === 'ship') p[1] = 0;
+  if (inRoom) p[1] = 0;
+  const o = { id: newId(model.replace('cic_', '')), model, label: m.label, keys: [], scene: inRoom ? 'cic' : 'world' };
+  if (m.kind === 'crew' && !inRoom) o.jersey = '#f0cf2e';
+  // on the deck: carried by the carrier
+  const C = carrierFrame(T), L = relative(C, poseFromAngles(p, cam.yaw + 180, 0, 0));
+  if (!inRoom && (m.kind === 'crew' || Math.abs(L.p[0]) < 45 && Math.abs(L.p[2]) < 170 && cam.p[1] < 200)) {
+    o.attach = 'carrier'; p = compose(C, { p: [L.p[0], 20.5, L.p[2]], r: L.r, u: L.u, f: L.f }).p;
+  }
+  doc.objects.push(o);
+  keyObjectNow(o, poseFromAngles(p, cam.yaw + (m.kind === 'crew' ? 180 : 0), 0, 0));
+  select({ type: 'obj', id: o.id });
+  toast(`${m.label} added at ${fmt(T)}. Drag the arrows to move it; every move sets a key at the playhead.`);
+}
+function newShot() {
+  const s = { id: newId('shot'), name: 'shot ' + (doc.shots.length + 1), t0: r3(T), t1: r3(Math.min(DUR, T + 6)), desc: '', keys: [], scene: currentScene(), in: { type: 'cut', dur: 0.5 } };
+  doc.shots.push(s); keyShotNow(s);
+  select({ type: 'shot', id: s.id }); setView('shot');
+}
+function copyIntroActor(a) {
+  const o = { id: newId(a.id + '_'), model: a.kind === 'crew' ? 'crew' : a.model, label: (a.callsign || a.id) + ' (my copy)', keys: [], replaces: a.id, scene: 'world' };
+  if (a.kind === 'crew') o.jersey = a.jersey;
+  let t0 = 0, t1 = DUR, step = 0.5;
+  if (a.keys && a.keys.length > 1) { const k = a.keys.filter(Boolean); t0 = k[0][0]; t1 = k[k.length - 1][0]; }
+  if (a.spawn != null) { t0 = a.spawn; t1 = a.end; step = 0.25; }
+  const borne = a.kind === 'static' || a.kind === 'crew';
+  if (borne) o.attach = 'carrier';
+  if (a.kind === 'ship' || a.kind === 'static' || a.kind === 'crew' && a.keys.length < 2) { const P = introPose(a, T); if (!P) return; const L = borne ? relative(carrierFrame(T), P) : P, [y, p, r] = anglesOf(L); o.keys.push([0, r2(L.p[0]), r2(L.p[1]), r2(L.p[2]), r2(y), r2(p), r2(r)]); if (a.kind === 'ship') { o.keys[0][0] = 0; const P2 = introPose(a, DUR); const [y2] = anglesOf(P2); o.keys.push([DUR, r2(P2.p[0]), 0, r2(P2.p[2]), r2(y2), 0, 0]); } }
+  else for (let t = t0; t <= t1 + 1e-6; t += step) {
+    const P = introPose(a, Math.min(t, t1)); if (!P) continue;
+    const L = borne ? relative(carrierFrame(t), P) : P, [y, p, r] = anglesOf(L), prev = o.keys[o.keys.length - 1];
+    o.keys.push([r3(Math.min(t, t1)), r2(L.p[0]), r2(L.p[1]), r2(L.p[2]), r2(prev ? unwrap(y, prev[4]) : y), r2(p), r2(prev ? unwrap(r, prev[6]) : r)]);
+  }
+  if (a.spawn != null || a.dead != null) o.show = [r3(t0), r3(a.end != null ? a.end : DUR)];
+  doc.objects.push(o);
+  if (!doc.hidden.includes(a.id)) doc.hidden.push(a.id);
+  applyHidden(); select({ type: 'obj', id: o.id }); changed();
+  toast(`${o.label}: ${o.keys.length} keys, editable. The intro's ${a.id} is hidden while you have a copy.`);
+}
+function copyIntroShot(s) {
+  const n = { id: newId('shot'), name: s.name, t0: s.t0, t1: s.t1, desc: s.desc || '', keys: [], scene: s.scene || 'world', in: s.in ? Object.assign({}, s.in) : { type: 'cut', dur: 0.5 }, replaces: s.name, subjects: s.subjects };
+  for (let t = s.t0; t <= s.t1 + 1e-6; t += 0.25) {
+    const c = introCam(s, Math.min(t, s.t1)), [y, p, r] = anglesOf(c.P), prev = n.keys[n.keys.length - 1];
+    n.keys.push([r3(Math.min(t, s.t1)), r2(c.P.p[0]), r2(c.P.p[1]), r2(c.P.p[2]), r2(prev ? unwrap(y, prev[4]) : y), r2(p), r2(prev ? unwrap(r, prev[6]) : r), r2(c.fov)]);
+  }
+  doc.shots.push(n); select({ type: 'shot', id: n.id }); setView('shot'); changed();
+  toast(`“${s.name}” copied as your shot, ${n.keys.length} camera keys. In the film it replaces the intro's take.`);
+}
+function deleteSel() {
+  if (!sel) return;
+  if (sel.type === 'obj') { const o = objById(sel.id); doc.objects = doc.objects.filter(x => x !== o); if (o && o.replaces) doc.hidden = doc.hidden.filter(h => h !== o.replaces); applyHidden(); }
+  else if (sel.type === 'shot') doc.shots = doc.shots.filter(x => x.id !== sel.id);
+  else return;
+  sel = null; changed();
+}
+function deleteKey() {
+  const x = selected(); if (!x || !x.keys || (sel.type !== 'obj' && sel.type !== 'shot')) return;
+  let i = selKey >= 0 && selKey < x.keys.length ? selKey : x.keys.findIndex(k => Math.abs(k[0] - T) < EPS);
+  if (i < 0) { toast('No key at the playhead. Click a key on the timeline first.'); return; }
+  if (x.keys.length === 1) { toast('That is its only key. Delete the whole thing instead (Shift+Delete).'); return; }
+  x.keys.splice(i, 1); selKey = -1; touch(x);
+}
+
+// ---------------------------------------------------------------- selection and the gizmo
+const gizmo = new TransformControls(camera, renderer.domElement);
+gizmo.setSpace('local'); gizmo.size = 0.9;
+gizmo.addEventListener('dragging-changed', e => {
+  dragging = e.value;
+  if (!e.value && sel && sel.type === 'obj') { const o = objById(sel.id), th = things.get('mine:' + sel.id); if (o && th) keyObjectNow(o, poseOfNode(th.node)); }
+});
+function select(s) {
+  sel = s; selKey = -1;
+  gizmo.detach();
+  if (s && s.type === 'obj') {
+    const th = things.get('mine:' + s.id);
+    if (th) { gizmo.attach(th.node); (th.scene === 'cic' ? room : world).add(gizmo); }
+  }
+  renderLists(); renderInspector(); drawTimeline(); updatePaths();
+}
+function currentScene() {
+  if (view === 'free') return freeScene;
+  const c = viewCam(); return c ? c.scene : freeScene;
+}
+// paths: the selected object's track or the selected shot's camera move, as a line in the scene
+let pathLine = null, camMarker = null;
+function updatePaths() {
+  for (const l of [pathLine, camMarker]) if (l) l.parent && l.parent.remove(l);
+  pathLine = camMarker = null;
+  const x = selected(); if (!x || !sel) return;
+  const pts = [];
+  let t0, t1, at, scene = 'world';
+  if (sel.type === 'obj') { if (!x.keys.length) return; t0 = x.keys[0][0]; t1 = x.keys[x.keys.length - 1][0]; at = t => minePose(x, t); scene = x.scene || 'world'; }
+  else if (sel.type === 'shot') { if (!x.keys.length) return; t0 = Math.min(x.t0, x.keys[0][0]); t1 = Math.max(x.t1, x.keys[x.keys.length - 1][0]); at = t => { const c = shotCam(x, t); return c && c.P; }; scene = x.scene || 'world'; }
+  else if (sel.type === 'ishot') { t0 = x.t0; t1 = x.t1; at = t => introCam(x, t).P; scene = x.scene || 'world'; if (scene === 'cic') return; }
+  else return;
+  if (t1 - t0 < 0.01) return;
+  for (let t = t0; t <= t1 + 1e-6; t += Math.max(0.05, (t1 - t0) / 400)) { const P = at(t); if (P) pts.push(M3(P.p)); }
+  if (pts.length < 2) return;
+  pathLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: sel.type === 'obj' ? '#7aa8ff' : '#f2a774', depthTest: false, transparent: true, opacity: 0.85 }));
+  pathLine.renderOrder = 10;
+  (scene === 'cic' ? room : world).add(pathLine);
+}
+function updateCamMarker() {
+  if (camMarker) { camMarker.parent && camMarker.parent.remove(camMarker); camMarker = null; }
+  if (view !== 'free' || !sel || (sel.type !== 'shot' && sel.type !== 'ishot')) return;
+  const x = selected(); const c = sel.type === 'shot' ? shotCam(x, T) : introCam(x, T); if (!c || c.scene !== freeScene) return;
+  const pc = new THREE.PerspectiveCamera(c.fov, 16 / 9, 0.5, c.scene === 'cic' ? 0.8 : clamp(dist3(c.P.p, cam.p) * 0.08, 3, 120));
+  applyCamera(pc, c.P, c.fov); pc.updateMatrixWorld(); pc.updateProjectionMatrix();
+  camMarker = new THREE.CameraHelper(pc); camMarker.userData.cam = pc;
+  (c.scene === 'cic' ? room : world).add(camMarker); camMarker.update();
+}
+const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+function applyCamera(c, P, fov) {
+  c.position.copy(M3(P.p)); c.up.copy(M3(P.u));
+  c.lookAt(M3(add3(P.p, P.f))); c.fov = fov;
+}
+
+// ---------------------------------------------------------------- views
+function setView(v) {
+  view = v; piloting = false;
+  for (const [id, n] of [['vFree', 'free'], ['vShot', 'shot'], ['vFilm', 'film']]) document.getElementById(id).classList.toggle('on', v === n);
+  if (v === 'shot' && (!sel || (sel.type !== 'shot' && sel.type !== 'ishot'))) {
+    const s = doc.shots.find(s => T >= s.t0 && T < s.t1) || doc.shots[0];
+    if (s) select({ type: 'shot', id: s.id }); else toast('Pick a shot first, or press “New shot here”.');
+  }
+  syncFromView(); renderInspector();
+}
+function viewCam() {
+  if (view === 'shot' && sel) {
+    if (sel.type === 'shot') { const s = shotById(sel.id); return s && shotCam(s, T); }
+    if (sel.type === 'ishot') { const s = SHOTS.find(s => s.name === sel.id); return s && introCam(s, T); }
+  }
+  if (view === 'film') { const f = filmShot(T); if (!f) return null; return f.mine ? shotCam(f.mine, T) : introCam(f.intro, T); }
+  return null;
+}
+// when the view follows a shot, the controllable camera snaps to it until you move it (piloting)
+function syncFromView() {
+  if (view === 'free') { cam = free[freeScene]; return; }
+  if (piloting) return;
+  const c = viewCam(); if (!c) return;
+  const [y, p, r] = anglesOf(c.P);
+  cam = { p: c.P.p.slice(), yaw: y, pitch: p, roll: r, fov: c.fov, scene: c.scene };
+}
+
+// ---------------------------------------------------------------- input: the fly camera
+const keysDown = new Set();
+let drag = null;
+const inField = e => /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (dragging || gizmo.axis) return;
+  renderer.domElement.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX, y: e.clientY, b: e.button, alt: e.altKey, moved: false };
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!drag || dragging) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+  drag.moved = true; drag.x = e.clientX; drag.y = e.clientY;
+  const k = cam.fov / renderer.domElement.clientHeight;
+  if (drag.alt && sel && sel.type === 'obj') {       // orbit the selected object
+    const P = poseOfThing('mine:' + sel.id, T); if (!P) return;
+    const d = dist3(cam.p, P.p); pilot();
+    cam.yaw += dx * 0.3; cam.pitch = clamp(cam.pitch - dy * 0.3, -89, 89);
+    const f = IC.frame(cam.yaw, cam.pitch, 0).f; cam.p = sub3(P.p, mul3(f, d));
+  } else if (drag.b === 1 || e.shiftKey && drag.b === 0) {   // pan
+    const fr = IC.frame(cam.yaw, cam.pitch, cam.roll), s = flySpeed() * 0.02; pilot();
+    cam.p = add3(cam.p, add3(mul3(fr.r, -dx * s), mul3(fr.u, dy * s)));
+  } else { pilot(); cam.yaw += dx * k; cam.pitch = clamp(cam.pitch - dy * k, -89, 89); }
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  if (drag && !drag.moved && drag.b === 0 && !dragging) pick(e);
+  drag = null;
+});
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault(); pilot();
+  if (e.ctrlKey || e.metaKey) { cam.fov = clamp(cam.fov * (1 + e.deltaY * 0.002), 2, 120); return; }   // pinch or Ctrl+wheel: zoom the lens
+  const f = IC.frame(cam.yaw, cam.pitch, cam.roll).f; cam.p = add3(cam.p, mul3(f, -e.deltaY * flySpeed() * 0.01));
+}, { passive: false });
+function pick(e) {
+  const r = renderer.domElement.getBoundingClientRect(), ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
+  const list = []; for (const th of things.values()) if (th.node.visible && th.scene === currentScene()) list.push(th.node);
+  const hit = ray.intersectObjects(list, true)[0];
+  const id = hit && hit.object.userData.thing;
+  if (!id) { select(null); return; }
+  select(id.startsWith('mine:') ? { type: 'obj', id: id.slice(5) } : { type: 'intro', id: id.slice(6) });
+}
+const flySpeed = () => +document.getElementById('flyspeed').value;
+function pilot() { if (view !== 'free' && !piloting) { piloting = true; } }
+window.addEventListener('keydown', e => {
+  if (inField(e)) { if (e.key === 'Escape') e.target.blur(); return; }
+  const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); togglePlay(); return; }
+  if ('wasdqerfzc'.includes(k) && k.length === 1 && !e.metaKey && !e.ctrlKey) { keysDown.add(k); e.preventDefault(); return; }
+  if (k === 'shift') keysDown.add('shift');
+  if (k === 'k') { e.preventDefault(); keyNow(); }
+  else if (k === 'n') newShot();
+  else if (k === '1') setView('free'); else if (k === '2') setView('shot'); else if (k === '3') setView('film');
+  else if (k === 'g') { gizmo.setMode('translate'); toast('Move'); } else if (k === 't') { gizmo.setMode('rotate'); toast('Turn'); }
+  else if (k === 'l') { gizmo.setSpace(gizmo.space === 'local' ? 'world' : 'local'); toast(gizmo.space === 'local' ? 'Arrows along the object' : 'Arrows along the world'); }
+  else if (k === 'delete' || k === 'backspace') { e.preventDefault(); if (e.shiftKey) deleteSel(); else deleteKey(); }
+  else if (k === 'home') { seek(0); }
+  else if (k === 'arrowleft') { e.preventDefault(); seek(T - (e.shiftKey ? 1 : 0.1)); }
+  else if (k === 'arrowright') { e.preventDefault(); seek(T + (e.shiftKey ? 1 : 0.1)); }
+  else if (k === '[') { pilot(); cam.fov = clamp(cam.fov * 1.06, 2, 120); }
+  else if (k === ']') { pilot(); cam.fov = clamp(cam.fov / 1.06, 2, 120); }
+  else if (k === 'o') focusSel();
+});
+window.addEventListener('keyup', e => { keysDown.delete(e.key.toLowerCase()); });
+window.addEventListener('blur', () => keysDown.clear());
+function keyNow() {
+  if (sel && sel.type === 'shot') { keyShotNow(shotById(sel.id)); return; }
+  if (sel && sel.type === 'obj') { const o = objById(sel.id), th = things.get('mine:' + sel.id); keyObjectNow(o, poseOfNode(th.node)); toast(`Key at ${fmt(T)}`); return; }
+  toast('Select one of your shots or objects to key it.');
+}
+function focusSel() {
+  let P = null, rad = 20;
+  if (sel && (sel.type === 'obj' || sel.type === 'intro')) { const x = selected(); P = poseOfThing((sel.type === 'obj' ? 'mine:' : 'intro:') + sel.id, T); rad = (MODELS[x.model] || MODELS.crew).rad || 10; }
+  if (!P) return;
+  const d = rad * 3, f = IC.frame(cam.yaw, cam.pitch, 0).f; pilot(); cam.p = sub3(P.p, mul3(f, d));
+}
+function flyStep(dt) {
+  let mv = [0, 0, 0], rl = 0;
+  if (keysDown.has('w')) mv[2] += 1; if (keysDown.has('s')) mv[2] -= 1;
+  if (keysDown.has('d')) mv[0] += 1; if (keysDown.has('a')) mv[0] -= 1;
+  if (keysDown.has('e') || keysDown.has('r')) mv[1] += 1; if (keysDown.has('q') || keysDown.has('f')) mv[1] -= 1;
+  if (keysDown.has('z')) rl -= 1; if (keysDown.has('c')) rl += 1;
+  if (!mv[0] && !mv[1] && !mv[2] && !rl) return;
+  pilot();
+  const fr = IC.frame(cam.yaw, cam.pitch, cam.roll), v = flySpeed() * (keysDown.has('shift') ? 5 : 1) * dt;
+  cam.p = add3(cam.p, add3(add3(mul3(fr.r, mv[0] * v), mul3([0, 1, 0], mv[1] * v)), mul3(fr.f, mv[2] * v)));
+  cam.roll += rl * 40 * dt;
+}
+
+// ---------------------------------------------------------------- playback
+function seek(t) { T = clamp(t, 0, DUR); piloting = false; if (audio) try { audio.currentTime = T; } catch (e) { } drawTimeline(); renderInspector(true); }
+function togglePlay() {
+  playing = !playing; piloting = false;
+  document.getElementById('bPlay').textContent = playing ? '❚❚ Pause' : '▶ Play';
+  if (audio) { if (playing) { audio.playbackRate = speed; audio.currentTime = T; audio.play().catch(() => { }); } else audio.pause(); }
+}
+const fmt = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
+const barOf = t => (t - HIT) / BAR;
+
+// ---------------------------------------------------------------- frame loop
+let last = performance.now(), inspTick = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing) {
+    if (audio && !audio.paused && speed === 1) T = audio.currentTime; else T += dt * speed;
+    if (T >= DUR) { T = DUR; togglePlay(); }
+  }
+  flyStep(dt);
+  syncFromView();
+  const scene = currentScene();
+  for (const th of things.values()) {
+    if (dragging && sel && th.id === 'mine:' + sel.id) continue;
+    const P = th.hidden ? null : th.pose(T);
+    th.node.visible = !!P;
+    if (P) placeNode(th.node, P);
+  }
+  // in a cockpit shot, hide the jet we sit in
+  const fs = view === 'film' ? filmShot(T) : null, hud = fs && fs.intro && fs.intro.hud;
+  if (hud) { const th = things.get('intro:' + hud.actor); if (th) th.node.visible = false; }
+  const P = poseFromAngles(cam.p, cam.yaw, cam.pitch, cam.roll);
+  applyCamera(camera, P, cam.fov); camera.near = scene === 'cic' ? 0.02 : 0.3; camera.updateProjectionMatrix();
+  const sky = world.userData.sky; if (sky) sky.position.copy(camera.position);
+  updateCamMarker();
+  renderer.render(scene === 'cic' ? room : world, camera);
+  if (snapWanted) { snapWanted = false; sendView(scene); }
+  drawOSD(scene);
+  if (playing) { drawTimeline(); if (++inspTick % 6 === 0) renderInspector(true); }
+  requestAnimationFrame(frame);
+}
+function drawOSD(scene) {
+  const lb = view !== 'free' || document.getElementById('vFree').dataset.lb === '1';
+  document.getElementById('lbT').hidden = document.getElementById('lbB').hidden = view === 'free';
+  let shot = '';
+  if (view === 'film') { const f = filmShot(T); shot = f ? (f.mine ? 'MY  ' : 'INTRO  ') + f.name : '(no shot)'; }
+  else if (view === 'shot' && sel) shot = (sel.type === 'shot' ? 'MY  ' + (shotById(sel.id) || {}).name : 'INTRO  ' + sel.id);
+  else shot = scene === 'cic' ? 'FREE CAMERA  control room' : 'FREE CAMERA';
+  document.getElementById('osd').textContent = `${shot}\n${Math.round(lensOf(cam.fov))} mm  ·  ${fmt(T)}  ·  bar ${barOf(T) >= 0 ? (barOf(T) + 1).toFixed(1) : '–'}`;
+  document.getElementById('osd2').textContent = piloting ? (sel && sel.type === 'shot' && view === 'shot' ? 'Camera moved: press K to key it' : 'Camera moved (not keyed)') : '';
+  document.getElementById('clock').textContent = fmt(T);
+  const b = barOf(T); document.getElementById('barno').textContent = b >= 0 ? `bar ${Math.floor(b) + 1}.${Math.floor((b % 1) * 4) + 1}` : `intro ${(T).toFixed(1)}s`;
+}
+
+// ---------------------------------------------------------------- timeline
+const tlc = document.getElementById('tlc'), tg = tlc.getContext('2d');
+let tv0 = 0, tv1 = DUR, tdrag = null;
+const LANES = { ruler: [0, 22], intro: [24, 46], mine: [48, 80], keys: [84, 120], cast: [124, 148] };
+const tx = t => (t - tv0) / (tv1 - tv0) * tlc.clientWidth, xt = x => tv0 + x / tlc.clientWidth * (tv1 - tv0);
+function drawTimeline() {
+  const W = tlc.clientWidth, H = tlc.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (tlc.width !== W * dpr || tlc.height !== H * dpr) { tlc.width = W * dpr; tlc.height = H * dpr; }
+  tg.setTransform(dpr, 0, 0, dpr, 0, 0); tg.clearRect(0, 0, W, H);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const ink = css('--ink'), dim = css('--dim'), line = css('--line'), acc = css('--accent'), blue = css('--blue'), raise = css('--raise');
+  tg.font = '11px JetBrains Mono, monospace'; tg.textBaseline = 'middle';
+  // bars after the band hit, seconds before it
+  const span = tv1 - tv0, every = span > 40 ? 2 : 1;
+  for (let n = Math.floor((tv0 - HIT) / BAR) - 1; n * BAR + HIT < tv1; n++) {
+    const t = HIT + n * BAR, x = tx(t); if (n < 0) continue;
+    tg.fillStyle = line; tg.fillRect(Math.round(x), 22, 1, H - 22);
+    if (n >= 0 && n % every === 0) { tg.fillStyle = n === 0 ? acc : dim; tg.fillText(n === 0 ? 'HIT' : String(n + 1), x + 3, 8); }
+    if (span < 20) for (let q = 1; q < 4; q++) { tg.fillStyle = line; tg.fillRect(Math.round(tx(t + q * BAR / 4)), 14, 1, 6); }
+  }
+  for (let s = Math.ceil(tv0); s < Math.min(tv1, HIT); s++) { tg.fillStyle = line; tg.fillRect(Math.round(tx(s)), 14, 1, 8); if (s % 2 === 0) { tg.fillStyle = dim; tg.fillText(s + 's', tx(s) + 3, 8); } }
+  for (const [nm, t] of [['riff', CUES.riff], ['merge', CUES.merge], ['verse', CUES.verse], ['pre', CUES.pre], ['kill', CUES.last_kill], ['chorus', CUES.chorus]]) {
+    tg.fillStyle = acc; tg.fillRect(tx(t) - 1, 16, 2, 6); tg.fillStyle = dim; tg.fillText(nm, tx(t) + 3, 18);
+  }
+  const label = (txt, x, y, w, col) => { if (w < 18) return; tg.save(); tg.beginPath(); tg.rect(x, y - 10, w - 4, 20); tg.clip(); tg.fillStyle = col; tg.fillText(txt, x + 4, y); tg.restore(); };
+  tg.fillStyle = dim; tg.fillText('', 0, 0);
+  // intro shots
+  for (const s of SHOTS) {
+    const x0 = tx(s.t0), x1 = tx(s.t1), on = sel && sel.type === 'ishot' && sel.id === s.name, rep = doc.shots.some(m => m.replaces === s.name && !m.off);
+    tg.fillStyle = on ? '#5b4636' : raise; tg.fillRect(x0 + 1, 25, x1 - x0 - 2, 20);
+    label(s.name, x0, 35, x1 - x0, rep ? line : dim);
+  }
+  // my shots
+  for (const s of doc.shots) {
+    const x0 = tx(s.t0), x1 = tx(s.t1), on = sel && sel.type === 'shot' && sel.id === s.id;
+    tg.fillStyle = s.off ? raise : acc; tg.globalAlpha = on ? 1 : 0.55; tg.fillRect(x0 + 1, 50, x1 - x0 - 2, 28); tg.globalAlpha = 1;
+    if (on) { tg.strokeStyle = ink; tg.lineWidth = 1.5; tg.strokeRect(x0 + 1.5, 50.5, x1 - x0 - 3, 27); }
+    label(s.name + (s.scene === 'cic' ? ' · room' : ''), x0, 64, x1 - x0, '#1a1208');
+  }
+  // keys of what is selected
+  const x = selected();
+  if (x && x.keys && (sel.type === 'obj' || sel.type === 'shot')) {
+    x.keys.forEach((k, i) => { const kx = tx(k[0]); tg.fillStyle = i === selKey ? ink : sel.type === 'obj' ? blue : acc; tg.beginPath(); tg.moveTo(kx, 92); tg.lineTo(kx + 6, 102); tg.lineTo(kx, 112); tg.lineTo(kx - 6, 102); tg.fill(); });
+  }
+  tg.fillStyle = dim;
+  tg.fillText(x && sel.type === 'obj' ? `keys: ${x.label || x.id}` : x && sel.type === 'shot' ? `camera keys: ${x.name}` : 'keys: select a shot or object', 6, 118);
+  // my objects' spans
+  doc.objects.forEach((o, i) => {
+    if (!o.keys.length) return; const y = 128 + (i % 4) * 5;
+    tg.fillStyle = sel && sel.type === 'obj' && sel.id === o.id ? blue : line;
+    const a = o.show ? o.show[0] : o.keys[0][0], b = o.show ? o.show[1] : Math.max(o.keys[o.keys.length - 1][0], a + 0.2);
+    tg.fillRect(tx(a), y, Math.max(2, tx(b) - tx(a)), 3);
+  });
+  // playhead
+  const px = tx(T); tg.fillStyle = '#ff5a48'; tg.fillRect(Math.round(px) - 1, 0, 2, H);
+  tg.beginPath(); tg.moveTo(px - 6, 0); tg.lineTo(px + 6, 0); tg.lineTo(px, 8); tg.fill();
+}
+function laneAt(y) { for (const [k, [a, b]] of Object.entries(LANES)) if (y >= a && y < b) return k; return null; }
+tlc.addEventListener('pointerdown', e => {
+  const r = tlc.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, t = xt(x), lane = laneAt(y);
+  tlc.setPointerCapture(e.pointerId);
+  const sx = selected();
+  if (lane === 'keys' && sx && sx.keys && (sel.type === 'obj' || sel.type === 'shot')) {
+    const i = sx.keys.findIndex(k => Math.abs(tx(k[0]) - x) < 7);
+    if (i >= 0) { selKey = i; seek(sx.keys[i][0]); tdrag = { kind: 'key', i, x0: x, moved: false }; drawTimeline(); return; }
+  }
+  if (lane === 'mine') {
+    const s = [...doc.shots].reverse().find(s => x >= tx(s.t0) - 4 && x <= tx(s.t1) + 4);
+    if (s) {
+      const edge = Math.abs(x - tx(s.t0)) < 6 ? 't0' : Math.abs(x - tx(s.t1)) < 6 ? 't1' : 'body';
+      if (!sel || sel.id !== s.id) select({ type: 'shot', id: s.id });
+      tdrag = { kind: 'shot', s, edge, t: t, a: s.t0, b: s.t1, keys: s.keys.map(k => k[0]) }; return;
+    }
+  }
+  if (lane === 'intro') { const s = SHOTS.find(s => t >= s.t0 && t < s.t1); if (s) select({ type: 'ishot', id: s.name }); }
+  seek(t); tdrag = { kind: 'scrub' };
+});
+tlc.addEventListener('pointermove', e => {
+  const r = tlc.getBoundingClientRect(), x = e.clientX - r.left, t = clamp(xt(x), 0, DUR);
+  if (!tdrag) { const y = e.clientY - r.top; tlc.style.cursor = laneAt(y) === 'mine' && doc.shots.some(s => Math.abs(x - tx(s.t0)) < 6 || Math.abs(x - tx(s.t1)) < 6) ? 'ew-resize' : 'default'; return; }
+  if (tdrag.kind === 'scrub') seek(t);
+  else if (tdrag.kind === 'key') {
+    const x2 = selected(); if (!x2) return; if (!tdrag.moved && Math.abs(x - tdrag.x0) < 3) return; tdrag.moved = true;
+    const k = x2.keys[tdrag.i], lo = tdrag.i > 0 ? x2.keys[tdrag.i - 1][0] + EPS : 0, hi = tdrag.i < x2.keys.length - 1 ? x2.keys[tdrag.i + 1][0] - EPS : DUR;
+    k[0] = r3(clamp(t, lo, hi)); T = k[0]; x2.keys = x2.keys.slice(); drawTimeline();
+  } else if (tdrag.kind === 'shot') {
+    const s = tdrag.s, d = t - tdrag.t;
+    if (tdrag.edge === 't0') s.t0 = r3(clamp(tdrag.a + d, 0, s.t1 - 0.2));
+    else if (tdrag.edge === 't1') s.t1 = r3(clamp(tdrag.b + d, s.t0 + 0.2, DUR));
+    else { const dd = clamp(d, -tdrag.a, DUR - tdrag.b); s.t0 = r3(tdrag.a + dd); s.t1 = r3(tdrag.b + dd); s.keys.forEach((k, i) => k[0] = r3(tdrag.keys[i] + dd)); s.keys = s.keys.slice(); }
+    drawTimeline();
+  }
+});
+tlc.addEventListener('pointerup', () => { if (tdrag && tdrag.kind !== 'scrub') { changed(); updatePaths(); } tdrag = null; });
+tlc.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = tlc.getBoundingClientRect(), t = xt(e.clientX - r.left), span = tv1 - tv0;
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey) { const d = (e.shiftKey ? e.deltaY : e.deltaX) / tlc.clientWidth * span; tv0 = clamp(tv0 + d, 0, DUR - span); tv1 = tv0 + span; }
+  else { const k = Math.exp(e.deltaY * 0.002), ns = clamp(span * k, 3, DUR); tv0 = clamp(t - (t - tv0) * ns / span, 0, DUR - ns); tv1 = tv0 + ns; }
+  drawTimeline();
+}, { passive: false });
+
+// ---------------------------------------------------------------- panels
+const el = (tag, attrs = {}, ...kids) => { const n = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) { if (k === 'on') for (const [ev, fn] of Object.entries(v)) n.addEventListener(ev, fn); else if (k in n && k !== 'list') n[k] = v; else n.setAttribute(k, v); } for (const c of kids) n.append(c); return n; };
+function renderLists() {
+  const L = (id, items) => { const box = document.getElementById(id); box.replaceChildren(...items); };
+  L('lShots', doc.shots.length ? doc.shots.slice().sort((a, b) => a.t0 - b.t0).map(s => el('div', { className: 'item' + (sel && sel.type === 'shot' && sel.id === s.id ? ' sel' : '') + (s.off ? ' off' : ''), on: { click: () => { select({ type: 'shot', id: s.id }); seek(Math.max(s.t0, Math.min(T, s.t1 - 0.01))); } } },
+    el('span', { className: 'dot', style: 'background: var(--accent)' }), el('span', { className: 'nm', textContent: s.name }), el('span', { className: 'meta', textContent: s.t0.toFixed(1) }))) : [el('div', { className: 'hint', textContent: 'None yet. Fly the camera to a spot and press “New shot here”, or copy one of the intro shots below.' })]);
+  L('lObjs', doc.objects.length ? doc.objects.map(o => el('div', { className: 'item' + (sel && sel.type === 'obj' && sel.id === o.id ? ' sel' : ''), on: { click: () => select({ type: 'obj', id: o.id }) } },
+    el('span', { className: 'dot', style: 'background: var(--blue)' }), el('span', { className: 'nm', textContent: o.label || o.id }), el('span', { className: 'meta', textContent: o.keys.length + 'k' }))) : [el('div', { className: 'hint', textContent: 'None yet. Pick a model above and press Add.' })]);
+  L('lIShots', SHOTS.map(s => el('div', { className: 'item' + (sel && sel.type === 'ishot' && sel.id === s.name ? ' sel' : ''), on: { click: () => { select({ type: 'ishot', id: s.name }); seek(Math.max(s.t0, Math.min(T, s.t1 - 0.01))); } } },
+    el('span', { className: 'nm', textContent: s.name }), el('span', { className: 'meta', textContent: s.t0.toFixed(1) }))));
+  L('lCast', INTRO.actors.filter(a => a.kind !== 'missile').map(a => {
+    const off = doc.hidden.includes(a.id);
+    return el('div', { className: 'item' + (off ? ' off' : '') + (sel && sel.type === 'intro' && sel.id === a.id ? ' sel' : ''), on: { click: () => select({ type: 'intro', id: a.id }) } },
+      el('span', { className: 'dot', style: `background: ${a.team ? 'var(--red)' : 'var(--dim)'}` }), el('span', { className: 'nm', textContent: a.callsign ? `${a.callsign}` : a.id }),
+      el('button', { className: 'eye', title: off ? 'Show it' : 'Hide it', textContent: off ? '○' : '●', on: { click: e => { e.stopPropagation(); doc.hidden = off ? doc.hidden.filter(h => h !== a.id) : doc.hidden.concat(a.id); applyHidden(); changed(); } } }));
+  }));
+}
+function num(id, label, val, step, fn) {
+  return el('div', {}, el('label', { htmlFor: id, textContent: label }), el('input', { id, type: 'number', step, value: (+val).toFixed(step < 1 ? 2 : 0), on: { change: e => fn(+e.target.value) } }));
+}
+function renderInspector(soft) {
+  const box = document.getElementById('insp');
+  if (soft && box.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  const x = selected(), kids = [];
+  if (!sel || !x) {
+    kids.push(el('h2', { textContent: 'How it works' }), el('div', { className: 'hint', innerHTML:
+      '<p><b>Fly</b>: drag to look, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move, <kbd>E</kbd>/<kbd>Q</kbd> up and down, <kbd>Shift</kbd> faster, wheel forward and back, Ctrl+wheel or <kbd>[</kbd> <kbd>]</kbd> to zoom the lens, <kbd>Z</kbd>/<kbd>C</kbd> to roll, middle-drag or Shift+drag to pan.</p>' +
+      '<p><b>Objects</b>: add one, then drag its arrows (<kbd>G</kbd> move, <kbd>T</kbd> turn, <kbd>L</kbd> world or own axes). Each move keys it at the playhead. Alt+drag orbits it, <kbd>O</kbd> flies to it.</p>' +
+      '<p><b>Shots</b>: <kbd>N</kbd> makes a shot here. Move the playhead, frame it again and press <kbd>K</kbd> to key the camera. <kbd>2</kbd> looks through the shot, <kbd>3</kbd> plays the film, <kbd>1</kbd> frees the camera.</p>' +
+      '<p><b>Timeline</b>: drag to scrub, wheel to zoom, Shift+wheel to scroll. Drag shot blocks and their edges; drag key diamonds; <kbd>Delete</kbd> removes the key at the playhead, Shift+<kbd>Delete</kbd> the whole shot or object. <kbd>Space</kbd> plays.</p>' +
+      '<p>Your work is kept in this browser. When it is ready, press <b>Send to Claude</b>.</p>' }));
+  } else if (sel.type === 'obj') {
+    const P = minePose(x, T) || poseFromAngles([0, 0, 0], 0, 0, 0), L = x.attach === 'carrier' ? relative(carrierFrame(T), P) : P, [y, p, r] = anglesOf(L);
+    const setPart = (i, v) => { const a = [L.p[0], L.p[1], L.p[2], y, p, r]; a[i] = v; let Q = poseFromAngles(a.slice(0, 3), a[3], a[4], a[5]); if (x.attach === 'carrier') Q = compose(carrierFrame(T), Q); keyObjectNow(x, Q); };
+    kids.push(el('h2', { textContent: 'Object' }),
+      el('div', { className: 'field' }, el('label', { htmlFor: 'oName', textContent: 'Name' }), el('input', { id: 'oName', type: 'text', value: x.label || x.id, on: { change: e => { x.label = e.target.value; changed(); } } })),
+      el('div', { className: 'field' }, el('label', { htmlFor: 'oModel', textContent: 'Model' }), modelSelect('oModel', x.model, v => { x.model = v; changed(); })),
+      el('div', { className: 'hint', textContent: x.attach === 'carrier' ? 'Carried by the carrier: metres from her centre, x starboard, z toward the bow, heading from her bow.' : x.scene === 'cic' ? 'In the control room: metres in the room.' : 'World metres: x east, y up, z north. Heading 0 is north.' }),
+      el('div', { className: 'grid3' }, num('oX', 'x', L.p[0], 0.1, v => setPart(0, v)), num('oY', 'y (up)', L.p[1], 0.1, v => setPart(1, v)), num('oZ', 'z', L.p[2], 0.1, v => setPart(2, v)),
+        num('oYaw', 'heading', y, 1, v => setPart(3, v)), num('oPitch', 'pitch', p, 1, v => setPart(4, v)), num('oRoll', 'bank', r, 1, v => setPart(5, v))),
+      x.scene !== 'cic' ? el('label', { className: 'row' }, el('input', { id: 'oAttach', type: 'checkbox', checked: x.attach === 'carrier', on: { change: e => reattach(x, e.target.checked) } }), 'Rides on the carrier') : '',
+      MODELS[x.model] && MODELS[x.model].jersey ? el('div', { className: 'row' }, el('label', { htmlFor: 'oJersey', textContent: 'Jersey' }), el('input', { id: 'oJersey', type: 'color', value: x.jersey || '#f0cf2e', on: { change: e => { x.jersey = e.target.value; changed(); } } })) : '',
+      el('div', { className: 'row' }, el('label', { className: 'row' }, el('input', { id: 'oShow', type: 'checkbox', checked: !!x.show, on: { change: e => { x.show = e.target.checked ? [r3(Math.min(T, x.keys[0][0])), r3(Math.max(T, x.keys[x.keys.length - 1][0]))] : undefined; changed(); } } }), 'Only visible from'),
+        x.show ? num('oS0', '', x.show[0], 0.1, v => { x.show[0] = v; changed(); }) : '', x.show ? num('oS1', 'to', x.show[1], 0.1, v => { x.show[1] = v; changed(); }) : ''),
+      el('div', { className: 'keys', textContent: `${x.keys.length} key${x.keys.length === 1 ? '' : 's'}: ` + x.keys.map(k => k[0].toFixed(2)).join('  ') }),
+      el('div', { className: 'row' }, el('button', { textContent: 'Key now (K)', on: { click: keyNow } }), el('button', { textContent: 'Delete key', on: { click: deleteKey } }), el('button', { textContent: 'Fly to it (O)', on: { click: focusSel } })),
+      el('div', { className: 'row' }, el('button', { textContent: 'Duplicate', on: { click: () => { const c = JSON.parse(JSON.stringify(cleanDoc().objects.find(o => o.id === x.id))); c.id = newId(x.model.replace('cic_', '')); c.label = (x.label || x.id) + ' copy'; c.keys.forEach(k => k[1] += 15); delete c.replaces; doc.objects.push(c); select({ type: 'obj', id: c.id }); changed(); } } }),
+        el('button', { textContent: 'Delete object', on: { click: deleteSel } })),
+      x.replaces ? el('div', { className: 'hint', textContent: `Replaces the intro's ${x.replaces}.` }) : '');
+  } else if (sel.type === 'shot') {
+    const actors = [['', 'Nothing: a free camera']].concat(doc.objects.filter(o => (o.scene || 'world') === 'world').map(o => [o.id, (o.label || o.id) + ' (mine)']), INTRO.actors.filter(a => a.kind === 'jet' || a.kind === 'ship' || a.kind === 'missile').map(a => [a.id, a.callsign || a.id]));
+    const k = x.keys.find(k => Math.abs(k[0] - T) < EPS);
+    kids.push(el('h2', { textContent: 'Shot' }),
+      el('div', { className: 'field' }, el('label', { htmlFor: 'sName', textContent: 'Name' }), el('input', { id: 'sName', type: 'text', value: x.name, on: { change: e => { x.name = e.target.value; changed(); } } })),
+      el('div', { className: 'grid3' }, num('sT0', 'starts', x.t0, 0.01, v => { x.t0 = clamp(v, 0, x.t1 - 0.1); changed(); }), num('sT1', 'ends', x.t1, 0.01, v => { x.t1 = clamp(v, x.t0 + 0.1, DUR); changed(); }),
+        el('div', {}, el('label', { textContent: 'length' }), el('div', { className: 'keys', style: 'padding-top:5px', textContent: (x.t1 - x.t0).toFixed(2) + ' s' }))),
+      el('div', { className: 'field' }, el('label', { htmlFor: 'sDesc', textContent: 'What happens (for Claude)' }), el('textarea', { id: 'sDesc', value: x.desc || '', placeholder: 'e.g. Low over the water off the bow, the pair goes overhead and pulls up.', on: { change: e => { x.desc = e.target.value; changed(false); } } })),
+      el('div', { className: 'field' }, el('label', { htmlFor: 'sLens', textContent: `Lens ${Math.round(lensOf(cam.fov))} mm (field of view ${cam.fov.toFixed(1)}°)` }),
+        el('input', { id: 'sLens', type: 'range', min: 0, max: 1, step: 0.001, value: Math.log(lensOf(cam.fov) / 10) / Math.log(60), on: { input: e => { pilot(); cam.fov = fovOf(10 * Math.pow(60, +e.target.value)); e.target.previousSibling.textContent = `Lens ${Math.round(lensOf(cam.fov))} mm (field of view ${cam.fov.toFixed(1)}°)`; }, change: () => { if (view === 'shot') keyShotNow(x); } } }),
+        el('div', { className: 'hint', textContent: view === 'shot' ? 'Changing the lens keys the camera.' : 'Look through the shot (2) to set its lens.' })),
+      el('div', { className: 'field' }, el('label', { htmlFor: 'sAttach', textContent: 'Camera bolted to' }), el('select', { id: 'sAttach', on: { change: e => reattachShot(x, e.target.value || null) } }, ...actors.map(([v, n]) => el('option', { value: v, textContent: n, selected: (x.attach || '') === v })))),
+      el('div', { className: 'row' }, el('label', { htmlFor: 'sIn', textContent: 'Starts with' }), el('select', { id: 'sIn', on: { change: e => { x.in = { type: e.target.value, dur: (x.in && x.in.dur) || 0.5, dir: 1 }; changed(); } } }, ...[['cut', 'a cut'], ['dissolve', 'a dissolve'], ['whip', 'a whip pan']].map(([v, n]) => el('option', { value: v, textContent: n, selected: ((x.in && x.in.type) || 'cut') === v }))),
+        x.in && x.in.type !== 'cut' ? num('sInDur', '', x.in.dur, 0.05, v => { x.in.dur = clamp(v, 0.05, 3); changed(); }) : ''),
+      el('div', { className: 'row' }, el('label', { htmlFor: 'sScene', textContent: 'Where' }), el('select', { id: 'sScene', on: { change: e => { x.scene = e.target.value; changed(); } } }, ...[['world', 'at sea'], ['cic', 'the control room']].map(([v, n]) => el('option', { value: v, textContent: n, selected: (x.scene || 'world') === v })))),
+      el('div', { className: 'keys', textContent: `${x.keys.length} camera key${x.keys.length === 1 ? '' : 's'}${k ? ' · one at the playhead' : ''}` }),
+      el('div', { className: 'row' }, el('button', { className: view === 'shot' ? '' : 'primary', textContent: 'Look through it (2)', on: { click: () => setView('shot') } }), el('button', { textContent: 'Key camera (K)', on: { click: () => keyShotNow(x) } }), el('button', { textContent: 'Delete key', on: { click: deleteKey } })),
+      el('div', { className: 'row' }, el('label', { className: 'row' }, el('input', { id: 'sOff', type: 'checkbox', checked: !!x.off, on: { change: e => { x.off = e.target.checked; changed(); } } }), 'Leave out of the film'), el('button', { textContent: 'Delete shot', on: { click: deleteSel } })),
+      x.replaces ? el('div', { className: 'hint', textContent: `Replaces the intro's “${x.replaces}” in the film.` }) : '');
+  } else if (sel.type === 'ishot') {
+    kids.push(el('h2', { textContent: 'Intro shot' }), el('div', { textContent: x.name, style: 'font-weight:600' }),
+      el('div', { className: 'keys', textContent: `${x.t0.toFixed(2)} to ${x.t1.toFixed(2)} s · ${x.lens || Math.round(lensOf(x.cam[0][7]))} mm${x.rig ? ' · ' + x.rig : ''}` }),
+      el('div', { className: 'hint', textContent: x.desc || '' }),
+      el('div', { className: 'row' }, el('button', { textContent: 'Look through it', on: { click: () => setView('shot') } }), el('button', { className: 'primary', textContent: 'Copy as my shot', on: { click: () => copyIntroShot(x) } })),
+      el('div', { className: 'hint', textContent: 'A copy has camera keys every quarter second that you can move, delete or add to. The film then plays your take instead of this one.' }));
+  } else if (sel.type === 'intro') {
+    const m = MODELS[x.kind === 'crew' ? 'crew' : x.model];
+    kids.push(el('h2', { textContent: 'In the intro' }), el('div', { textContent: x.callsign || x.id, style: 'font-weight:600' }),
+      el('div', { className: 'keys', textContent: (m ? m.label : x.kind) + (x.keys && x.keys.length > 1 ? ` · ${x.keys.length} keys` : '') }),
+      el('div', { className: 'row' }, el('button', { className: 'primary', textContent: 'Make my own copy', on: { click: () => copyIntroActor(x) } }), el('button', { textContent: 'Fly to it (O)', on: { click: focusSel } })),
+      el('div', { className: 'hint', textContent: 'The intro\'s own cast cannot be moved here. Your copy can, and the intro\'s one is hidden while the copy exists.' }));
+  }
+  box.replaceChildren(...kids.filter(Boolean));
+}
+function reattach(o, on) {
+  // keep the object where it is, in the new frame, at every key
+  o.keys = o.keys.map(k => {
+    const L = poseFromAngles([k[1], k[2], k[3]], k[4], k[5], k[6]), C = carrierFrame(k[0]);
+    const P = on ? relative(C, L) : compose(C, L), [y, p, r] = anglesOf(P);
+    return [k[0], r2(P.p[0]), r2(P.p[1]), r2(P.p[2]), r2(y), r2(p), r2(r)];
+  });
+  o.attach = on ? 'carrier' : undefined; changed();
+}
+function reattachShot(s, id) {
+  s.keys = s.keys.map(k => {
+    let P = poseFromAngles([k[1], k[2], k[3]], k[4], k[5], k[6]);
+    if (s.attach) { const A = actorPoseById(s.attach, k[0]); if (A) P = compose(A, P); }
+    if (id) { const A = actorPoseById(id, k[0]); if (A) P = relative(A, P); }
+    const [y, p, r] = anglesOf(P); return [k[0], r2(P.p[0]), r2(P.p[1]), r2(P.p[2]), r2(y), r2(p), r2(r), k[7]];
+  });
+  s.attach = id || undefined; changed();
+}
+function modelSelect(id, val, fn) {
+  const order = ['nf24', 'ks55', 'dr7', 'ja46', 'lf27', 'sy26', 'cvn90', 'frigate', 'missile', 'crew', 'cic_operator', 'cic_supervisor', 'cic_commander'];
+  return el('select', { id, on: { change: e => fn(e.target.value) } }, ...order.filter(k => MODELS[k]).map(k => el('option', { value: k, textContent: MODELS[k].label, selected: k === val })));
+}
+
+// ---------------------------------------------------------------- bar buttons
+let claudeDb = null, claudeDl = null, snapWanted = false;
+// Claude's drafts (db drafts/latest): shots and objects to add to this storyboard, each replacing one with its id
+function addDraft(d) {
+  for (const s of d.shots || []) { doc.shots = doc.shots.filter(x => x.id !== s.id); doc.shots.push(JSON.parse(JSON.stringify(s))); }
+  for (const o of d.objects || []) { doc.objects = doc.objects.filter(x => x.id !== o.id); doc.objects.push(JSON.parse(JSON.stringify(o))); }
+  changed();
+  const first = (d.shots || [])[0];
+  if (first) { select({ type: 'shot', id: first.id }); seek(first.t0); setView('film'); }
+  toast(`Added ${(d.shots || []).length} shot${(d.shots || []).length === 1 ? '' : 's'} from Claude. Press Space to play.`);
+}
+function showDraft(row) {
+  let d; try { d = JSON.parse(row.json); } catch (e) { return; }
+  document.getElementById('fromClaude').hidden = false;
+  document.getElementById('lDraft').replaceChildren(
+    el('div', { className: 'hint', textContent: d.title || 'A draft' }),
+    el('div', { className: 'keys', textContent: (d.shots || []).map(s => `${s.name} ${s.t0.toFixed(1)}–${s.t1.toFixed(1)}`).join(' · ') }),
+    el('div', { className: 'row' }, el('button', { className: 'primary', textContent: 'Add to my storyboard', on: { click: () => addDraft(d) } })));
+}
+// a picture of the viewport (taken right after the render, before the buffer clears) and the camera that made it
+async function sendView(scene) {
+  const src = renderer.domElement, w = Math.min(960, src.width), h = Math.round(w * src.height / src.width);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.drawImage(src, 0, 0, w, h);
+  if (view !== 'free') { const bh = Math.max(0, (h - w / 2.35) / 2); g.fillStyle = 'rgba(0,0,0,0.82)'; g.fillRect(0, 0, w, bh); g.fillRect(0, h - bh, w, bh); }
+  let image = c.toDataURL('image/jpeg', 0.8);
+  if (image.length > 150000) image = c.toDataURL('image/jpeg', 0.55);
+  const fs = view === 'film' ? filmShot(T) : null, x = selected();
+  const row = {
+    saved: new Date().toISOString(), t: r3(T), bar: r2(barOf(T) + 1), view, scene, piloting,
+    shot: view === 'film' ? (fs ? fs.name : '') : view === 'shot' && x ? (x.name || '') : '',
+    selected: sel ? sel.type + ':' + sel.id : '',
+    camera: { p: cam.p.map(r2), yaw: r2(cam.yaw), pitch: r2(cam.pitch), roll: r2(cam.roll), fov: r2(cam.fov), lens: Math.round(lensOf(cam.fov)) },
+    image
+  };
+  const story = JSON.stringify(cleanDoc());
+  if (story.length + image.length < 230000) row.storyboard = story;
+  if (!claudeDb) { toast('Claude cannot be reached from here. Use “Save file” instead.'); return; }
+  try {
+    await claudeDb.doc('views/latest').set(row);
+    await claudeDb.doc('views/v' + Date.now()).set(row);
+    toast('Claude can see this view now. Tell Claude in the thread.');
+  } catch (e) { toast(`Sending failed (${e && e.code || 'error'}).`); }
+}
+const toastEl = document.getElementById('toast'); let toastT = 0;
+function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), 3200); }
+document.getElementById('bPlay').onclick = togglePlay;
+document.getElementById('bStart').onclick = () => seek(0);
+document.getElementById('speed').onchange = e => { speed = +e.target.value; if (audio) audio.playbackRate = speed; };
+document.getElementById('vFree').onclick = () => setView('free');
+document.getElementById('vShot').onclick = () => setView('shot');
+document.getElementById('vFilm').onclick = () => setView('film');
+document.getElementById('vRoom').onclick = () => { freeScene = freeScene === 'cic' ? 'world' : 'cic'; document.getElementById('vRoom').classList.toggle('on', freeScene === 'cic'); setView('free'); };
+document.getElementById('bAdd').onclick = () => addObject(document.getElementById('addModel').value);
+document.getElementById('bShot').onclick = newShot;
+document.getElementById('addModel').replaceWith(modelSelect('addModel', 'nf24', () => { }));
+document.getElementById('music').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (audio) audio.pause();
+  audio = new Audio(URL.createObjectURL(f)); audio.preload = 'auto';
+  toast(`Music: ${f.name}. It plays from the playhead.`);
+};
+document.getElementById('bImport').onclick = () => document.getElementById('fImport').click();
+document.getElementById('fImport').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { loadDoc(JSON.parse(await f.text())); changed(); toast(`Opened ${f.name}`); } catch (err) { toast(err.message || 'That file could not be read.'); }
+  e.target.value = '';
+};
+document.getElementById('bExport').onclick = async () => {
+  const text = JSON.stringify(shotFile()), filename = 'tailon-lock-shots.json';
+  if (claudeDl) { try { await claudeDl.save({ filename, data: text }); toast('Saved ' + filename); return; } catch (e) { if (e && e.code === 'declined') return; } }
+  try {
+    if (window.top === window) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = filename; a.click(); toast('Saved ' + filename); return; }
+  } catch (e) { }
+  document.getElementById('exportText').value = JSON.stringify(shotFile(), null, 1); document.getElementById('export').hidden = false;
+};
+document.getElementById('bView').onclick = () => { snapWanted = true; };
+document.getElementById('bClose').onclick = () => { document.getElementById('export').hidden = true; };
+document.getElementById('bCopy').onclick = () => { const t = document.getElementById('exportText'); navigator.clipboard.writeText(t.value).then(() => toast('Copied'), () => { t.select(); toast('Selected: press Cmd+C'); }); };
+document.getElementById('bSend').onclick = async () => {
+  if (!doc.shots.length && !doc.objects.length) { toast('Nothing to send yet: make a shot or add an object first.'); return; }
+  const file = shotFile(), text = JSON.stringify(file);
+  if (!claudeDb) { document.getElementById('exportText').value = JSON.stringify(file, null, 1); document.getElementById('export').hidden = false; return; }
+  if (text.length > 240000) { toast('This storyboard is too big to send in one go. Use “Save file” and attach the file instead.'); return; }
+  try {
+    const row = { saved: file.saved, shots: file.shots.length, objects: file.actors.length, names: file.shots.map(s => s.name).join(', '), json: text };
+    await claudeDb.doc('storyboards/latest').set(row);
+    await claudeDb.doc('storyboards/s' + Date.now()).set(row);
+    toast(`Sent: ${row.shots} shot${row.shots === 1 ? '' : 's'}, ${row.objects} object${row.objects === 1 ? '' : 's'}. Tell Claude in the thread.`);
+  } catch (e) { toast(`Sending failed (${e && e.code || 'error'}). Use “Save file” instead.`); }
+};
+window.addEventListener('resize', () => { resize(); drawTimeline(); });
+function resize() {
+  const r = stage.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
+}
+
+// ---------------------------------------------------------------- start
+buildWorld(); buildRoom(); buildIntroCast();
+try { const s = localStorage.getItem(STORE); if (s) loadDoc(JSON.parse(s)); } catch (e) { }
+syncMine(); applyHidden(); renderLists(); renderInspector();
+document.getElementById('loading').remove();
+seek(9.6);
+resize(); drawTimeline();
+requestAnimationFrame(frame);
+(async () => {
+  if (!window.claude || !window.claude.use) return;
+  try { claudeDb = await window.claude.use('db'); } catch (e) { }
+  try { claudeDl = await window.claude.use('downloads'); } catch (e) { }
+  if (claudeDb) try { const snap = await claudeDb.doc('drafts/latest').get(); if (snap.exists) showDraft(snap.data()); } catch (e) { }
+})();
+window.SB = { addDraft, showDraft, get doc() { return doc; }, shotFile, seek, setView, select, addObject, newShot, copyIntroShot, copyIntroActor, SHOTS, get T() { return T; }, cam: () => cam, keyNow };
+</script>

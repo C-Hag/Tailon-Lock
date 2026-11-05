@@ -1,0 +1,46 @@
+# engine-afterburner: afterburner roar: crackling noise, open filter, throbbing low pulse
+a4c-sfx 1
+play loop 192
+volume f
+wave mutew
+  08 +0
+  00 +0
+  end
+instrument mute ad=00 sr=00 wave=mutew
+wave roarw
+  81 =2e
+  81 =36
+  81 =31
+  81 =3a
+  81 =2c
+  81 =34
+  loop 0
+wave hissw
+  81 =4e
+  81 =4b
+  loop 0
+wave lowp
+  41 +0
+  end
+pulse fastp
+  set 300 01
+  add 040 0c
+  add -040 0c
+  loop 1
+filter roarf
+  set lp 5c0 3 1
+  add 020 10
+  add -020 10
+  loop 1
+instrument roar ad=60 sr=f0 wave=roarw filter=roarf flags=filteron
+instrument hiss ad=80 sr=70 wave=hissw
+instrument low ad=60 sr=d0 wave=lowp pulse=fastp
+track 1
+  C-4:roar + + + + + + + + + + + + + + +
+  @loop + + + + + + + + + + + + + + + +
+track 2
+  C-4:hiss + + + + + + + + + + + + + + +
+  @loop + + + + + + + + + + + + + + + +
+track 3
+  A-1:low + + + + + + + + + + + + + + +
+  @loop + + + + + + + + + + + + + + + +

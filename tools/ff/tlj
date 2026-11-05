@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""tools/ff/tlj - the floppy forge's binary JSON (TLJ): the same document, values bit for bit, in a form our packer
+(TLPK) takes much smaller than the text: every string once in a dictionary, numbers as whole numbers with a power of
+ten, and arrays of numbers (and arrays of equal-length rows of numbers) stored column by column, each column as it
+is or as the steps from one value to the next, whichever is shorter. src/ff/tlj.c turns it back into JSON text for
+the game's own parser, so the game builds the very same tree. Original code for this project; Python 3.8+ standard
+library only.
+
+usage: tools/ff/tlj enc IN.json OUT.tlj [--js OPEN CLOSE]    (--js: the JSON between the first OPEN and the last
+                                                              CLOSE of a .js file, as the game reads it)
+       tools/ff/tlj check IN OUT.tlj [--js OPEN CLOSE]       decode with the C decoder, parse, compare every value
+
+Lossless by construction: a number becomes a mantissa m and k decimals only when m / 10^k, rounded as IEEE doubles
+round, gives back exactly the same double (the game reads numbers with strtod, correctly rounded, so the text
+"m with k decimals" parses to the same double); anything else (-0, exponents beyond 17 digits, huge values) is
+kept as its 8 bytes.
+
+The format, all integers as LEB128 varints (signed ones zigzagged):
+  "TLJ1", the dictionary (n, then n strings: length, UTF-8 bytes; the most used first), then one value:
+  0 null, 1 false, 2 true, 3 int (signed), 4 decimal (k, signed m), 5 double (8 bytes, little-endian),
+  6 string (dictionary index), 7 array (n, values), 8 object (n, then key index and value each),
+  9 number array (n, a column), 10 table: n rows of r numbers each (n, r, then r columns),
+  a column: k (its decimals), mode (0 the values, 1 the steps), then n signed integers."""
+import json
+import math
+import os
+import struct
+import subprocess
+import sys
+from collections import Counter
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DEC = os.path.join(ROOT, 'build', 'ff', 'tlj_dec')
+
+
+def uvar(n):
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            return bytes(out)
+
+
+def svar(n):
+    return uvar((n << 1) ^ (n >> 63) if n >= 0 else ((-n - 1) << 1) | 1)
+
+
+def is_num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def dec_of(v):
+    """(k, m) with m / 10^k == v exactly, k as small as it can be; None when there is none"""
+    if isinstance(v, int):
+        return (0, v) if abs(v) < 2 ** 53 else None
+    if math.isnan(v) or math.isinf(v) or (v == 0 and math.copysign(1, v) < 0):
+        return None
+    for k in range(18):
+        m = round(v * 10 ** k)
+        if abs(m) >= 2 ** 53:
+            return None
+        if m / 10 ** k == v:
+            return (k, m)
+    return None
+
+
+def column(vals):
+    """a column of numbers, or None when one of them is not a plain decimal"""
+    ds = [dec_of(v) for v in vals]
+    if any(d is None for d in ds):
+        return None
+    k = max(d[0] for d in ds)
+    ms = [d[1] * 10 ** (k - d[0]) for d in ds]
+    if any(abs(m) >= 2 ** 53 for m in ms) or any(m / 10 ** k != v for m, v in zip(ms, vals)):
+        return None
+    plain = b''.join(svar(m) for m in ms)
+    steps = b''.join(svar(m - (ms[i - 1] if i else 0)) for i, m in enumerate(ms))
+    return bytes([k]) + (b'\x01' + steps if len(steps) < len(plain) else b'\x00' + plain)
+
+
+def strings(v, c):
+    if isinstance(v, str):
+        c[v] += 1
+    elif isinstance(v, list):
+        for x in v:
+            strings(x, c)
+    elif isinstance(v, dict):
+        for k, x in v.items():
+            c[k] += 1
+            strings(x, c)
+
+
+def value(v, idx):
+    if v is None:
+        return b'\x00'
+    if v is False:
+        return b'\x01'
+    if v is True:
+        return b'\x02'
+    if is_num(v):
+        d = dec_of(v)
+        if d is None:
+            return b'\x05' + struct.pack('<d', float(v))
+        if d[0] == 0:
+            return b'\x03' + svar(d[1])
+        return b'\x04' + bytes([d[0]]) + svar(d[1])
+    if isinstance(v, str):
+        return b'\x06' + uvar(idx[v])
+    if isinstance(v, list):
+        if len(v) >= 4 and all(is_num(x) for x in v):
+            c = column(v)
+            if c is not None:
+                return b'\x09' + uvar(len(v)) + c
+        if len(v) >= 2 and all(isinstance(x, list) and x and all(is_num(y) for y in x) for x in v) and \
+                len({len(x) for x in v}) == 1:
+            r = len(v[0])
+            cols = [column([x[j] for x in v]) for j in range(r)]
+            if all(c is not None for c in cols):
+                return b'\x0a' + uvar(len(v)) + uvar(r) + b''.join(cols)
+        return b'\x07' + uvar(len(v)) + b''.join(value(x, idx) for x in v)
+    if isinstance(v, dict):
+        return b'\x08' + uvar(len(v)) + b''.join(uvar(idx[k]) + value(x, idx) for k, x in v.items())
+    raise ValueError('not JSON: %r' % (v,))
+
+
+def read_json(path, js):
+    t = open(path, encoding='utf-8').read()
+    if js:
+        t = t[t.index(js[0]):t.rindex(js[1]) + 1]
+    return json.loads(t)
+
+
+def encode(doc):
+    c = Counter()
+    strings(doc, c)
+    order = [s for s, _ in sorted(c.items(), key=lambda kv: (-kv[1], kv[0]))]
+    idx = {s: i for i, s in enumerate(order)}
+    head = b'TLJ1' + uvar(len(order)) + b''.join(uvar(len(s.encode('utf-8'))) + s.encode('utf-8') for s in order)
+    return head + value(doc, idx)
+
+
+def same(a, b):
+    """equal as the game would see them: the same types, the same doubles to the bit, the same key order"""
+    if is_num(a) and is_num(b):
+        return struct.pack('<d', float(a)) == struct.pack('<d', float(b))
+    if type(a) != type(b):
+        return False
+    if isinstance(a, list):
+        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+    if isinstance(a, dict):
+        return list(a.keys()) == list(b.keys()) and all(same(a[k], b[k]) for k in a)
+    return a == b
+
+
+def build_decoder():
+    src = [os.path.join(ROOT, 'src', 'ff', 'tlj.c'), os.path.join(ROOT, 'tools', 'ff', 'tlj_dec.c')]
+    if not os.path.isfile(DEC) or any(os.path.getmtime(DEC) < os.path.getmtime(s) for s in src):
+        os.makedirs(os.path.dirname(DEC), exist_ok=True)
+        subprocess.run(['cc', '-O2', '-std=c99', '-Wall', '-Wextra', '-Werror', '-I', os.path.join(ROOT, 'src'), '-o', DEC]
+                       + src, check=True)
+
+
+def main():
+    a = sys.argv[1:]
+    js = None
+    if '--js' in a:
+        i = a.index('--js')
+        js = (a[i + 1], a[i + 2])
+        del a[i:i + 3]
+    if len(a) != 3 or a[0] not in ('enc', 'check'):
+        sys.exit(__doc__)
+    doc = read_json(a[1], js)
+    if a[0] == 'enc':
+        out = encode(doc)
+        open(a[2], 'wb').write(out)
+        print('%s: %d -> %d bytes' % (a[1], os.path.getsize(a[1]), len(out)))
+        return
+    build_decoder()
+    text = subprocess.run([DEC, a[2]], capture_output=True, check=True).stdout.decode('utf-8')
+    back = json.loads(text)
+    ok = same(doc, back)
+    print('%s %s' % ('same' if ok else 'DIFFERENT', a[1]))
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == '__main__':
+    main()

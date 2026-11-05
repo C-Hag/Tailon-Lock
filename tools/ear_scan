@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""tools/ear_scan - renders every theme of the soundtrack with the game's own synth and player, and runs the
+ear check (tests/ear_check.c) on each one. Original code for this project.
+
+usage: tools/ear_scan BUILD_DIR [--cal DB] [--only KEY[,KEY...]] [--secs S] [EXTRA.wav ...]
+  BUILD_DIR  a build with tailonlock and ear_check in it
+  --cal      the listening level for the ear check (dB SPL of a full-scale sine, default 95)
+  --only     just these theme keys (the keys are in src/music.c)
+  --secs     how long a theme is rendered through the player (default 300: the main theme comes round its
+             loop twice)
+  EXTRA.wav  more files to check (older renders, a stem, a sound effect)
+
+Each score is checked one pass as --render-music plays it; a song that loops inside itself ("loop_end" in its file:
+the main theme) also --secs through the player round its loop (so the seam is in the file) and as the whole song. The recordings in assets/music are checked as they are too, with their loop seams, and so is every sound effect
+the game makes, each over the Full Burn chorus at its in-game level and the default volume (--render-sfx). Everything goes to
+build/ear/: the renders, report.txt (the full report) and summary.tsv (one line a song). Exits 1 if anything
+failed to render or read, 2 if a song has a HURT finding."""
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def theme_keys():
+    src = open(os.path.join(ROOT, 'src', 'music.c')).read()
+    block = src[src.index('const Theme THEMES'):]
+    block = block[:block.index('};')]
+    return re.findall(r'\{\s*"([a-z0-9-]+)",\s*"', block)
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0].startswith('-'):
+        print(__doc__)
+        return 1
+    bdir, args = args[0], args[1:]
+    cal, only, secs, extra = '95', None, 300, []
+    while args:
+        a = args.pop(0)
+        if a == '--cal':
+            cal = args.pop(0)
+        elif a == '--only':
+            only = args.pop(0).split(',')
+        elif a == '--secs':
+            secs = int(args.pop(0))
+        else:
+            extra.append(a)
+    game, ear = os.path.join(bdir, 'tailonlock'), os.path.join(bdir, 'ear_check')
+    out = os.path.join(ROOT, 'build', 'ear')
+    os.makedirs(out, exist_ok=True)
+    summary, report = os.path.join(out, 'summary.tsv'), os.path.join(out, 'report.txt')
+    for p in (summary, report):
+        if os.path.exists(p):
+            os.remove(p)
+    tmp = tempfile.mkdtemp(prefix='ear-cfg-')
+    env = dict(os.environ, XDG_CONFIG_HOME=tmp, HOME=tmp, A4C_VIDEO='offscreen', A4C_AUDIO='dummy', A4C_MUSIC_S=str(secs))
+    worst = 0
+    jobs = []  # (name, wav, extra ear_check arguments)
+    for key in theme_keys():
+        if only and key not in only:
+            continue
+        wav = os.path.join(out, key + '.wav')
+        print('render', key, flush=True)
+        r = subprocess.run([game, '--render-music', key, wav], env=env, capture_output=True, text=True, timeout=1800)
+        if r.returncode or not os.path.exists(wav):
+            print('  render failed:', (r.stdout + r.stderr).strip()[-400:])
+            worst = max(worst, 1)
+            continue
+        jobs.append(('theme ' + key, wav, []))
+        score = os.path.join(ROOT, 'assets', 'music', key + '.json')
+        if not os.path.exists(score):
+            continue
+        with open(score) as f:
+            head = f.read(400)
+        ways = []
+        if '"loop_end"' in head:
+            ways = [('through the player, %d s' % secs, '-loop', dict(A4C_MUSIC_LOOP=str(secs))),
+                    ('whole song', '-full', dict(A4C_MUSIC_FULL='1'))]
+        for what, tag, more in ways:
+            w2 = os.path.join(out, key + tag + '.wav')
+            print('render', key, '(%s)' % what, flush=True)
+            r = subprocess.run([game, '--render-music', key, w2], env=dict(env, **more), capture_output=True, text=True,
+                               timeout=1800)
+            if r.returncode or not os.path.exists(w2):
+                print('  render failed:', (r.stdout + r.stderr).strip()[-400:])
+                worst = max(worst, 1)
+                continue
+            jobs.append(('theme %s (%s)' % (key, what), w2, []))
+    if not only:
+        print('render the sound effects', flush=True)
+        r = subprocess.run([game, '--render-sfx', out], env=env, capture_output=True, text=True, timeout=600)
+        if r.returncode:
+            print('  render failed:', (r.stdout + r.stderr).strip()[-400:])
+            worst = max(worst, 1)
+        for f in sorted(os.listdir(out)):
+            if f.startswith('sfx-') and f.endswith('.wav'):
+                jobs.append(('effect ' + f[4:-4], os.path.join(out, f), []))
+    music = os.path.join(ROOT, 'assets', 'music')
+    for f in sorted(os.listdir(music)):
+        if not f.endswith('.wav') or (only and f[:-4] not in only):
+            continue
+        loop = os.path.join(music, f[:-4] + '.loop')
+        jobs.append(('recording ' + f, os.path.join(music, f), ['--loopfile', loop] if os.path.exists(loop) else []))
+    for f in extra:
+        jobs.append((os.path.basename(f), f, []))
+    with open(report, 'w') as rep:
+        for name, wav, more in jobs:
+            print('check', name, flush=True)
+            r = subprocess.run([ear, '--cal', cal, '--tsv', summary, '--name', name] + more + [wav], capture_output=True,
+                               text=True, timeout=1800)
+            rep.write(r.stdout)
+            if r.returncode == 1:
+                print('  cannot read:', r.stderr.strip())
+                worst = max(worst, 1)
+            elif r.returncode == 2:
+                worst = max(worst, 2)
+            v = re.search(r'^verdict: (\w+)', r.stdout, re.M)
+            print('  ', v.group(1) if v else '?')
+    print('report:', report)
+    print('summary:', summary)
+    return worst
+
+
+if __name__ == '__main__':
+    sys.exit(main())

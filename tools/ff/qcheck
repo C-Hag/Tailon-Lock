@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""tools/ff/qcheck - the floppy forge's quality gate: the same stills drawn twice, with the original assets and
+with the packed ones (A4C_ASSETS points the game at a folder), compared by tools/ff/imgcmp.c (PSNR, SSIM, the
+largest difference of a pixel), with a contact sheet of the worst for a person to look at; and what the packing
+must not touch at all: the audit's digest (the simulation) and the sound. Original code for this project; Python
+3.8+ standard library only.
+
+usage: tools/ff/qcheck --packed DIR [--original DIR] [--build DIR] [--gpu] [--digest] [--sound] [--report FILE]
+       tools/ff/qcheck --self-test [--gpu]
+
+The stills: every one of the audit's views check (--audit --part views, A4C_VIEWS_ALL=1: the jets' cockpits and
+chase views, the maps, the weather, the HUD), on the software renderer and with --gpu on the GPU one too, and
+frames of the opening film and its title card. The targets: SSIM >= 0.995 and PSNR >= 45 dB on every still;
+--digest: the audit's digest (--part sorties --sorties 112, A4C_AUDIT_DEATHS=1) with the packed assets is the
+golden one (tests/golden/audit.sha256); --sound: each song the floppy keeps, rendered to a file by the game, and
+every sound effect, hash the same with both. --self-test packs nothing (the original against itself), so every
+still must come out the same: it proves the stills are the same from run to run. Exit 1 when a target is missed."""
+import hashlib
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+OUT = os.path.join(ROOT, 'build', 'ff', 'qcheck')
+IMGCMP = os.path.join(ROOT, 'build', 'ff', 'imgcmp')
+SSIM_MIN, PSNR_MIN = 0.995, 45.0
+SONGS = ('ghost', 'horizon', 'horizon-intro')  # the scores the floppy keeps (Full Burn's is still to come)
+
+
+def game_exe(build):
+    for n in ('TailonLock.app/Contents/MacOS/TailonLock', 'tailonlock', 'TailonLock.exe'):
+        if os.path.isfile(os.path.join(build, n)):
+            return os.path.join(build, n)
+    return None
+
+
+def env_for(assets, cfg, headless=True):
+    e = dict(os.environ, A4C_ASSETS=assets.rstrip('/') + '/', XDG_CONFIG_HOME=cfg, HOME=cfg,
+             A4C_CONFIG_DIR=os.path.join(cfg, 'tailonlock'))
+    if headless:
+        e.update(SDL_VIDEO_DRIVER='dummy', SDL_RENDER_DRIVER='software', SDL_AUDIO_DRIVER='dummy',
+                 A4C_VIDEO='offscreen', A4C_AUDIO='dummy')
+    return e
+
+
+def run(exe, args, assets, headless=True, timeout=1800):
+    with tempfile.TemporaryDirectory() as cfg:
+        os.makedirs(os.path.join(cfg, 'tailonlock'))
+        p = subprocess.run([exe] + args, env=env_for(assets, cfg, headless), capture_output=True, text=True,
+                           timeout=timeout)
+    return p.returncode, p.stdout + p.stderr
+
+
+def stills(exe, assets, d, gpu):
+    """every still of one set into d: the views check, and the film's frames"""
+    shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(d)
+    for sub in ('soft', 'gpu'):
+        os.makedirs(os.path.join(d, sub))  # the audit writes its stills into a folder that is there
+    os.environ.update(A4C_VIEWS_ALL='1')
+    run(exe, ['--audit', '--part', 'views', '--shots', os.path.join(d, 'soft'), '--out', os.path.join(d, 'soft.log')],
+        assets)
+    if gpu:
+        run(exe, ['--audit', '--part', 'views', '--gpu', '--shots', os.path.join(d, 'gpu'), '--out',
+                  os.path.join(d, 'gpu.log')], assets, headless=False)
+    os.environ.pop('A4C_VIEWS_ALL', None)
+    film = os.path.join(d, 'film')
+    os.makedirs(film)
+    os.environ['A4C_EVERY'] = '300'
+    run(exe, ['--frames', '2701', '--screenshot', os.path.join(film, 'frame-%05ld.bmp')], assets)
+    os.environ.pop('A4C_EVERY', None)
+    out = {}
+    for dp, _, fs in os.walk(d):
+        for f in fs:
+            if f.endswith('.bmp'):
+                out[os.path.relpath(os.path.join(dp, f), d)] = os.path.join(dp, f)
+    return out
+
+
+def build_imgcmp():
+    src = os.path.join(ROOT, 'tools', 'ff', 'imgcmp.c')
+    if not os.path.isfile(IMGCMP) or os.path.getmtime(IMGCMP) < os.path.getmtime(src):
+        os.makedirs(os.path.dirname(IMGCMP), exist_ok=True)
+        subprocess.run(['cc', '-O2', '-std=c99', '-o', IMGCMP, src, '-lm'], check=True)
+
+
+def digest(exe, assets):
+    with tempfile.TemporaryDirectory() as t:
+        log = os.path.join(t, 'audit.log')
+        os.environ['A4C_AUDIT_DEATHS'] = '1'
+        run(exe, ['--audit', '--part', 'sorties', '--sorties', '112', '--out', log], assets, timeout=3600)
+        os.environ.pop('A4C_AUDIT_DEATHS', None)
+        p = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'certify'), 'digest', log], capture_output=True,
+                           text=True)
+    m = re.search(r'^([0-9a-f]{64})', p.stdout, re.M)
+    return p.returncode == 0, m.group(1) if m else '?'
+
+
+def sound(exe, assets, d):
+    """hashes of each kept song rendered by the game, and of every effect"""
+    os.makedirs(d, exist_ok=True)
+    h = {}
+    for k in SONGS:
+        out = os.path.join(d, k + '.wav')
+        run(exe, ['--render-music', k, out], assets)
+        h['music/' + k] = hashlib.sha256(open(out, 'rb').read()).hexdigest() if os.path.isfile(out) else 'none'
+    fx = os.path.join(d, 'sfx')
+    os.makedirs(fx, exist_ok=True)
+    run(exe, ['--render-sfx', fx], assets)
+    for f in sorted(os.listdir(fx)):
+        h['sfx/' + f] = hashlib.sha256(open(os.path.join(fx, f), 'rb').read()).hexdigest()
+    return h
+
+
+def main():
+    args = sys.argv[1:]
+    build = os.path.join(ROOT, 'build', 'macos-release')
+    original = packed = report = None
+    gpu = want_digest = want_sound = self_test = False
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ('--gpu', '--digest', '--sound', '--self-test'):
+            gpu |= a == '--gpu'
+            want_digest |= a == '--digest'
+            want_sound |= a == '--sound'
+            self_test |= a == '--self-test'
+            i += 1
+        elif a in ('--packed', '--original', '--build', '--report') and i + 1 < len(args):
+            v = os.path.abspath(args[i + 1])
+            if a == '--packed':
+                packed = v
+            elif a == '--original':
+                original = v
+            elif a == '--build':
+                build = v
+            else:
+                report = v
+            i += 2
+        else:
+            sys.exit(__doc__)
+    exe = game_exe(build)
+    if not exe:
+        sys.exit('qcheck: no game in %s' % build)
+    original = original or os.path.join(os.path.dirname(os.path.dirname(exe)), 'Resources', 'assets')
+    if not os.path.isdir(original):
+        original = os.path.join(ROOT, 'assets')
+    if self_test:
+        packed = original
+    if not packed:
+        sys.exit(__doc__)
+    build_imgcmp()
+    os.makedirs(OUT, exist_ok=True)
+    report = report or os.path.join(OUT, 'report.md')
+    a = stills(exe, original, os.path.join(OUT, 'original'), gpu)
+    b = stills(exe, packed, os.path.join(OUT, 'packed'), gpu)
+    rows, failed = [], 0
+    diffs = os.path.join(OUT, 'diff')
+    shutil.rmtree(diffs, ignore_errors=True)
+    os.makedirs(diffs)
+    for name in sorted(set(a) | set(b)):
+        if name not in a or name not in b:
+            rows.append((name, 0, 0, 255, -1, 'only in %s' % ('original' if name in a else 'packed')))
+            failed += 1
+            continue
+        dpath = os.path.join(diffs, name.replace('/', '_'))
+        out = subprocess.run([IMGCMP, a[name], b[name], dpath], capture_output=True, text=True).stdout.split()
+        psnr, ssim, maxd, differ = float(out[0]), float(out[1]), int(out[2]), int(out[3])
+        bad = ssim < SSIM_MIN or psnr < PSNR_MIN or (self_test and differ != 0)
+        failed += bad
+        rows.append((name, psnr, ssim, maxd, differ, 'FAIL' if bad else 'ok'))
+    # the contact sheet: the 16 worst (or every one that differs, when fewer)
+    worst = sorted([r for r in rows if r[4] != 0 and r[5] != 'only in original' and r[5] != 'only in packed'],
+                   key=lambda r: (r[2], r[1]))[:16]
+    sheet = None
+    if worst:
+        bmp = os.path.join(OUT, 'sheet.bmp')
+        subprocess.run([IMGCMP, '--sheet', bmp] + sum(([a[r[0]], b[r[0]]] for r in worst), []), check=False)
+        sheet = bmp
+        if shutil.which('sips'):
+            png = os.path.join(OUT, 'sheet.png')
+            subprocess.run(['sips', '-s', 'format', 'png', bmp, '--out', png], capture_output=True)
+            sheet = png if os.path.isfile(png) else bmp
+    extra = []
+    if want_digest:
+        ok, dg = digest(exe, packed)
+        failed += not ok
+        extra.append('audit digest with the packed assets: %s (%s)' % (dg[:16], 'the golden one' if ok else 'NOT the golden one'))
+    if want_sound:
+        ha, hb = sound(exe, original, os.path.join(OUT, 'sound-original')), sound(exe, packed, os.path.join(OUT, 'sound-packed'))
+        same = [k for k in ha if hb.get(k) == ha[k]]
+        bad = sorted(set(ha) ^ set(hb) | {k for k in ha if hb.get(k) != ha[k]})
+        failed += len(bad) > 0
+        extra.append('sound: %d of %d the same%s' % (len(same), len(ha), ('; differ: ' + ', '.join(bad)) if bad else ''))
+    n = len(rows)
+    worst_ssim = min((r[2] for r in rows), default=1)
+    worst_psnr = min((r[1] for r in rows), default=99)
+    with open(report, 'w') as w:
+        w.write('# Floppy forge: the quality gate\n\n%s\n\nOriginal: %s\nPacked: %s\n\n' % (
+            'Self-test: the original against itself.' if self_test else '', original, packed))
+        w.write('%d stills; worst SSIM %.6f (target >= %.3f), worst PSNR %.2f dB (target >= %.0f); %d failed.\n\n' % (
+            n, worst_ssim, SSIM_MIN, worst_psnr, PSNR_MIN, failed if not extra else failed))
+        for e in extra:
+            w.write('- %s\n' % e)
+        if sheet:
+            w.write('\nContact sheet (original | packed | difference x 8), the worst %d: %s\n' % (len(worst), sheet))
+        w.write('\n| Still | PSNR dB | SSIM | Max delta | Pixels differing | |\n|---|---|---|---|---|---|\n')
+        for r in rows:
+            w.write('| %s | %.2f | %.6f | %d | %d | %s |\n' % r)
+    print('qcheck: %d stills, worst SSIM %.6f, worst PSNR %.2f dB, %d failed%s' % (
+        n, worst_ssim, worst_psnr, failed, ''.join('; ' + e for e in extra)))
+    if sheet:
+        print('qcheck: contact sheet %s' % sheet)
+    print('qcheck: report %s' % os.path.relpath(report, ROOT))
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == '__main__':
+    main()

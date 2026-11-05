@@ -1,0 +1,451 @@
+FULL BURN PLAYED LIVE (2026-11-01, F2: the main theme from its song data on the game's own synth)
+=================================================================================================
+Full Burn "Arp sound DMX10" is now a score (assets/music/fullburn.json, fullburn-intro.json from
+tools/fullburn_score.py) with the ear-safe mix's cuts in its patches. Every render of it is OK:
+
+  render                                   LUFS   true peak   dB(A) avg / max   share > 4 kHz   findings
+  menu loop, 300 s through the player      -20.1  -4.1 dBTP   70.8 / 76.5       12 %            none (seam clean)
+  one pass to the loop end (138 s)         -20.3  -6.1 dBTP   70.4 / 75.2       12 %            none
+  the whole song (199 s, bells at 2:25)    -20.6  -6.1 dBTP   70.0 / 75.3       11 %            none
+  the film cut (79.7 s)                    -20.4  -4.5 dBTP   70.0 / 75.7       12 %            none
+  (the old recordings, still in assets until the owner's A/B: -20.0 LUFS, -6.0 dBTP, NOTE: 17 % above 4 kHz,
+  buzzy 5 % of the time, the lead's C#7)
+
+No DC, no clipping, no clicks, no sudden jumps, no piercing or strong high tones, no sharp passages. The hand-off
+from the film cut into the menu's Full Burn (A4C_MUSIC_DUMP over --play intro into the menu) is OK with no click.
+The ten retired themes are no longer scanned. The effects are each over the live Full Burn chorus; on this build
+the music alone there measures -44.9 LUFS (the old recording -44.0 on the same build; the -38.4 of the scan before this one,
+in the git history with its notes on the ear-safe fixes, was taken on an older mixer). Scan taken on macOS (arm64, Clang).
+
+== theme fullburn  (138.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -6.1 dBFS  true peak -6.1 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -20.3 LUFS  range 3.5 LU  momentary max -15.4 LUFS at 2:02.6
+ear        70.4 dB(A) average, 75.2 dB(A) max at 1:10.5, peaks 92 dB SPL; safe 363.1 hours a week (114.8 for a child)
+           loudness 21.4 sone median, N5 28.1 sone; sharpness 1.15 acum median, 1.51 p95, 1.96 max
+           roughness 0.28 asper median, 0.65 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   63.4   11.9  1.21   0.30    12 %
+           0:10.0   68.5   20.0  1.28   0.43    13 %
+           0:20.0   68.1   18.7  1.08   0.38    10 %
+           0:30.0   70.8   22.1  1.15   0.32    11 %
+           0:40.0   71.0   22.5  1.19   0.30    12 %
+           0:50.0   70.7   22.2  1.25   0.30    13 %
+           1:00.0   71.7   24.4  1.31   0.35    14 %
+           1:10.0   71.7   23.4  1.22   0.30    12 %
+           1:20.0   71.0   21.2  1.12   0.20    10 %
+           1:30.0   70.5   20.3  1.07   0.23     9 %
+           1:40.0   71.4   22.4  1.19   0.27    12 %
+           1:50.0   71.6   24.3  1.30   0.35    14 %
+           2:00.0   71.2   22.9  1.27   0.28    13 %
+           2:10.0   67.4   18.7  1.22   0.39    13 %
+
+== theme fullburn (through the player, 300 s)  (300.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -4.2 dBFS  true peak -4.1 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -20.1 LUFS  range 3.2 LU  momentary max -15.4 LUFS at 2:02.6
+ear        70.8 dB(A) average, 76.5 dB(A) max at 3:46.1, peaks 94 dB SPL; safe 330.8 hours a week (104.6 for a child)
+           loudness 21.8 sone median, N5 28.7 sone; sharpness 1.15 acum median, 1.53 p95, 1.99 max
+           roughness 0.27 asper median, 0.63 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   63.4   11.9  1.21   0.30    12 %
+           0:10.0   68.5   20.0  1.28   0.43    13 %
+           0:20.0   68.1   18.7  1.08   0.38    10 %
+           0:30.0   70.8   22.1  1.15   0.32    11 %
+           0:40.0   71.0   22.5  1.19   0.30    12 %
+           0:50.0   70.7   22.2  1.25   0.30    13 %
+           1:00.0   71.7   24.4  1.31   0.35    14 %
+           1:10.0   71.7   23.4  1.22   0.30    12 %
+           1:20.0   71.0   21.2  1.12   0.20    10 %
+           1:30.0   70.5   20.3  1.07   0.23     9 %
+           1:40.0   71.4   22.4  1.19   0.27    12 %
+           1:50.0   71.6   24.3  1.30   0.35    14 %
+           2:00.0   71.2   22.9  1.27   0.28    13 %
+           2:10.0   68.8   20.0  1.27   0.38    14 %
+           2:20.0   72.0   24.6  1.27   0.34    13 %
+           2:30.0   71.6   22.7  1.17   0.27    11 %
+           2:40.0   70.6   20.7  1.11   0.19    10 %
+           2:50.0   70.6   20.4  1.06   0.23     9 %
+           3:00.0   71.5   23.6  1.28   0.33    13 %
+           3:10.0   71.7   24.3  1.30   0.34    14 %
+           3:20.0   69.8   20.6  1.24   0.31    13 %
+           3:30.0   70.7   22.4  1.29   0.36    14 %
+           3:40.0   71.9   24.2  1.26   0.34    13 %
+           3:50.0   71.3   21.6  1.13   0.22    10 %
+           4:00.0   70.7   20.6  1.08   0.20     9 %
+           4:10.0   70.8   20.7  1.07   0.23     9 %
+           4:20.0   71.9   24.8  1.33   0.37    14 %
+           4:30.0   71.5   23.6  1.29   0.31    13 %
+           4:40.0   68.4   19.2  1.22   0.34    13 %
+           4:50.0   71.7   24.4  1.32   0.36    14 %
+
+== theme fullburn (whole song)  (199.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -6.1 dBFS  true peak -6.1 dBTP  clipped runs 0  DC 0.0000/0.0000  below 20 Hz 0.3 %
+loudness   integrated -20.6 LUFS  range 3.9 LU  momentary max -15.4 LUFS at 2:02.6
+ear        70.0 dB(A) average, 75.3 dB(A) max at 2:55.9, peaks 92 dB SPL; safe 402.8 hours a week (127.4 for a child)
+           loudness 20.8 sone median, N5 27.5 sone; sharpness 1.11 acum median, 1.50 p95, 2.27 max
+           roughness 0.25 asper median, 0.60 p95; 11 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   63.4   11.9  1.21   0.30    12 %
+           0:10.0   68.5   20.0  1.28   0.43    13 %
+           0:20.0   68.1   18.7  1.08   0.38    10 %
+           0:30.0   70.8   22.1  1.15   0.32    11 %
+           0:40.0   71.0   22.5  1.19   0.30    12 %
+           0:50.0   70.7   22.2  1.25   0.30    13 %
+           1:00.0   71.7   24.4  1.31   0.35    14 %
+           1:10.0   71.7   23.4  1.22   0.30    12 %
+           1:20.0   71.0   21.2  1.12   0.20    10 %
+           1:30.0   70.5   20.3  1.07   0.23     9 %
+           1:40.0   71.4   22.4  1.19   0.27    12 %
+           1:50.0   71.6   24.3  1.30   0.35    14 %
+           2:00.0   71.2   22.9  1.27   0.28    13 %
+           2:10.0   67.8   18.9  1.20   0.34    12 %
+           2:20.0   67.6   17.3  1.00   0.14     8 %
+           2:30.0   68.8   19.1  1.04   0.27     9 %
+           2:40.0   69.9   20.0  0.97   0.26     7 %
+           2:50.0   71.2   21.4  1.07   0.21     9 %
+           3:00.0   68.8   17.1  1.27   0.30    13 %
+           3:10.0   -8.7    0.0  2.89   0.00    59 %
+
+== theme ghost  (140.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -4.0 dBFS  true peak -4.0 dBTP  clipped runs 0  DC 0.0000/0.0000  below 20 Hz 0.2 %
+loudness   integrated -20.1 LUFS  range 7.2 LU  momentary max -15.4 LUFS at 0:07.2
+ear        70.9 dB(A) average, 78.8 dB(A) max at 1:57.4, peaks 94 dB SPL; safe 324.3 hours a week (102.6 for a child)
+           loudness 19.8 sone median, N5 29.9 sone; sharpness 1.18 acum median, 1.69 p95, 3.61 max
+           roughness 0.26 asper median, 0.94 p95; 13 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   70.5   16.9  1.54   0.47    18 %
+           0:10.0   67.0   18.0  1.21   0.34    12 %
+           0:20.0   68.3   18.9  1.20   0.33    12 %
+           0:30.0   69.8   19.1  1.11   0.34    10 %
+           0:40.0   71.6   21.1  1.22   0.32    12 %
+           0:50.0   73.5   24.8  1.29   0.32    13 %
+           1:00.0   66.7   17.4  1.14   0.34    11 %
+           1:10.0   67.6   19.0  1.21   0.35    12 %
+           1:20.0   68.7   19.5  1.22   0.30    12 %
+           1:30.0   72.4   22.5  1.26   0.32    12 %
+           1:40.0   73.6   25.1  1.33   0.34    13 %
+           1:50.0   74.6   26.0  1.29   0.35    13 %
+           2:00.0   69.7   18.9  1.24   0.32    12 %
+           2:10.0   68.2   14.1  1.55   0.42    19 %
+
+== theme horizon  (158.8 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -3.1 dBFS  true peak -3.1 dBTP  clipped runs 0  DC 0.0000/0.0000  below 20 Hz 0.2 %
+loudness   integrated -20.3 LUFS  range 9.0 LU  momentary max -15.1 LUFS at 0:07.2
+ear        70.8 dB(A) average, 79.5 dB(A) max at 2:05.1, peaks 95 dB SPL; safe 330.9 hours a week (104.6 for a child)
+           loudness 18.8 sone median, N5 29.9 sone; sharpness 1.18 acum median, 1.69 p95, 3.01 max
+           roughness 0.30 asper median, 1.13 p95; 13 % of the loudness above 4 kHz
+findings:
+  NOTE  rough (buzzy) for 5 % of the time at 1.13 asper or more
+  NOTE  strong high tone 2095 Hz (C7): 8 times, 3.7 s in all, at 1:10.0 it is 6 dB under the whole mix (67 dB SPL)
+  NOTE  strong high tone 2350 Hz (D7): 2 times, 1.2 s in all, at 2:08.1 it is 7 dB under the whole mix (66 dB SPL)
+verdict: NOTE
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   70.8   17.3  1.53   0.47    18 %
+           0:10.0   62.5   13.6  1.09   0.69    10 %
+           0:20.0   68.4   18.7  1.27   0.35    13 %
+           0:30.0   63.9   15.3  1.18   0.50    12 %
+           0:40.0   60.7   12.5  0.98   0.37     8 %
+           0:50.0   63.0   14.3  1.12   0.44    11 %
+           1:00.0   71.5   20.3  1.25   0.34    12 %
+           1:10.0   72.7   23.7  1.29   0.42    13 %
+           1:20.0   74.1   26.6  1.28   0.40    13 %
+           1:30.0   72.2   23.0  1.28   0.34    13 %
+           1:40.0   69.1   19.4  1.28   0.29    13 %
+           1:50.0   71.2   19.3  1.17   0.31    11 %
+           2:00.0   74.3   24.6  1.32   0.35    13 %
+           2:10.0   73.9   23.5  1.27   0.34    12 %
+           2:20.0   70.4   17.9  1.20   0.37    11 %
+           2:30.0   69.1   15.7  1.54   0.40    18 %
+
+== theme horizon-intro  (82.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -2.3 dBFS  true peak -2.3 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.2 %
+loudness   integrated -19.9 LUFS  range 6.9 LU  momentary max -11.8 LUFS at 0:10.5
+ear        71.0 dB(A) average, 80.4 dB(A) max at 0:11.3, peaks 96 dB SPL; safe 316.4 hours a week (100.1 for a child)
+           loudness 20.7 sone median, N5 31.3 sone; sharpness 1.21 acum median, 1.68 p95, 1.94 max
+           roughness 0.32 asper median, 0.92 p95; 14 % of the loudness above 4 kHz
+findings:
+  NOTE  strong high tone 2353 Hz (D7): 1 times, 0.8 s in all, at 1:19.9 it is 6 dB under the whole mix (65 dB SPL)
+  NOTE  strong high tone 2095 Hz (C7): 9 times, 3.1 s in all, at 1:17.3 it is 7 dB under the whole mix (67 dB SPL)
+  NOTE  strong high tone 2488 Hz (D#7): 1 times, 0.4 s in all, at 1:19.4 it is 8 dB under the whole mix (65 dB SPL)
+verdict: NOTE
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   71.3   20.9  1.43   0.50    16 %
+           0:10.0   72.6   22.2  1.43   0.55    16 %
+           0:20.0   71.2   22.4  1.30   0.37    13 %
+           0:30.0   71.9   23.4  1.27   0.32    13 %
+           0:40.0   71.1   22.4  1.29   0.33    13 %
+           0:50.0   66.8   16.2  1.14   0.29    11 %
+           1:00.0   67.9   18.8  1.23   0.31    13 %
+           1:10.0   72.1   23.0  1.28   0.31    13 %
+           1:20.0   71.7   22.1  1.36   0.30    14 %
+
+== theme fullburn-intro  (79.7 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -4.5 dBFS  true peak -4.5 dBTP  clipped runs 0  DC 0.0000/0.0000  below 20 Hz 0.3 %
+loudness   integrated -20.4 LUFS  range 3.8 LU  momentary max -17.5 LUFS at 0:46.5
+ear        70.0 dB(A) average, 75.7 dB(A) max at 1:09.1, peaks 93 dB SPL; safe 397.3 hours a week (125.7 for a child)
+           loudness 21.1 sone median, N5 28.2 sone; sharpness 1.17 acum median, 1.51 p95, 1.90 max
+           roughness 0.30 asper median, 0.72 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   62.8   10.9  1.20   0.28    12 %
+           0:10.0   68.6   20.2  1.29   0.43    14 %
+           0:20.0   68.1   18.6  1.07   0.38    10 %
+           0:30.0   70.9   21.9  1.14   0.32    11 %
+           0:40.0   71.2   22.6  1.19   0.30    12 %
+           0:50.0   70.7   22.2  1.26   0.30    13 %
+           1:00.0   71.7   24.2  1.31   0.34    14 %
+           1:10.0   71.1   21.8  1.23   0.29    12 %
+
+== effect catapult  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -31.7 dBFS  true peak -31.7 dBTP  clipped runs 0  DC 0.0000/0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.4 LUFS  range 0.8 LU  momentary max -41.3 LUFS at 0:01.1
+ear        46.5 dB(A) average, 54.3 dB(A) max at 0:01.0, peaks 66 dB SPL; safe 88753.1 hours a week (28066.2 for a child)
+           loudness 4.8 sone median, N5 6.7 sone; sharpness 1.21 acum median, 1.60 p95, 1.78 max
+           roughness 0.16 asper median, 0.31 p95; 13 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.5    5.1  1.25   0.18    13 %
+
+== effect chaff  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.6 dBFS  true peak -32.6 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.7 LUFS  range 0.3 LU  momentary max -43.5 LUFS at 0:02.3
+ear        46.1 dB(A) average, 49.5 dB(A) max at 0:01.4, peaks 65 dB SPL; safe 98031.7 hours a week (31000.3 for a child)
+           loudness 4.9 sone median, N5 6.3 sone; sharpness 1.21 acum median, 1.56 p95, 1.70 max
+           roughness 0.14 asper median, 0.26 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.1    5.0  1.22   0.16    12 %
+
+== effect ciws  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.0 dBFS  true peak -31.9 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.9 LUFS  range 0.2 LU  momentary max -43.7 LUFS at 0:03.2
+ear        45.9 dB(A) average, 49.2 dB(A) max at 0:01.9, peaks 66 dB SPL; safe 104002.3 hours a week (32888.4 for a child)
+           loudness 4.8 sone median, N5 6.2 sone; sharpness 1.21 acum median, 1.59 p95, 1.80 max
+           roughness 0.15 asper median, 0.26 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   45.9    4.9  1.22   0.16    12 %
+
+== effect explosion-big  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.7 dBFS  true peak -32.7 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.7 LUFS  range 0.3 LU  momentary max -43.5 LUFS at 0:01.3
+ear        46.2 dB(A) average, 49.5 dB(A) max at 0:01.4, peaks 65 dB SPL; safe 95365.5 hours a week (30157.2 for a child)
+           loudness 4.9 sone median, N5 6.3 sone; sharpness 1.20 acum median, 1.59 p95, 1.72 max
+           roughness 0.14 asper median, 0.27 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.2    4.9  1.22   0.16    12 %
+
+== effect explosion  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.3 dBFS  true peak -32.2 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.9 LUFS  range 0.2 LU  momentary max -43.7 LUFS at 0:03.2
+ear        46.0 dB(A) average, 49.5 dB(A) max at 0:01.9, peaks 66 dB SPL; safe 100762.3 hours a week (31863.8 for a child)
+           loudness 4.8 sone median, N5 6.3 sone; sharpness 1.20 acum median, 1.58 p95, 1.72 max
+           roughness 0.14 asper median, 0.27 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.0    4.9  1.22   0.16    12 %
+
+== effect flares  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.4 dBFS  true peak -32.3 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.7 LUFS  range 0.2 LU  momentary max -43.5 LUFS at 0:02.5
+ear        46.0 dB(A) average, 48.9 dB(A) max at 0:01.4, peaks 66 dB SPL; safe 101552.2 hours a week (32113.6 for a child)
+           loudness 4.9 sone median, N5 6.2 sone; sharpness 1.23 acum median, 1.55 p95, 1.78 max
+           roughness 0.14 asper median, 0.31 p95; 13 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.0    5.0  1.23   0.16    13 %
+
+== effect gun  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.2 dBFS  true peak -32.2 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.7 LUFS  range 0.2 LU  momentary max -43.3 LUFS at 0:04.2
+ear        46.1 dB(A) average, 49.7 dB(A) max at 0:01.9, peaks 66 dB SPL; safe 97909.7 hours a week (30961.8 for a child)
+           loudness 4.9 sone median, N5 6.4 sone; sharpness 1.21 acum median, 1.61 p95, 1.82 max
+           roughness 0.15 asper median, 0.27 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.1    5.0  1.22   0.16    12 %
+
+== effect hit  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.7 dBFS  true peak -32.7 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.8 LUFS  range 0.2 LU  momentary max -43.5 LUFS at 0:02.3
+ear        46.0 dB(A) average, 48.8 dB(A) max at 0:01.9, peaks 65 dB SPL; safe 99906.5 hours a week (31593.2 for a child)
+           loudness 4.9 sone median, N5 6.2 sone; sharpness 1.21 acum median, 1.58 p95, 1.72 max
+           roughness 0.14 asper median, 0.27 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.0    4.9  1.21   0.15    12 %
+
+== effect lock-acquired  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -33.0 dBFS  true peak -32.9 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.9 LUFS  range 0.2 LU  momentary max -43.8 LUFS at 0:02.3
+ear        45.9 dB(A) average, 48.6 dB(A) max at 0:01.9, peaks 65 dB SPL; safe 103749.9 hours a week (32808.6 for a child)
+           loudness 4.8 sone median, N5 6.1 sone; sharpness 1.22 acum median, 1.57 p95, 1.74 max
+           roughness 0.14 asper median, 0.25 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   45.9    4.9  1.22   0.15    12 %
+
+== effect locked-beep  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.7 dBFS  true peak -32.7 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.9 LUFS  range 0.3 LU  momentary max -43.5 LUFS at 0:03.2
+ear        45.9 dB(A) average, 49.7 dB(A) max at 0:01.9, peaks 65 dB SPL; safe 102631.5 hours a week (32454.9 for a child)
+           loudness 4.8 sone median, N5 6.3 sone; sharpness 1.21 acum median, 1.57 p95, 1.82 max
+           roughness 0.14 asper median, 0.26 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   45.9    4.9  1.22   0.16    12 %
+
+== effect missile-launch  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -31.9 dBFS  true peak -31.9 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.6 LUFS  range 0.2 LU  momentary max -42.9 LUFS at 0:03.2
+ear        46.1 dB(A) average, 49.8 dB(A) max at 0:00.4, peaks 66 dB SPL; safe 98601.2 hours a week (31180.4 for a child)
+           loudness 4.9 sone median, N5 6.3 sone; sharpness 1.21 acum median, 1.55 p95, 1.78 max
+           roughness 0.15 asper median, 0.27 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.1    4.9  1.21   0.16    12 %
+
+== effect missile-warning  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.3 dBFS  true peak -32.2 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.6 LUFS  range 0.2 LU  momentary max -43.3 LUFS at 0:03.2
+ear        46.3 dB(A) average, 49.7 dB(A) max at 0:01.9, peaks 66 dB SPL; safe 94182.3 hours a week (29783.1 for a child)
+           loudness 5.0 sone median, N5 6.3 sone; sharpness 1.23 acum median, 1.57 p95, 1.71 max
+           roughness 0.15 asper median, 0.26 p95; 13 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.3    5.0  1.24   0.16    13 %
+
+== effect none  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -32.1 dBFS  true peak -32.0 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.9 LUFS  range 0.2 LU  momentary max -43.6 LUFS at 0:04.2
+ear        46.1 dB(A) average, 48.9 dB(A) max at 0:01.9, peaks 66 dB SPL; safe 98986.1 hours a week (31302.2 for a child)
+           loudness 4.8 sone median, N5 6.2 sone; sharpness 1.21 acum median, 1.59 p95, 1.73 max
+           roughness 0.15 asper median, 0.27 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.1    4.9  1.22   0.16    12 %
+
+== effect sam-launch  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -31.9 dBFS  true peak -31.9 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.9 LUFS  range 0.3 LU  momentary max -43.6 LUFS at 0:03.2
+ear        45.9 dB(A) average, 49.0 dB(A) max at 0:01.9, peaks 66 dB SPL; safe 103017.9 hours a week (32577.1 for a child)
+           loudness 4.8 sone median, N5 6.2 sone; sharpness 1.21 acum median, 1.56 p95, 1.72 max
+           roughness 0.14 asper median, 0.30 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   45.9    4.9  1.22   0.16    12 %
+
+== effect seeking-beep  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -31.8 dBFS  true peak -31.8 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.8 LUFS  range 0.2 LU  momentary max -43.4 LUFS at 0:03.2
+ear        46.0 dB(A) average, 49.6 dB(A) max at 0:01.4, peaks 66 dB SPL; safe 101579.6 hours a week (32122.3 for a child)
+           loudness 4.8 sone median, N5 6.3 sone; sharpness 1.21 acum median, 1.62 p95, 1.83 max
+           roughness 0.15 asper median, 0.28 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   46.0    4.9  1.22   0.16    12 %
+
+== effect ship-missile  (5.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -31.9 dBFS  true peak -31.9 dBTP  clipped runs 0  DC -0.0000/-0.0000  below 20 Hz 0.3 %
+loudness   integrated -44.8 LUFS  range 0.4 LU  momentary max -43.3 LUFS at 0:03.2
+ear        45.9 dB(A) average, 49.0 dB(A) max at 0:03.8, peaks 66 dB SPL; safe 102349.2 hours a week (32365.7 for a child)
+           loudness 4.8 sone median, N5 6.3 sone; sharpness 1.21 acum median, 1.60 p95, 1.77 max
+           roughness 0.14 asper median, 0.27 p95; 12 % of the loudness above 4 kHz
+findings:
+  none
+verdict: OK
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   45.9    4.9  1.22   0.16    12 %
+
+== recording fullburn-intro.wav  (79.6 s, 32000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -6.0 dBFS  true peak -6.0 dBTP  clipped runs 0  DC 0.0002/0.0001  below 20 Hz 1.4 %
+loudness   integrated -20.0 LUFS  range 5.0 LU  momentary max -16.7 LUFS at 0:30.5
+ear        70.6 dB(A) average, 78.2 dB(A) max at 0:44.2, peaks 92 dB SPL; safe 351.0 hours a week (111.0 for a child)
+           loudness 22.9 sone median, N5 30.5 sone; sharpness 1.38 acum median, 1.82 p95, 2.09 max
+           roughness 0.40 asper median, 1.11 p95; 17 % of the loudness above 4 kHz
+findings:
+  NOTE  17 % of the loudness is above 4 kHz
+  NOTE  rough (buzzy) for 5 % of the time at 1.11 asper or more
+verdict: NOTE
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   63.1   11.5  1.27   0.58    14 %
+           0:10.0   68.8   21.0  1.42   0.64    16 %
+           0:20.0   69.9   21.9  1.41   0.55    16 %
+           0:30.0   72.3   25.2  1.42   0.47    16 %
+           0:40.0   71.6   24.3  1.49   0.43    18 %
+           0:50.0   69.3   22.2  1.56   0.32    20 %
+           1:00.0   72.2   25.8  1.51   0.45    18 %
+           1:10.0   71.9   23.7  1.45   0.44    17 %
+
+== recording fullburn.wav  (138.0 s, 48000 Hz)  listening level: a full-scale sine at 95 dB SPL
+level      peak -6.1 dBFS  true peak -6.0 dBTP  clipped runs 0  DC 0.0001/0.0001  below 20 Hz 0.9 %
+loudness   integrated -20.0 LUFS  range 3.8 LU  momentary max -16.7 LUFS at 0:30.0
+ear        71.2 dB(A) average, 78.5 dB(A) max at 2:00.3, peaks 92 dB SPL; safe 303.6 hours a week (96.0 for a child)
+           loudness 23.3 sone median, N5 30.5 sone; sharpness 1.42 acum median, 1.85 p95, 2.11 max
+           roughness 0.39 asper median, 1.06 p95; 17 % of the loudness above 4 kHz
+seam       loop 6624287 -> 2947080 (138.006 s -> 61.398 s): step 0.0x the largest around it, level -1.5 dB
+findings:
+  NOTE  17 % of the loudness is above 4 kHz
+  NOTE  rough (buzzy) for 5 % of the time at 1.06 asper or more
+  NOTE  strong high tone 2219 Hz (C#7): 1 times, 0.3 s in all, at 2:08.5 it is 10 dB under the whole mix (54 dB SPL)
+verdict: NOTE
+timeline   from    dB(A)  sone  acum  asper  >4kHz
+           0:00.0   63.7   12.4  1.28   0.61    14 %
+           0:10.0   68.8   20.7  1.41   0.64    16 %
+           0:20.0   70.2   21.7  1.39   0.55    16 %
+           0:30.0   72.2   25.0  1.44   0.46    16 %
+           0:40.0   71.6   24.1  1.50   0.42    18 %
+           0:50.0   69.1   21.9  1.57   0.30    20 %
+           1:00.0   72.4   26.0  1.52   0.45    18 %
+           1:10.0   72.6   25.5  1.45   0.46    16 %
+           1:20.0   72.7   24.1  1.46   0.41    16 %
+           1:30.0   72.5   23.4  1.40   0.42    14 %
+           1:40.0   72.5   24.5  1.46   0.45    16 %
+           1:50.0   72.5   26.3  1.47   0.47    17 %
+           2:00.0   70.1   22.3  1.57   0.36    19 %
+           2:10.0   67.3   18.7  1.50   0.47    19 %
+

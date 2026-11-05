@@ -1,0 +1,3 @@
+# tools/check stage 9 baselines, this machine (retake only in brick 0)
+soft 1.049 ms per frame drawn, best of 3: retro renderer, --play 1p --frames 1500 --seed 1 --cmd g
+gpu 0.337 ms per frame in all, best of 3: modern renderer, --play 1p --frames 1500 --seed 1 --cmd g

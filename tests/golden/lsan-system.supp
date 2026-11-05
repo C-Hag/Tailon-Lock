@@ -1,0 +1,3 @@
+# LeakSanitizer suppressions for tools/check and tools/certify: memory the system's own libraries keep, never
+# the game's. The GPU drivers (Mesa's Vulkan drivers) keep parts of their shader disk cache.
+leak:libvulkan_

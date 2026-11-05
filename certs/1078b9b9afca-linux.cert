@@ -1,0 +1,18 @@
+TAILON LOCK AUDIT CERTIFICATE
+kind: system
+system: linux
+commit: 1078b9b9afca0f806cd517c097639f042f7c4051
+date: 2026-11-04 22:36
+
+block 1 clean: PASS | clean tree | seal 30d27826c91ef209bfb12cecc457c9c69c873e32a7e2c2998ad46640ea7f0543
+block 2 build: PASS | built linux-release, linux-debug with warnings as errors | seal 007f96ba235432d81ae28d3e1ae444c8c2f4c95bcd589e71534f7b4eab266c40
+block 3 tests: PASS | 29 of 29 tests passed | seal 080d1066781728ea10ac17323f54bfc84d4f4c717d008fc9e5096d9c6aa70ecf
+block 4 gate: PASS | tools/check: every stage PASS | seal d72ecdf194e45340149b71b08775ef0784f5ff67ed92027f50127312d34a3649
+block 5 smoke: PASS | offline: playtest: 7 matches played, 7 agree on both computers, 0 of 7 pairs with problems; network: playtest: 4 matches played, 4 agree on both computers, 0 of 4 pairs with problems | seal 3647e58c9a3de380810fb5622ada494213d2488ec3396c0f290abe6d3c052c2b
+block 6 offline: PASS | playtest: 56 matches played, 56 agree on both computers, 0 of 56 pairs with problems | seal 2ef3d7cb6c9f5f959ec3dcc866938b765e46ba491aeb909f5160208232ccb9e1
+block 7 network: PASS | playtest: 40 matches played, 40 agree on both computers, 0 of 10 pairs with problems | seal 3b1f15240a0f7be9b2fadca2cccb06b5cade025db77aec10ccdfea2ba41db53c
+block 8 sanitizer: PASS | ASan + UBSan: playtest: 24 matches played, 24 agree on both computers, 0 of 24 pairs with problems | seal 4d83e732e626f6e3b0d05f0149a8ca53308feac9e1523f017bcbace9379f68e1
+block 9 soak: PASS | playtest: 20 matches played, 20 agree on both computers, 0 of 1 pairs with problems | seal 694690cbc869ada1e2abff549ae9c2e202d3f30897fcfa8d3159b8c00ae8f108
+block 10 behaviour: PASS | every jet on its data sheet; the systems (68 checks); 1008 matches, no fault, no timeout; digest ec91c3cc87e95eee as on every system | seal 649aa75a78cbfefe3e656eb108d7f48f57f7f3c916c64349ecc397a6e4d4770e
+
+seal: 649aa75a78cbfefe3e656eb108d7f48f57f7f3c916c64349ecc397a6e4d4770e

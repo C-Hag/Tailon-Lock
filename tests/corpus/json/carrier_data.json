@@ -1,0 +1,269 @@
+{
+ "spec": {
+  "id": "cvn90",
+  "designation": "CVN-90",
+  "name": "Stormhaven",
+  "role": "Nuclear-powered aircraft carrier (CATOBAR)",
+  "blurb": "A large-deck nuclear carrier built for the NF-24 air wing: three electromagnetic catapults, three arresting wires on a 9\u00b0 angled deck, and an island set far aft so two bow catapults and the landing area can work at the same time.",
+  "length": 320,
+  "deck_width": 86,
+  "beam_wl": 41,
+  "draft": 12,
+  "displacement": 94000,
+  "speed_kn": 32,
+  "reactors": 2,
+  "shafts": 4,
+  "power": "2 pressurised-water reactors, 4 shafts, about 210 MW",
+  "air_wing": 64,
+  "crew": 4300,
+  "cat_energy_mj": 110,
+  "cat_max_end_kt": 165,
+  "arrest_energy_mj": 47,
+  "arrest_max_kt": 150,
+  "wire_runout_m": 105,
+  "design": [
+   "Angled deck (9\u00b0 to port): a jet that misses every wire (a bolter) simply goes to full power and flies off the angled end instead of hitting parked aircraft on the bow.",
+   "Three wires 12 m apart; the lens sets a 3.5\u00b0 glide slope aimed between wires 2 and 3, so the hook catches wire 2 on a normal pass.",
+   "Two bow catapults plus one waist catapult on the angled deck: launch from the bow while recovering on the angle.",
+   "Island far aft on the starboard side keeps the bow clear for the catapults and gives the air boss a view of the landing area.",
+   "Three deck-edge elevators (two starboard, one port) move aircraft to the hangar deck without blocking the flight deck.",
+   "Ship steams into the wind at up to 32 kn, which adds about 16 m/s of wind over the deck to every launch and recovery."
+  ]
+ },
+ "deck": {
+  "id": "cvn90",
+  "deck_height_m": 20.5,
+  "waterline_y": 0.0,
+  "angled_deck": {
+   "heading_offset_deg": 9.0,
+   "note": "positive = toward +X (port in glTF axes); same sign rule as catapults",
+   "origin": [
+    4.0,
+    20.5,
+    -157.0
+   ],
+   "width_m": 23.0,
+   "length_m": 205.0
+  },
+  "landing": {
+   "glide_slope_deg": 3.5,
+   "hook_touchdown": [
+    12.91676450729316,
+    20.5,
+    -100.70176458607715
+   ],
+   "target_wire": 2,
+   "ols": [
+    37.363565270402844,
+    23.0,
+    -74.19980366902763
+   ]
+  },
+  "catapults": [
+   {
+    "name": "cat1",
+    "start": [
+     -8.0,
+     20.5,
+     56.0
+    ],
+    "end": [
+     -8.0,
+     20.5,
+     151.0
+    ],
+    "stroke_m": 95.0,
+    "heading_offset_deg": 0.0
+   },
+   {
+    "name": "cat2",
+    "start": [
+     8.0,
+     20.5,
+     56.0
+    ],
+    "end": [
+     8.0,
+     20.5,
+     151.0
+    ],
+    "stroke_m": 95.0,
+    "heading_offset_deg": 0.0
+   },
+   {
+    "name": "cat3",
+    "start": [
+     25.158544516805947,
+     20.5,
+     -48.98002039469577
+    ],
+    "end": [
+     37.67330172002442,
+     20.5,
+     30.035046852915244
+    ],
+    "stroke_m": 80.0,
+    "heading_offset_deg": 9.0
+   }
+  ],
+  "wires": [
+   {
+    "n": 1,
+    "s": 45.0,
+    "p1": [
+     -2.7880858415215393,
+     20.5,
+     -110.36394216265558
+    ],
+    "p2": [
+     24.867187695142317,
+     20.5,
+     -114.74410718378203
+    ]
+   },
+   {
+    "n": 2,
+    "s": 57.0,
+    "p1": [
+     -0.9108722610387687,
+     20.5,
+     -98.51168207551392
+    ],
+    "p2": [
+     26.744401275625087,
+     20.5,
+     -102.89184709664038
+    ]
+   },
+   {
+    "n": 3,
+    "s": 69.0,
+    "p1": [
+     0.9663413194440018,
+     20.5,
+     -86.65942198837226
+    ],
+    "p2": [
+     28.621614856107858,
+     20.5,
+     -91.03958700949872
+    ]
+   }
+  ],
+  "spawn_parking": [
+   [
+    -22,
+    20.5,
+    120
+   ],
+   [
+    -22,
+    20.5,
+    95
+   ],
+   [
+    -22,
+    20.5,
+    70
+   ],
+   [
+    16,
+    20.5,
+    100
+   ],
+   [
+    -20,
+    20.5,
+    -110
+   ],
+   [
+    -20,
+    20.5,
+    -130
+   ]
+  ]
+ },
+ "compat": [
+  {
+   "id": "af40",
+   "name": "AF-40 Nightshade",
+   "need_kt": 131,
+   "cat_kt": 165,
+   "vapp_kt": 135,
+   "arrest_mj": 31.8,
+   "ok": true,
+   "verdict": "Possible as a naval version (needs a hook and stronger gear)"
+  },
+  {
+   "id": "lf27",
+   "name": "LF-27 Bobcat",
+   "need_kt": 149,
+   "cat_kt": 165,
+   "vapp_kt": 152,
+   "arrest_mj": 19.7,
+   "ok": false,
+   "verdict": "No: approach too fast for the wires"
+  },
+  {
+   "id": "ecf90",
+   "name": "ECF-90 Sirocco",
+   "need_kt": 125,
+   "cat_kt": 165,
+   "vapp_kt": 129,
+   "arrest_mj": 17.0,
+   "ok": true,
+   "verdict": "Possible as a naval version (needs a hook and stronger gear)"
+  },
+  {
+   "id": "ja46",
+   "name": "JA 46 Gladan",
+   "need_kt": 90,
+   "cat_kt": 165,
+   "vapp_kt": 102,
+   "arrest_mj": 9.2,
+   "ok": true,
+   "verdict": "Possible as a naval version (needs a hook and stronger gear)"
+  },
+  {
+   "id": "sy26",
+   "name": "SY-26 Tianlong",
+   "need_kt": 128,
+   "cat_kt": 165,
+   "vapp_kt": 127,
+   "arrest_mj": 26.2,
+   "ok": true,
+   "verdict": "Possible as a naval version (needs a hook and stronger gear)"
+  },
+  {
+   "id": "vk33",
+   "name": "Vk-33 Strizh",
+   "need_kt": 135,
+   "cat_kt": 165,
+   "vapp_kt": 142,
+   "arrest_mj": 20.4,
+   "ok": true,
+   "verdict": "Possible as a naval version (needs a hook and stronger gear)"
+  },
+  {
+   "id": "ks55",
+   "name": "Ks-55 Grifon",
+   "need_kt": 128,
+   "cat_kt": 165,
+   "vapp_kt": 128,
+   "arrest_mj": 27.8,
+   "ok": true,
+   "verdict": "Possible as a naval version (needs a hook and stronger gear)"
+  },
+  {
+   "id": "nf24",
+   "name": "NF-24 Cormorant",
+   "need_kt": 133,
+   "cat_kt": 165,
+   "vapp_kt": 137,
+   "arrest_mj": 34.6,
+   "ok": true,
+   "verdict": "Carrier jet: hook, catapult tow bar, strengthened gear"
+  }
+ ],
+ "tris": 708
+}

@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""tools/ff/forge - the floppy forge: the floppy's assets folder, every file packed by our own tools, under the same
+names, so the game (src/assets.c's asset_load) reads it like the full one. Original code for this project; Python
+3.8+ standard library only.
+
+usage: tools/ff/forge [--out DIR] [--report FILE]
+
+The files are the floppy set of tools/ff/inventory (what the game reads, with the songs the author kept). Each one
+is packed every way that keeps it the same (TLPK with each filter; a JSON or .js file also as TLJ, our binary JSON,
+inside TLPK), and the smallest is kept. The check (exit 1 when it fails): every packed file comes back, through the
+game's own unpackers, as the original bytes, or a JSON one as the same values bit for bit."""
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+FF = os.path.join(ROOT, 'build', 'ff')
+TLPK = os.path.join(FF, 'tlpk')
+TLJ = os.path.join(ROOT, 'tools', 'ff', 'tlj')
+TLH = os.path.join(FF, 'tlh')
+UNPACK = os.path.join(FF, 'unpack')
+FLOPPY_SONGS = ('fullburn', 'fullburn-intro', 'ghost', 'horizon', 'horizon-intro')
+JS_BRACKETS = {'jets/jets_game.js': ('[', ']'), 'jets/carrier_game.js': ('{', '}')}
+
+
+def without_meshes(rel, adir, files, tmp):
+    """the jet and carrier tables carry a copy of each mesh that the game only reads when that jet's .glb is missing
+    (src/assets.c's source_mesh): on the floppy, where every .glb ships, the copy is left out. Returns the table as a
+    JSON file of its own and the ids whose copy went, or None when nothing was left out."""
+    if rel not in JS_BRACKETS:
+        return None
+    js = JS_BRACKETS[rel]
+    t = open(os.path.join(adir, rel), encoding='utf-8').read()
+    doc = json.loads(t[t.index(js[0]):t.rindex(js[1]) + 1])
+    gone = []
+    for e in doc if isinstance(doc, list) else [doc]:
+        if 'mesh' in e and 'jets/%s.glb' % e.get('id') in files:
+            del e['mesh']
+            gone.append(e['id'])
+    if not gone:
+        return None
+    path = os.path.join(tmp, 'nomesh.json')
+    open(path, 'w', encoding='utf-8').write(json.dumps(doc, ensure_ascii=False, separators=(',', ':')))
+    return path, gone, doc
+
+
+def build_tools():
+    S = lambda *p: os.path.join(ROOT, *p)
+    for exe, srcs in ((TLPK, [S('tools', 'ff', 'tlpk.c'), S('src', 'ff', 'tlpk.c')]),
+                      (TLH, [S('tools', 'ff', 'tlh.c'), S('src', 'ff', 'tlh.c')]),
+                      (UNPACK, [S('tools', 'ff', 'unpack.c'), S('src', 'ff', 'tlpk.c'), S('src', 'ff', 'tlh.c'),
+                                S('src', 'ff', 'tlj.c')])):
+        deps = srcs + [S('src', 'ff', h) for h in ('ff_rc.h', 'tlpk_model.h', 'tlh_model.h')]
+        if not os.path.isfile(exe) or any(os.path.getmtime(exe) < os.path.getmtime(d) for d in deps):
+            subprocess.run(['cc', '-O2', '-std=c99', '-I', S('src'), '-o', exe] + srcs + ['-lm'], check=True)
+
+
+def floppy_set():
+    inv = json.load(open(os.path.join(FF, 'inventory.json')))
+    out = []
+    for f in inv['files']:
+        r = f['file']
+        if r.startswith('music/') and not (f['kind'] == 'music scores' and os.path.basename(r)[:-5] in FLOPPY_SONGS):
+            continue
+        out.append(r)
+    return inv['assets'], sorted(out)
+
+
+def same_json(src, back, js):
+    """the unpacked JSON text gives the same values as the original, bit for bit (tools/ff/tlj's comparison)"""
+    import importlib.machinery, importlib.util
+    spec = importlib.util.spec_from_loader('tlj', importlib.machinery.SourceFileLoader('tlj', TLJ))
+    tlj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tlj)
+    return tlj.same(tlj.read_json(src, js), json.loads(open(back, encoding='utf-8').read()))
+
+
+def tlpk(src, dst):
+    subprocess.run([TLPK, 'c', '-f', 'auto', src, dst], check=True, capture_output=True)
+    return os.path.getsize(dst)
+
+
+def main():
+    a = sys.argv[1:]
+    out = os.path.join(FF, 'packed')
+    report = os.path.join(FF, 'forge.md')
+    i = 0
+    while i < len(a):
+        if a[i] == '--out':
+            out = os.path.abspath(a[i + 1])
+        elif a[i] == '--report':
+            report = os.path.abspath(a[i + 1])
+        else:
+            sys.exit(__doc__)
+        i += 2
+    build_tools()
+    adir, files = floppy_set()
+    shutil.rmtree(out, ignore_errors=True)
+    tmp = os.path.join(FF, 'forge-tmp')
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp)
+    rows, bad = [], 0
+    for rel in files:
+        src = os.path.join(adir, rel)
+        dst = os.path.join(out, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        cand = []
+        t1 = os.path.join(tmp, 'raw.tlpk')
+        cand.append((tlpk(src, t1), 'TLPK', t1))
+        if rel.endswith('.h16'):  # terrain heights: our own lossless codec (129 x 129 samples)
+            t3 = os.path.join(tmp, 'h.tlh')
+            subprocess.run([TLH, 'c', '129', '129', src, t3], check=True, capture_output=True)
+            cand.append((os.path.getsize(t3), 'TLH', t3))
+        js = JS_BRACKETS.get(rel)
+        nm = without_meshes(rel, adir, files, tmp)
+        if nm:  # the table without the meshes the .glb files already hold: TLJ inside TLPK
+            j = os.path.join(tmp, 'nomesh.tlj')
+            subprocess.run([sys.executable, TLJ, 'enc', nm[0], j], check=True, capture_output=True)
+            t4 = os.path.join(tmp, 'nomesh.tlj.tlpk')
+            cand.append((tlpk(j, t4), 'TLJ + TLPK, no mesh copies (%s)' % ', '.join(nm[1]), t4))
+        if rel.endswith('.json') or js:
+            j = os.path.join(tmp, 'doc.tlj')
+            subprocess.run([sys.executable, TLJ, 'enc', src, j] + (['--js', js[0], js[1]] if js else []), check=True,
+                           capture_output=True)
+            t2 = os.path.join(tmp, 'doc.tlj.tlpk')
+            cand.append((tlpk(j, t2), 'TLJ + TLPK', t2))
+        size, how, path = min(cand)
+        shutil.copy(path, dst)
+        # the check, through the game's own unpackers
+        back = os.path.join(tmp, 'back')
+        subprocess.run([UNPACK, dst, back], check=True, capture_output=True)
+        if how in ('TLPK', 'TLH'):
+            ok = open(back, 'rb').read() == open(src, 'rb').read()
+        elif 'no mesh copies' in how:  # the same values, less the meshes left out
+            ok = same_json(nm[0], back, None)
+        else:
+            ok = same_json(src, back, js)
+        bad += not ok
+        rows.append((rel, os.path.getsize(src), size, how, ok))
+        for _, _, p in cand:
+            if os.path.exists(p):
+                os.remove(p)
+    shutil.rmtree(tmp, ignore_errors=True)
+    raw = sum(r[1] for r in rows)
+    packed = sum(r[2] for r in rows)
+    with open(report, 'w') as w:
+        w.write('# Floppy forge: the packed assets\n\n%d files, %s bytes raw, %s packed (%.1f %%); %s\n\n' % (
+            len(rows), format(raw, ','), format(packed, ','), 100.0 * packed / raw,
+            'every file comes back the same' if not bad else '%d FAILED to come back the same' % bad))
+        w.write('| File | Raw | Packed | How | Back the same |\n|---|---|---|---|---|\n')
+        for r in rows:
+            w.write('| %s | %s | %s | %s | %s |\n' % (r[0], format(r[1], ','), format(r[2], ','), r[3], 'yes' if r[4] else 'NO'))
+    print('forge: %d files, %s -> %s bytes (%.1f %%), %s; %s' % (len(rows), format(raw, ','), format(packed, ','),
+                                                            100.0 * packed / raw, 'all back the same' if not bad else
+                                                            '%d NOT back the same' % bad, os.path.relpath(out, ROOT)))
+    sys.exit(1 if bad else 0)
+
+
+if __name__ == '__main__':
+    main()

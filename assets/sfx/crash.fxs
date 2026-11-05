@@ -1,0 +1,59 @@
+# crash: crash into the ground or sea: heavy boom, metal ring-mod clangs, debris rumble
+a4c-sfx 1
+play once 6.5
+volume f
+wave mutew
+  08 +0
+  00 +0
+  end
+instrument mute ad=00 sr=00 wave=mutew
+wave boomw
+  81 =44
+  81 =3a
+  81 =30
+  81 =1c
+  81 =18
+  loop 3
+wave modw
+  41 +0
+  end
+wave clangw
+  15 +1
+  15 +0
+  15 +0
+  end
+pulse p6
+  set 600 01
+  add 020 40
+  end
+filter boomf
+  set lp 7f0 6 1
+  add -008 40
+  add -003 ff
+  add -001 ff
+  end
+instrument boom ad=09 sr=bd wave=boomw filter=boomf flags=filteron
+instrument mod ad=08 sr=6a wave=modw pulse=p6
+instrument clang ad=0a sr=00 wave=clangw
+command fall slide ffd0
+track 1
+  C-4:boom + + + + + + + + + + + + + + +
+  + + + + + + + + + + + + + + + +
+  + + + + + + + + + + + + + + + +
+  + + - - - - - - - - - - - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -
+track 2
+  C-2:mod:fall + + + + + + + + + + + + + + +
+  + + + + + + + + + + + + + + + +
+  + + + + + + + + + + + + + + + +
+  + + + + + + + + + + + + - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -
+track 3
+  - - G-4:clang + + + + + + + + + + + + +
+  + + + + + + - - D-4:clang + + + + + + +
+  + + + + + + + + + + + + - - - A-3:clang
+  + + + + + + + + + + + + + + + +
+  + + + - - - - - - - - - - - - -
+  F-3:clang + + + + + + + + + + + + + + +
+  + + + + - - - - - - - - - - - -
+  @loop C-4:mute - - - - - - - - - - - - - - -

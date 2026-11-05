@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""tools/static - the static checkers over the game, the platform layers and the C tools: cppcheck (with the macOS,
+Linux and Windows defines) and clang-tidy (on a compile database), and the Safe C rules of docs/SAFE_C.md (the
+banned calls). Every cppcheck and clang-tidy finding must be fixed or justified in tools/static.supp, one line each
+with its reason; a banned call cannot be justified. Anything else fails. Original code for this project; Python 3.8+
+standard library only.
+
+usage: tools/static [--build DIR]... [--out DIR] [--jobs N] [--only cppcheck|clang-tidy]
+
+  --build DIR   a CMake build folder with compile_commands.json, for clang-tidy (more than one: each is checked;
+                a MinGW one is read with --target=x86_64-w64-mingw32). Default: build/macos-release or build/linux.
+  --out DIR     where the raw findings go (default build/static): cppcheck-*.txt, clang-tidy-*.txt, open.txt
+The tools: cppcheck and clang-tidy from PATH, or A4C_CPPCHECK and A4C_CLANG_TIDY. A missing tool is a failure, not
+a pass. Exit 0 only when every finding is fixed or justified."""
+import concurrent.futures
+import fnmatch
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SUPP = os.path.join(ROOT, 'tools', 'static.supp')
+SOURCES = ['src', 'tools/livepilot', 'tools/p5bench']
+CPPCHECK_SETS = {
+    'macos': ['--library=posix', '-D__APPLE__', '-D__MACH__'],
+    'linux': ['--library=posix', '-D__linux__', '-D_GNU_SOURCE'],
+    'windows': ['--library=windows', '-D_WIN32', '-D_WIN64', '-D__MINGW32__', '-D__MINGW64__'],
+}
+# bugprone, cert, the analyzer, concurrency, misc and performance; the readability checks that find bugs. Two are
+# left out as not about bugs at all: swappable parameter pairs, and which header each name comes from.
+TIDY_CHECKS = ('-*,bugprone-*,cert-*,clang-analyzer-*,concurrency-*,misc-*,performance-*,'
+               'readability-misleading-indentation,readability-suspicious-call-argument,'
+               'readability-non-const-parameter,readability-duplicate-include,'
+               '-bugprone-easily-swappable-parameters,-misc-include-cleaner')
+RE_TIDY = re.compile(r'^(/[^:]+):(\d+):\d+: (?:warning|error): (.*) \[([a-zA-Z0-9.,_-]+)\]$')
+
+
+def rel(p):
+    p = os.path.realpath(p)
+    return os.path.relpath(p, ROOT) if p.startswith(ROOT + os.sep) else p
+
+
+def tool(env, name):
+    t = os.environ.get(env) or shutil.which(name)
+    return t if t and os.path.isfile(t) else None
+
+
+def load_supp():
+    """[(tool, check pattern, path pattern, reason)]: '#' starts the reason, which every line must have"""
+    rules = []
+    for n, line in enumerate(open(SUPP, encoding='utf-8'), 1):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        body, _, reason = line.partition('#')
+        f = body.split()
+        if len(f) != 3 or not reason.strip():
+            sys.exit('tools/static.supp:%d: want "tool check path # reason"' % n)
+        rules.append((f[0], f[1], f[2], reason.strip()))
+    return rules
+
+
+USED = set()  # the suppression lines that matched a finding this run
+
+
+def justified(rules, t, check, path):
+    for k, (rt, rc, rp, _) in enumerate(rules):
+        if rt in (t, '*') and any(fnmatch.fnmatchcase(c, rc) for c in check.split(',')) and fnmatch.fnmatchcase(path, rp):
+            USED.add(k)
+            return True
+    return False
+
+
+# docs/SAFE_C.md: calls that are banned outright, each with what to use instead
+BANNED = [(r'\bstrcpy\s*\(', 'strcpy: snprintf(dst, sizeof dst, "%s", src)'),
+          (r'\bstrcat\s*\(', 'strcat: snprintf at the end, with the room left'),
+          (r'\bv?sprintf\s*\(', 'sprintf/vsprintf: snprintf/vsnprintf'),
+          (r'\bgets\s*\(', 'gets: fgets'),
+          (r'\bstrtok\s*\(', 'strtok: safe_token (core/safe.h)'),
+          (r'\bato[ifl]\s*\(', 'atoi/atof/atol: safe_int/safe_num (core/safe.h)'),
+          (r'\balloca\s*\(', 'alloca: a fixed array or malloc'),
+          ('SCANF', 'scanf %s or %[ without a width: give it one')]
+RE_SCANF = re.compile(r'\b[sf]?scanf\s*\(')
+# printf length modifiers the Windows C library's printf (and so gcc-mingw's format check) does not know: in code
+# built for Windows (src/, relay/) a size is cast for %lu or %llu instead
+RE_SPEC = re.compile(r'%%|%[-+ #0-9.*]*(hh|h|ll|l|L|j|z|t)?[diouxXeEfFgGaAcspn]')
+WIN_SOURCES = ('src', 'relay')
+# the code that must compute the same bits on every system (the sim, the CPU's hands, the sound: the matches and the
+# music render are compared bit for bit across systems) uses core/fmath, never the system's libm, whose
+# transcendental functions round differently in the last bit between glibc, Apple's and MinGW's
+FM_ONLY = ('src/core/sim.c', 'src/core/ai.c', 'src/core/game.c', 'src/core/world.c', 'src/cheat.c', 'src/testpilot.c',
+           'src/synth.c', 'src/sfx.c')
+RE_LIBM = re.compile(r'(?<![_A-Za-z0-9.>])(sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|exp|exp2|expm1|log|log2|log10|'
+                     r'log1p|pow|cbrt|hypot|erf|erfc|lgamma|tgamma)[fl]?\s*\(')
+RE_FMT = re.compile(r'"((?:[^"\\]|\\.)*)"')
+SAFE_SOURCES = SOURCES + ['tests']
+# the game's own random draws (each call moves a generator on): two of them in one argument list or one expression
+# come in an order C leaves open (GCC on x86-64 evaluates a call's arguments right to left, Clang left to right),
+# so the film, the matches or the sound would differ from one compiler to the next; take them into locals first
+RE_RNG = re.compile(r'(?<![_A-Za-z0-9.>])(rnd|frand|tp_rand|game_rand|crand|rand|random)\s*\(')
+RE_DECL = re.compile(r'^\s*(?:static\s+)?(?:const\s+)?(?:float|double|int|unsigned|uint32_t|uint64_t|bool|vec3)\s+[A-Za-z_]')
+RE_FNHEAD = re.compile(r'\b\w+\s*\([^()]*\)\s*$')
+
+
+def rng_order(path, bare):
+    """statements with two or more random draws whose order C does not fix (separate declarators are sequenced)"""
+    out, start = [], 0
+    for i, ch in enumerate(bare):
+        if ch not in ';{}':
+            continue
+        seg = bare[start:i]
+        pieces = [seg]
+        cond = re.match(r'\s*(?:else\s+)?(?:if|while)\s*\(', seg)
+        if cond:  # if (a) b: the condition is a full expression of its own, done before the body
+            depth, j = 0, cond.end() - 1
+            for j in range(cond.end() - 1, len(seg)):
+                depth += seg[j] == '(' and 1 or seg[j] == ')' and -1 or 0
+                if depth == 0:
+                    break
+            pieces = [seg[:j + 1], seg[j + 1:]]
+        if not cond and RE_DECL.match(seg):  # int a = rnd(), b = rnd(); : each declarator in turn
+            pieces, depth, last = [], 0, 0
+            for j, c in enumerate(seg):
+                depth += c in '([' and 1 or c in ')]' and -1 or 0
+                if c == ',' and depth == 0:
+                    pieces.append(seg[last:j]); last = j + 1
+            pieces.append(seg[last:])
+        for pc in pieces:
+            calls = list(RE_RNG.finditer(pc))
+            if len(calls) >= 2 and not (ch == '{' and RE_FNHEAD.search(seg)):
+                at = start + (seg.find(pc) if pc in seg else 0) + calls[0].start()
+                out.append(('safe-c', 'banned', rel(path), bare.count('\n', 0, at) + 1,
+                            'two random draws in one expression: their order is the compiler\'s; draw into locals first'))
+        start = i + 1
+    return out
+
+
+def code_only(text):
+    """the C text with comments and string and character literals blanked (lines kept), so a word in a comment or
+    a string is not a call; the scanf check runs on the text with its strings kept"""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            out.append(re.sub(r'[^\n]', ' ', text[i:j]))
+            i = j
+        elif text.startswith('//', i):
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+            out.append(' ' * (j - i))
+            i = j
+        elif c in '"\'':
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == '\\' else 1
+            out.append(c + ' ' * (min(j, n) - i - 1) + (c if j < n else ''))
+            i = j + 1
+        else:
+            out.append(c)
+            i += 1
+    return ''.join(out)
+
+
+def run_banned():
+    found = []
+    for top in SAFE_SOURCES:
+        for d, _, fs in os.walk(os.path.join(ROOT, top)):
+            for f in fs:
+                if not f.endswith(('.c', '.h', '.m')):
+                    continue
+                path = os.path.join(d, f)
+                text = open(path, encoding='utf-8', errors='replace').read()
+                bare = code_only(text)
+                for rx, why in BANNED:
+                    if rx == 'SCANF':  # each scanf call (in the code, not a comment): its own format string
+                        for m in RE_SCANF.finditer(bare):
+                            f = RE_FMT.search(text, m.end())
+                            if f and re.search(r'%(?![0-9*%])[\[s]', f.group(1)):
+                                found.append(('safe-c', 'banned', rel(path), text.count('\n', 0, m.start()) + 1, why))
+                        continue
+                    for m in re.finditer(rx, bare):
+                        found.append(('safe-c', 'banned', rel(path), bare.count('\n', 0, m.start()) + 1, why))
+                found += rng_order(path, bare)
+                if rel(path) in FM_ONLY:
+                    for m in RE_LIBM.finditer(bare):
+                        found.append(('safe-c', 'banned', rel(path), bare.count('\n', 0, m.start()) + 1,
+                                      '%s: libm in code that must give the same bits everywhere; core/fmath (fm_%sf)' % (m.group(1), m.group(1))))
+                if rel(path).split('/')[0] in WIN_SOURCES:  # each string literal in the code, not in a comment
+                    for lit in RE_FMT.finditer(text):
+                        if bare[lit.start()] != '"':
+                            continue
+                        for sp in RE_SPEC.finditer(lit.group(1)):
+                            if sp.group(1) in ('j', 'z', 't'):
+                                found.append(('safe-c', 'banned', rel(path), text.count('\n', 0, lit.start()) + 1,
+                                              '%%%s in a format: Windows\' printf does not know it; cast for %%lu or %%llu' % sp.group(1)))
+    return found
+
+
+def run_cppcheck(exe, out, jobs):
+    found = []
+    for name, defs in CPPCHECK_SETS.items():
+        cmd = [exe, '--enable=all', '--inconclusive', '--std=c11', '--inline-suppr', '-q', '-j', str(jobs),
+               '--check-level=exhaustive', '--suppress=missingIncludeSystem', '--suppress=unusedFunction',
+               '--suppress=checkersReport', '-I', 'src', '-I', 'src/core', '-I', 'src/platform',
+               '--template={file}:{line}|{severity}|{id}|{message}'] + defs + SOURCES
+        p = subprocess.run(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        open(os.path.join(out, 'cppcheck-%s.txt' % name), 'w').write(p.stderr)
+        for line in p.stderr.splitlines():
+            m = re.match(r'^(.+?):(\d+)\|(\w+)\|(\w+)\|(.*)$', line)
+            if m:
+                found.append(('cppcheck', m.group(4), rel(os.path.join(ROOT, m.group(1))), int(m.group(2)), m.group(5)))
+    return found
+
+
+def tidy_db(build, out):
+    """the build's compile database, one architecture, the MinGW target spelled out; None if there is none"""
+    src = os.path.join(build, 'compile_commands.json')
+    if not os.path.isfile(src):
+        return None, None
+    db = json.load(open(src))
+    cache = open(os.path.join(build, 'CMakeCache.txt')).read() if os.path.isfile(os.path.join(build, 'CMakeCache.txt')) else ''
+    mingw = 'mingw' in cache.lower()
+    sdk = ''
+    if sys.platform == 'darwin' and not mingw:
+        sdk = subprocess.run(['xcrun', '--show-sdk-path'], capture_output=True, text=True).stdout.strip()
+    for e in db:
+        c = e.get('command') or ' '.join(e['arguments'])
+        c = re.sub(r' -arch x86_64', '', c).replace(' -Werror', '')
+        if mingw:
+            cc = c.split()[0]
+            root = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(shutil.which(cc) or cc))), 'x86_64-w64-mingw32')
+            if not os.path.isdir(os.path.join(root, 'include')) and os.path.isdir(os.path.join(root, 'sys-root', 'mingw', 'include')):
+                root = os.path.join(root, 'sys-root', 'mingw')  # Fedora and EL put the MinGW headers there
+            c += ' --target=x86_64-w64-mingw32' + (' --sysroot=' + root if os.path.isdir(root) else '')
+        elif sdk:
+            c += ' -isysroot ' + sdk
+        e['command'] = c
+        e.pop('arguments', None)
+    d = os.path.join(out, 'db-' + os.path.basename(os.path.normpath(build)))
+    os.makedirs(d, exist_ok=True)
+    json.dump(db, open(os.path.join(d, 'compile_commands.json'), 'w'), indent=1)
+    files = sorted({e['file'] for e in db if rel(e['file']).split('/')[0] in ('src', 'tests', 'tools')})
+    return d, files
+
+
+def run_tidy(exe, builds, out, jobs):
+    found = []
+    for b in builds:
+        d, files = tidy_db(b, out)
+        if not d:
+            print('static: no compile_commands.json in %s' % rel(b))
+            found.append(('clang-tidy', 'no-database', rel(b), 0, 'no compile_commands.json'))
+            continue
+
+        def one(f):
+            p = subprocess.run([exe, '-p', d, '--quiet', '--checks=' + TIDY_CHECKS,
+                                '--header-filter=' + re.escape(os.path.join(ROOT, 'src')) + '/.*', f],
+                               cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            return p.stdout
+        with concurrent.futures.ThreadPoolExecutor(jobs) as ex:
+            text = ''.join(ex.map(one, files))
+        open(os.path.join(out, 'clang-tidy-%s.txt' % os.path.basename(os.path.normpath(b))), 'w').write(text)
+        for line in text.splitlines():
+            m = RE_TIDY.match(line)
+            if m:
+                found.append(('clang-tidy', m.group(4), rel(m.group(1)), int(m.group(2)), m.group(3)))
+    return found
+
+
+def main():
+    a = sys.argv[1:]
+    builds, out, jobs, only = [], os.path.join(ROOT, 'build', 'static'), max(1, (os.cpu_count() or 2) - 1), None
+    i = 0
+    while i < len(a):
+        if a[i] == '--build' and i + 1 < len(a):
+            builds.append(os.path.abspath(a[i + 1]))
+        elif a[i] == '--out' and i + 1 < len(a):
+            out = os.path.abspath(a[i + 1])
+        elif a[i] == '--jobs' and i + 1 < len(a):
+            jobs = int(a[i + 1])
+        elif a[i] == '--only' and i + 1 < len(a):
+            only = a[i + 1]
+        else:
+            sys.exit(__doc__)
+        i += 2
+    if not builds:
+        builds = [os.path.join(ROOT, 'build', 'macos-release' if sys.platform == 'darwin' else 'linux')]
+    os.makedirs(out, exist_ok=True)
+    rules = load_supp()
+    found, missing = run_banned(), []  # the banned calls first: no tool needed, and no line in tools/static.supp can excuse one
+    if only in (None, 'cppcheck'):
+        exe = tool('A4C_CPPCHECK', 'cppcheck')
+        if exe:
+            found += run_cppcheck(exe, out, jobs)
+        else:
+            missing.append('cppcheck')
+    if only in (None, 'clang-tidy'):
+        exe = tool('A4C_CLANG_TIDY', 'clang-tidy')
+        if exe:
+            found += run_tidy(exe, builds, out, jobs)
+        else:
+            missing.append('clang-tidy')
+    seen = sorted(set(found), key=lambda f: (f[0], f[2], f[3], f[1]))
+    open_ = [f for f in seen if f[0] == 'safe-c' or not justified(rules, f[0], f[1], f[2])]
+    with open(os.path.join(out, 'open.txt'), 'w') as w:
+        for t, c, p, n, msg in open_:
+            w.write('%s %s:%d [%s] %s\n' % (t, p, n, c, msg))
+    by = {}
+    for f in seen:
+        by.setdefault(f[0], [0, 0])
+        by[f[0]][0] += 1
+    for f in open_:
+        by[f[0]][1] += 1
+    print('static: ' + '; '.join('%s %d findings, %d open' % (t, n[0], n[1]) for t, n in sorted(by.items())) +
+          (('; missing: ' + ', '.join(missing)) if missing else ''))
+    for t, c, p, n, msg in open_[:20]:
+        print('  open: %s %s:%d [%s] %s' % (t, p, n, c, msg[:140]))
+    if only is None and not missing:  # a line nothing needs any more should go, so the file stays the truth
+        for k, (rt, rc, rp, why) in enumerate(rules):
+            if k not in USED:
+                print('  unused: %s %s %s # %s' % (rt, rc, rp, why[:80]))
+    sys.exit(1 if open_ or missing else 0)
+
+
+if __name__ == '__main__':
+    main()

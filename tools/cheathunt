@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""tools/cheathunt - the cheater at the keyboard: storms of keys, chords and window events thrown at a real copy of
+the game in every state (intro, menu, match, pause, game over) and every mode, looking for a crash, a hang, a state
+it cannot leave, broken physics, or a key that does something it should not. Then the cheater in the cockpit
+(--test-pilots --pilot cheat): every trick against the rule watch. Original code for this project; Python 3.8+
+standard library only.
+
+usage: tools/cheathunt [--build DIR] [--storms N] [--seed S] [--jobs J] [--no-cockpit] [--report FILE]
+
+--jobs runs J storms side by side (keep one core free for the machine); a QA round shared between computers gives
+each a different --seed range, and --no-cockpit leaves the cockpit part to one of them.
+
+Every storm is repeatable from its seed (the command is in the report). Exits 1 on a finding."""
+import os
+import random
+import re
+import shutil
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, 'build', 'cheathunt')
+CFG = os.path.join(OUT, 'cfg')
+
+# every key the game listens to, and some it does not
+KEYS = list('abcdefghijklmnopqrstuvwxyz0123456789') + ['esc', 'tab', 'space', 'enter', 'alt+enter', 'up', 'down', 'left',
+                                                      'right', 'lshift', 'rshift'] + ['f%d' % i for i in range(1, 13)]
+EVENTS = ['focus-lost', 'focus-gained', 'hide', 'show', 'stall']
+MODES = ['1p', '2p', 'coop', 'defend', 'defend1', 'drone', 'drone2', None]  # None: from the intro
+
+
+def fresh_cfg(cfg=CFG):
+    d = os.path.join(cfg, 'tailonlock')
+    shutil.rmtree(cfg, ignore_errors=True)
+    os.makedirs(d)
+    with open(os.path.join(d, 'settings.ini'), 'w') as f:
+        f.write('intro=1\n')
+
+
+def video_env():
+    """a window with no screen (the platform layer's offscreen window, on every system)"""
+    return {'A4C_VIDEO': 'offscreen'}
+
+
+def storm(exe, seed):
+    """One storm: a mode, 1500-4000 frames, 40-200 keys (some held, some chords at the same frame), a few window
+    events. Returns (verdict, command, evidence)."""
+    r = random.Random(seed)
+    mode = r.choice(MODES)
+    frames = r.randint(1500, 4000)
+    args = ['--frames', str(frames), '--seed', str(seed)]
+    if mode:
+        args += ['--play', mode]
+    for _ in range(r.randint(40, 200)):
+        f = r.randint(1, frames - 10)
+        hold = r.choice([1, 2, 3, 10, 60, 300])
+        for k in r.sample(KEYS, r.choice([1, 1, 1, 2, 3, 5])):  # chords: several keys on the same frame
+            args += ['--key', '%d:%s:%d' % (f, k, hold)]
+    for _ in range(r.randint(0, 6)):
+        args += ['--event', '%d:%s' % (r.randint(1, frames - 10), r.choice(EVENTS))]
+    for _ in range(r.randint(0, 20)):
+        args += ['--click', '%d:%d:%d' % (r.randint(1, frames - 10), r.randint(0, 1279), r.randint(0, 719))]
+    cfg = os.path.join(CFG, 'storm-%d' % seed)  # each storm its own settings, so storms can run side by side
+    fresh_cfg(cfg)
+    env = dict(os.environ, XDG_CONFIG_HOME=cfg, A4C_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), A4C_AUDIO='dummy',
+               A4C_STATE='1', A4C_CHECK='1', **video_env())
+    cmd = 'tools/cheathunt storm: tailonlock ' + ' '.join(args)
+    t0 = time.time()
+    try:
+        p = subprocess.run([exe] + args, env=env, capture_output=True, text=True, timeout=240)
+    except subprocess.TimeoutExpired:
+        return 'HANG', cmd, 'still running after 240 s'
+    log = p.stdout + p.stderr
+    if p.returncode != 0:
+        return 'CRASH' if p.returncode < 0 or p.returncode > 1 else 'FAIL', cmd, 'exit code %d; last lines: %s' % (
+            p.returncode, ' / '.join(log.strip().splitlines()[-3:]))
+    bad = re.findall(r'PHYSICS .*', log)
+    if bad:
+        return 'PHYSICS', cmd, bad[0]
+    states = re.findall(r'STATE (\w+) at frame (\d+)', log)
+    last = [s for s, _ in states if s in ('intro', 'menu', 'play', 'pause', 'over', 'editor')]
+    if 'editor' in last:
+        return 'EDITOR', cmd, 'a key storm opened the music editor'
+    if not any(s in last for s in ('play', 'menu', 'intro')):
+        return 'NOSTART', cmd, 'the game never reached the intro, the menu or a match (no window?)'
+    return 'ok', cmd, '%s, %d frames in %.1f s, screens: %s' % (mode or 'intro', frames, time.time() - t0,
+                                                               '>'.join(dict.fromkeys(last)))
+
+
+def find_exe(build):
+    """the game in --build DIR, or the usual build of this system (the app bundle on macOS)"""
+    names = ['TailonLock.app/Contents/MacOS/TailonLock', 'tailonlock', 'TailonLock.exe', 'tailonlock.exe']
+    dirs = [build] if build else [os.path.join(ROOT, 'build', d) for d in ('linux-release', 'macos-release', 'macos-debug',
+                                                                          'linux-debug')]
+    for d in dirs:
+        for n in names:
+            if os.path.isfile(os.path.join(d, n)):
+                return os.path.abspath(os.path.join(d, n))
+    sys.exit('cheathunt: no game found; build it first or give --build DIR')
+
+
+def main():
+    args = sys.argv[1:]
+    build = None
+    n, seed0, jobs, cockpit = 40, 1, 1, True
+    report = os.path.join(OUT, 'report.md')
+    i = 0
+    while i < len(args):
+        if args[i] == '--build':
+            build = os.path.abspath(args[i + 1])
+        elif args[i] == '--storms':
+            n = int(args[i + 1])
+        elif args[i] == '--seed':
+            seed0 = int(args[i + 1])
+        elif args[i] == '--report':
+            report = os.path.abspath(args[i + 1])
+        elif args[i] == '--jobs':
+            jobs = max(1, int(args[i + 1]))
+        elif args[i] == '--no-cockpit':
+            cockpit = False
+            i -= 1
+        i += 2
+    exe = find_exe(build)
+    os.makedirs(OUT, exist_ok=True)
+    rows, found = [], 0
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        for k, (verdict, cmd, ev) in enumerate(pool.map(lambda s: storm(exe, s), range(seed0, seed0 + n))):
+            found += verdict != 'ok'
+            rows.append((seed0 + k, verdict, cmd, ev))
+            print('storm %3d %-7s %s' % (seed0 + k, verdict, ev if verdict == 'ok' else ev + '\n    ' + cmd), flush=True)
+    # the cheater in the cockpit, against the rule watch
+    tp = os.path.join(OUT, 'cockpit.md')
+    findings = []
+    if cockpit:  # one computer of a shared round runs it
+        env = dict(os.environ, XDG_CONFIG_HOME=CFG, A4C_CONFIG_DIR=os.path.join(CFG, 'tailonlock'))
+        fresh_cfg()
+        p = subprocess.run([exe, '--test-pilots', '--pilot', 'cheat', '--matches', '90', '--seed', str(seed0), '--report', tp],
+                           env=env, capture_output=True, text=True, timeout=900)
+        findings = sorted(set(re.sub(r'\d+ times, first at t=\d+: ', '', l.strip())
+                              for l in (p.stdout + p.stderr).splitlines() if 'FINDING' in l))
+    found += len(findings)
+    with open(report, 'w') as f:
+        f.write('# The cheater\'s report\n\n%s\n\n## At the keyboard\n\n%d storms of keys, chords, clicks and window events, '
+                'in every mode and from the intro, with the physics check on.\n\n| Storm | Result | What happened |\n|---|---|---|\n'
+                % (time.strftime('%Y-%m-%d %H:%M'), n))
+        for s, v, cmd, ev in rows:
+            f.write('| %d | %s | %s |\n' % (s, v if v == 'ok' else '**%s**' % v, ev if v == 'ok' else ev + '<br>`' + cmd + '`'))
+        if cockpit:
+            f.write('\n## In the cockpit\n\n90 matches, a trick each (tools: --test-pilots --pilot cheat; the full report is '
+                    'build/cheathunt/cockpit.md).\n\n')
+            for l in findings:
+                f.write('- %s\n' % l.replace('FINDING ', ''))
+            if not findings:
+                f.write('No rule broken.\n')
+        if cockpit and os.path.exists(tp):
+            body = open(tp).read()
+            if "## The cheater's findings" in body:
+                f.write('\n' + body[body.index("## The cheater's findings"):].replace('## ', '### '))
+    print('report: ' + os.path.relpath(report, ROOT))
+    return 1 if found else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

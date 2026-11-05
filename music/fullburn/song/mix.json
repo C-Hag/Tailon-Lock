@@ -1,0 +1,335 @@
+{
+ "name": "fullburn-80s-buzzlead-arp-dmx10",
+ "length_s": 198.957,
+ "reverb_s": 3.0,
+ "sids": [
+  {
+   "sf2": "chip-a.sf2",
+   "model": "6581",
+   "voices": [
+    {
+     "gain_db": 2,
+     "pan": 0,
+     "reverb": 0.06
+    },
+    {
+     "gain_db": 1,
+     "pan": 0,
+     "reverb": 0.02
+    },
+    {
+     "gain_db": 1,
+     "pan": 0.1,
+     "reverb": 0.2
+    }
+   ]
+  },
+  {
+   "sf2": "chip-b.sf2",
+   "model": "6581",
+   "voices": [
+    {
+     "gain_db": -5,
+     "pan": 0.45,
+     "reverb": 0.15
+    },
+    {
+     "gain_db": -4,
+     "pan": -0.45,
+     "reverb": 0.25
+    },
+    {
+     "gain_db": -3,
+     "pan": 0.3,
+     "reverb": 0.2
+    }
+   ],
+   "eq": [
+    [
+     "peak",
+     650,
+     0.45,
+     -6.0
+    ]
+   ]
+  },
+  {
+   "sf2": "chip-c.sf2",
+   "model": "6581",
+   "highpass": 140,
+   "comp": {
+    "threshold_db": -22,
+    "ratio": 4
+   },
+   "voices": [
+    {
+     "gain_db": -2,
+     "pan": -0.75,
+     "reverb": 0.2
+    },
+    {
+     "gain_db": -2,
+     "pan": -0.75,
+     "reverb": 0.2
+    },
+    {
+     "gain_db": -2,
+     "pan": -0.75,
+     "reverb": 0.2
+    }
+   ],
+   "amp": {
+    "drive_db": 22,
+    "bias": 0.3,
+    "tone": {
+     "bass": 0.0,
+     "mid": 3.0,
+     "treble": 2.0
+    },
+    "level": 0.5282
+   },
+   "eq": [
+    [
+     "peak",
+     1500,
+     1.0,
+     3.0
+    ]
+   ]
+  },
+  {
+   "sf2": "chip-d.sf2",
+   "model": "6581",
+   "highpass": 140,
+   "comp": {
+    "threshold_db": -22,
+    "ratio": 4
+   },
+   "voices": [
+    {
+     "gain_db": -2,
+     "pan": 0.75,
+     "reverb": 0.2,
+     "raw": "chipd-v1-raw.wav"
+    },
+    {
+     "gain_db": -2,
+     "pan": 0.75,
+     "reverb": 0.2
+    },
+    {
+     "gain_db": -2,
+     "pan": 0.75,
+     "reverb": 0.2
+    }
+   ],
+   "amp": {
+    "drive_db": 22,
+    "bias": 0.3,
+    "tone": {
+     "bass": 0.0,
+     "mid": 3.0,
+     "treble": 2.0
+    },
+    "level": 0.5282
+   },
+   "eq": [
+    [
+     "peak",
+     1500,
+     1.0,
+     3.0
+    ]
+   ]
+  },
+  {
+   "sf2": "chip-e.sf2",
+   "model": "6581",
+   "highpass": 120,
+   "voices": [
+    {
+     "gain_db": -6.7,
+     "pan": 0.05,
+     "reverb": 0.3,
+     "raw": "lead-raw.wav"
+    },
+    {
+     "gain_db": -60,
+     "pan": 0,
+     "mute": true
+    },
+    {
+     "gain_db": -60,
+     "pan": 0,
+     "mute": true
+    }
+   ]
+  }
+ ],
+ "tracks": [
+  {
+   "name": "drums",
+   "stereo": true,
+   "gain_db": 3,
+   "pan": 0,
+   "reverb": 0.08,
+   "cues": [
+    {
+     "file": "drums-kit.wav",
+     "at": 0.0
+    }
+   ],
+   "norm_peak": 0.889984130859375
+  },
+  {
+   "name": "moog",
+   "gain_db": -1,
+   "pan": 0,
+   "eq": [
+    [
+     "lp",
+     220,
+     0.7
+    ],
+    [
+     "hp",
+     35,
+     0.7
+    ]
+   ],
+   "comp": {
+    "threshold_db": -18,
+    "ratio": 3
+   },
+   "cues": [
+    {
+     "file": "moog.wav",
+     "at": 0.0
+    }
+   ],
+   "norm_peak": 0.5896002351041103
+  },
+  {
+   "name": "juno pads",
+   "stereo": true,
+   "gain_db": -13,
+   "reverb": 0.35,
+   "eq": [
+    [
+     "peak",
+     650,
+     0.45,
+     -6.0
+    ]
+   ],
+   "cues": [
+    {
+     "file": "pads.wav",
+     "at": 0.0
+    }
+   ],
+   "norm_peak": 0.5967882258864465
+  },
+  {
+   "name": "synclavier harmony",
+   "stereo": true,
+   "gain_db": -13,
+   "reverb": 0.4,
+   "eq": [
+    [
+     "peak",
+     650,
+     0.45,
+     -6.0
+    ]
+   ],
+   "cues": [
+    {
+     "file": "synclav-harm.wav",
+     "at": 0.0
+    }
+   ],
+   "norm_peak": 0.5300435782258328
+  },
+  {
+   "name": "bell clock",
+   "stereo": true,
+   "gain_db": -9,
+   "reverb": 0.35,
+   "eq": [
+    [
+     "peak",
+     650,
+     0.45,
+     -6.0
+    ]
+   ],
+   "cues": [
+    {
+     "file": "bell-clock.wav",
+     "at": 0.0
+    }
+   ],
+   "norm_peak": 0.566281502464797
+  },
+  {
+   "name": "swells",
+   "stereo": true,
+   "gain_db": -14,
+   "reverb": 0.4,
+   "cues": [
+    {
+     "file": "swells.wav",
+     "at": 0.0
+    }
+   ],
+   "norm_peak": 0.889984130859375
+  }
+ ],
+ "master": {
+  "peak_db": -1.0,
+  "glue_db": -18,
+  "glue_ratio": 2.0,
+  "glue_attack": 0.03,
+  "glue_release": 0.25,
+  "pre_db": 8.5,
+  "eq": [
+   [
+    "lowshelf",
+    60,
+    0.7,
+    2.0
+   ],
+   [
+    "peak",
+    100,
+    1.0,
+    1.0
+   ],
+   [
+    "peak",
+    320,
+    0.9,
+    -2.0
+   ],
+   [
+    "peak",
+    2800,
+    0.9,
+    1.0
+   ],
+   [
+    "highshelf",
+    10000,
+    0.7,
+    1.5
+   ]
+  ],
+  "bus_gain": 1.7389063989258005
+ },
+ "hall": {
+  "predelay": 0.03,
+  "damp": 5000,
+  "mod": 0.4
+ }
+}

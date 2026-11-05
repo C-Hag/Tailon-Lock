@@ -1,0 +1,573 @@
+#!/usr/bin/env python3
+"""tools/playtest - plays whole network matches unattended, CPU pilots in both seats, and checks that the two
+computers agree on every one. Original code for this project; Python 3.8+ standard library only, so it runs on
+Linux, macOS and Windows.
+
+  tools/playtest local [--games 120] [--per-pair 5] [--jobs 4] [--ways address,relay,bad-address,bad-relay]
+                      [--build DIR] [--report FILE]
+      both computers of each match on this one: a host and a guest process, with the dummy video and sound
+      drivers. The ways to meet:
+        address      the guest joins the host by address (the LAN and internet-address path), one pair at a time
+                     (the host's UDP port 27960 is fixed)
+        relay        both go through a relay (the internet path without port forwarding); a4c_relay runs here,
+                     up to 4 pairs at once (the relay lets one address host 4 games)
+        bad-address  address, through a bad-internet proxy: 40-120 ms delay with jitter, 3 % loss, 1 % doubled,
+                     some packets out of order
+        bad-relay    relay, with the guest behind the same proxy
+      Each pair plays --per-pair matches back to back (the host starts a rematch), on a different map, time,
+      weather and set of rules each time.
+
+  tools/playtest solo [--games 160] [--per-run 4] [--jobs 4] [--modes 1p,2p,coop,defend,defend1,drone,drone2]
+      offline matches on this computer, CPU pilots in every seat (the players' jets too): every mode with every
+      jet, a different map, time, weather and set of rules each run, as fast as the computer goes (one 60 Hz tick
+      a frame), with the physics check on (A4C_CHECK).
+
+  tools/playtest side host|guest --code NNNNNN [--join ADDR | --relay ADDR] [--games 10] [--exe PATH]
+                     [--log FILE] [--set key=value ...]
+      one side of a match between two computers (Linux and macOS, or either with Windows): start the host
+      first, then the guest with the same code and the host's address (or both with the same --relay).
+  tools/playtest compare HOST.log GUEST.log
+      checks the two sides' logs of such a run.
+
+What counts as a failure offline: a crash or a sanitizer report, a match that never ends, broken physics.
+What counts as a failure: a crash or a sanitizer report, a match that never starts or ends, a lost connection,
+fewer matches than asked, or the two computers disagreeing on a match (who won, or any jet's kills and lives).
+Exits 1 if anything failed. The report lists every match.
+"""
+import argparse
+import heapq
+import os
+import random
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MAPS = ['twin-isles', 'dune-sea', 'high-valley', 'iron-coast', 'classic']
+TODS = ['dawn', 'day', 'dusk', 'night']
+WEATHER = ['clear', 'scattered', 'overcast', 'storm']
+# the rules a host picks; every pair takes one set for all its matches
+RULES = [
+    ['match=vs', 'size=1v1', 'start=air'],
+    ['match=vs', 'size=1v1', 'start=ground'],
+    ['match=vs', 'size=2v2', 'start=air'],
+    ['match=coop', 'size=1v1', 'start=air'],
+    ['match=vs', 'size=1v1', 'start=air', 'rules=classic'],
+    ['match=vs', 'size=1v1', 'start=air', 'handling=realistic'],
+    ['match=vs', 'size=1v1', 'start=air', 'scenario=dogfight'],
+    ['match=vs', 'size=2v2', 'start=ground', 'diff=hard'],
+    ['net_drone=1'],
+    ['net_drone=2'],
+]
+JETS = ['af40', 'lf27', 'ecf90', 'ja46', 'sy26', 'vk33', 'ks55', 'nf24']
+# loadouts the hangar allows (heat, radar, air-to-ground): each side of a pair picks its own, so the two computers
+# must agree on the other's too
+LOADS = ['6,0,1', '2,6,0', '0,6,0', '0,0,2', '4,0,2', '6,2,0']
+MODES = ['1p', '2p', 'coop', 'defend', 'defend1', 'drone', 'drone2']
+MATCH_CAP_S = 7200  # a match the CPU pilots haven't finished in this long counts as hung
+
+RE_CODE = re.compile(r'net: game code (\d{6})')
+# through a relay the code is good only once the relay has it (it can also hand back a new one)
+RE_RELAY_CODE = re.compile(r'GAME CODE (\d{6}) - TELL YOUR FRIEND')
+RE_END = re.compile(r'(over|lost) at (\d+): winner (-?\d+), ?(.*)')
+RE_PLANE = re.compile(r'^\s+(\S+) kills (\d+) targets (\d+) lives (\d+) score (-?\d+)(?: stores (\d+),(\d+),(\d+))?')
+RE_BAD = re.compile(r'AddressSanitizer|UndefinedBehaviorSanitizer|runtime error:|LeakSanitizer|Assertion .* failed|'
+                    r'Segmentation fault|Abort trap')
+
+
+def find_exe(build):
+    names = ['TailonLock.app/Contents/MacOS/TailonLock', 'tailonlock', 'TailonLock.exe', 'tailonlock.exe']
+    dirs = [build] if build else [os.path.join(ROOT, 'build', d) for d in
+                                  ('linux-release', 'macos-release', 'macos-debug', 'linux-debug', 'gcc-release')]
+    for d in dirs:
+        for n in names:
+            p = os.path.abspath(os.path.join(d, n))  # the games run in their own folders
+            if os.path.isfile(p):
+                return p, os.path.abspath(d)
+    sys.exit('playtest: no game found; build it first or give --build DIR')
+
+
+def game_env(home, log):
+    """the environment of one game process: no window or sound card needed, its own settings folder"""
+    e = dict(os.environ)
+    e.update(A4C_VIDEO='dummy', A4C_AUDIO='dummy', A4C_PLANES='1',
+             A4C_LOG=log, HOME=home, XDG_CONFIG_HOME=home, APPDATA=home, A4C_CONFIG_DIR=os.path.join(home, 'tailonlock'))
+    return e
+
+
+def game_args(seed, rules, games, cap_s):
+    rnd = random.Random(seed)
+    a = ['--renderer', 'retro', '--cmd', 'b', '--games', str(games), '--seconds', str(cap_s), '--seed', str(seed),
+         '--map', rnd.choice(MAPS), '--time', rnd.choice(TODS), '--weather', rnd.choice(WEATHER),
+         '--set', 'intro=0', '--set', 'planes=%d' % rnd.choice([1, 2, 2, 3])]
+    for r in rules:
+        a += ['--set', r]
+    return a
+
+
+# ---- reading a side's log -------------------------------------------------------------------------------
+def parse_log(path):
+    """the matches one side saw end: [(kind, time, winner, reason, {plane: (kills, targets, lives)})], and bad lines"""
+    matches, bad, cur = [], [], None
+    try:
+        lines = open(path, encoding='utf-8', errors='replace').read().splitlines()
+    except OSError:
+        return [], ['no log']
+    for line in lines:
+        body = line.split(' ', 1)[1] if re.match(r'^\d+\.\d+ ', line) else line
+        m = RE_END.search(body)
+        if m:
+            cur = (m.group(1), int(m.group(2)), int(m.group(3)), m.group(4).strip(), {})
+            matches.append(cur)
+            continue
+        m = RE_PLANE.match(body)
+        if m and cur is not None:
+            # the missiles of each kind left, when the log has them: both sides must agree on every jet's loadout
+            cur[4][m.group(1)] = (int(m.group(2)), int(m.group(3)), int(m.group(4))) + \
+                ((int(m.group(6)), int(m.group(7)), int(m.group(8))) if m.group(6) else ())
+            continue
+        cur = None if not body.startswith('  ') else cur
+        if RE_BAD.search(body):
+            bad.append(body.strip())
+    return matches, bad
+
+
+def compare(hlog, glog, want, host_rc=0, guest_rc=0):
+    """returns (rows, problems): one row per match, and what went wrong"""
+    hm, hbad = parse_log(hlog)
+    gm, gbad = parse_log(glog)
+    probs = ['host: ' + b for b in hbad[:3]] + ['guest: ' + b for b in gbad[:3]]
+    if host_rc not in (0, None):
+        probs.append('host exit code %s' % host_rc)
+    if guest_rc not in (0, None):
+        probs.append('guest exit code %s' % guest_rc)
+    rows = []
+    for i in range(max(len(hm), len(gm))):
+        h = hm[i] if i < len(hm) else None
+        g = gm[i] if i < len(gm) else None
+        ok = True
+        why = ''
+        if not h or not g:
+            ok, why = False, 'only the %s saw it end' % ('host' if h else 'guest')
+        elif h[0] == 'lost' or g[0] == 'lost':
+            ok, why = False, 'connection lost on the %s' % ('host' if h[0] == 'lost' else 'guest')
+        elif h[2] != g[2]:
+            ok, why = False, 'winner %d on the host, %d on the guest' % (h[2], g[2])
+        else:
+            # kills and lives, and the missiles left of each kind when the logs have them
+            def agreed(t):
+                return (t[0], t[2]) + tuple(t[3:]) if t else None
+            diff = [n for n in set(h[4]) | set(g[4]) if agreed(h[4].get(n)) != agreed(g[4].get(n))]
+            if diff:
+                ok, why = False, 'kills, lives or missiles left differ for ' + ', '.join(sorted(diff))
+        t = h[1] if h else g[1]
+        rows.append((ok, t, (h or g)[2], (h or g)[3], why))
+        if not ok:
+            probs.append('match %d: %s' % (i + 1, why))
+    if len(rows) < want:
+        probs.append('%d of %d matches played' % (len(rows), want))
+    return rows, probs
+
+
+# ---- the bad-internet proxy -------------------------------------------------------------------------------
+class BadNet:
+    """a UDP proxy on 127.0.0.1 that forwards to target, delaying, dropping, doubling and reordering packets"""
+
+    def __init__(self, target, seed, delay=(0.040, 0.120), loss=0.03, dup=0.01):
+        self.target, self.rnd, self.delay, self.loss, self.dup = target, random.Random(seed), delay, loss, dup
+        self.blackhole = False  # True: every packet both ways is dropped, as a cable pulled out (tools/handson)
+        self.front = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.front.bind(('127.0.0.1', 0))
+        self.port = self.front.getsockname()[1]
+        self.ups = {}  # guest address -> its upstream socket
+        self.q, self.lock, self.stop = [], threading.Condition(), False
+        self.seq = 0
+        threading.Thread(target=self._from_guests, daemon=True).start()
+        threading.Thread(target=self._sender, daemon=True).start()
+
+    def _later(self, sock, data, addr):
+        if self.blackhole or self.rnd.random() < self.loss:
+            return
+        copies = 2 if self.rnd.random() < self.dup else 1
+        with self.lock:
+            for _ in range(copies):
+                self.seq += 1
+                heapq.heappush(self.q, (time.monotonic() + self.rnd.uniform(*self.delay), self.seq, sock, data, addr))
+            self.lock.notify()
+
+    def _from_guests(self):
+        while not self.stop:
+            try:
+                data, addr = self.front.recvfrom(65536)
+            except OSError:
+                return
+            up = self.ups.get(addr)
+            if up is None:
+                up = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                up.bind(('127.0.0.1', 0))
+                self.ups[addr] = up
+                threading.Thread(target=self._from_target, args=(up, addr), daemon=True).start()
+            self._later(up, data, self.target)
+
+    def _from_target(self, up, guest):
+        while not self.stop:
+            try:
+                data, _ = up.recvfrom(65536)
+            except OSError:
+                return
+            self._later(self.front, data, guest)
+
+    def _sender(self):
+        while True:
+            with self.lock:
+                while not self.stop and (not self.q or self.q[0][0] > time.monotonic()):
+                    self.lock.wait(0.005 if self.q else 0.1)
+                if self.stop:
+                    return
+                _, _, sock, data, addr = heapq.heappop(self.q)
+            try:
+                sock.sendto(data, addr)
+            except OSError:
+                pass
+
+    def close(self):
+        self.stop = True
+        with self.lock:
+            self.lock.notify()
+        for s in [self.front] + list(self.ups.values()):
+            s.close()
+
+
+# ---- one pair of games on this computer -------------------------------------------------------------------
+def wait_code(log, proc, timeout=30, pattern=RE_CODE):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end and proc.poll() is None:
+        try:
+            m = pattern.search(open(log, encoding='utf-8', errors='replace').read())
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
+        time.sleep(0.1)
+    return None
+
+
+def run_pair(exe, way, seed, games, workdir, relay_port, bad_seed):
+    rnd = random.Random(seed)
+    rules = rnd.choice(RULES)
+    cap = games * MATCH_CAP_S
+    d = os.path.join(workdir, 'pair-%s-%d' % (way, seed))
+    os.makedirs(d, exist_ok=True)
+    hlog, glog = os.path.join(d, 'host.log'), os.path.join(d, 'guest.log')
+    homes = [os.path.join(d, 'host-home'), os.path.join(d, 'guest-home')]
+    for h in homes:
+        os.makedirs(h, exist_ok=True)
+    args = game_args(seed, rules, games, cap)
+    proxy = None
+    relay = '127.0.0.1:%d' % relay_port
+    loads = ['load1=' + rnd.choice(LOADS), 'load1=' + rnd.choice(LOADS)]
+    if way in ('address', 'bad-address'):
+        host_cmd = [exe, '--host'] + args + ['--set', loads[0]]
+    else:
+        host_cmd = [exe, '--host', relay] + args + ['--set', loads[0]]
+    t0 = time.monotonic()
+    out = [open(os.path.join(d, 'host.out'), 'w'), open(os.path.join(d, 'guest.out'), 'w')]
+    host = subprocess.Popen(host_cmd, env=game_env(homes[0], hlog), stdout=out[0], stderr=subprocess.STDOUT, cwd=d)
+    # through a relay, allow for a game of the pair before still being held there (the relay drops a game a
+    # minute after its last packet)
+    direct = way in ('address', 'bad-address')
+    code = wait_code(hlog, host, timeout=30 if direct else 90, pattern=RE_CODE if direct else RE_RELAY_CODE)
+    guest = None
+    if not code and host.poll() is None:  # no game to join: don't leave the host waiting out the whole cap
+        host.kill()
+        host.wait()
+    if code:
+        if way == 'address':
+            target = '127.0.0.1'
+        elif way == 'relay':
+            target = relay + '/'
+        elif way == 'bad-address':
+            proxy = BadNet(('127.0.0.1', 27960), bad_seed)
+            target = '127.0.0.1:%d' % proxy.port
+        else:
+            proxy = BadNet(('127.0.0.1', relay_port), bad_seed)
+            target = '127.0.0.1:%d/' % proxy.port
+        guest_cmd = [exe, '--join', target, '--code', code] + args + ['--set', loads[1]]
+        guest = subprocess.Popen(guest_cmd, env=game_env(homes[1], glog), stdout=out[1], stderr=subprocess.STDOUT, cwd=d)
+    procs = [p for p in (host, guest) if p]
+    try:
+        for p in procs:
+            p.wait(timeout=max(1, cap + 60 - (time.monotonic() - t0)))
+    except subprocess.TimeoutExpired:
+        pass
+    # one side quitting first (it played its last match) leaves the other to see the connection close: give it a
+    # moment, then stop it
+    for p in procs:
+        if p.poll() is None:
+            try:
+                p.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+    if proxy:
+        proxy.close()
+    for f in out:
+        f.close()
+    for side, f in (('host', 'host.out'), ('guest', 'guest.out')):  # sanitizer reports go to stderr, not the log
+        with open(os.path.join(d, f), encoding='utf-8', errors='replace') as fh, open(hlog if side == 'host' else glog, 'a') as lg:
+            for line in fh:
+                if RE_BAD.search(line):
+                    lg.write(line)
+    if not code:
+        return dict(way=way, seed=seed, rules=rules, rows=[], probs=['the host never made a game code'], secs=0, dir=d)
+    rows, probs = compare(hlog, glog, games, host.returncode, guest.returncode if guest else None)
+    # the last match of a pair: whichever side quits first, the other may log it as lost after its own "over"
+    return dict(way=way, seed=seed, rules=rules, rows=rows, probs=probs, secs=time.monotonic() - t0, dir=d)
+
+
+def local(a):
+    exe, bdir = find_exe(a.build)
+    ways = a.ways.split(',')
+    npairs = (a.games + a.per_pair - 1) // a.per_pair
+    plan = [(ways[i % len(ways)], a.seed + i) for i in range(npairs)]
+    work = a.work or tempfile.mkdtemp(prefix='playtest-')
+    relay_proc = None
+    relay_port = a.relay_port
+    if any(w.endswith('relay') for w in ways):
+        rexe = None
+        for n in ('a4c_relay', 'a4c_relay.exe'):
+            if os.path.isfile(os.path.join(bdir, n)):
+                rexe = os.path.join(bdir, n)
+        if not rexe:
+            sys.exit('playtest: no a4c_relay next to the game (%s)' % bdir)
+        relay_proc = subprocess.Popen([rexe, str(relay_port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+    print('playtest: %d matches in %d pairs (%s), game %s, logs in %s' % (npairs * a.per_pair, npairs, a.ways, exe, work),
+          flush=True)
+    results, lock = [], threading.Lock()
+    serial = [p for p in plan if 'address' in p[0]]
+    parallel = [p for p in plan if 'address' not in p[0]]
+
+    def go(item):
+        way, seed = item
+        r = run_pair(exe, way, seed, a.per_pair, work, relay_port, seed * 7 + 1)
+        with lock:
+            results.append(r)
+            n_ok = sum(1 for x in r['rows'] if x[0])
+            print('  %-11s seed %-5d %d/%d matches agree, %4.0f s %s' % (way, seed, n_ok, a.per_pair, r['secs'],
+                  ('FAIL: ' + '; '.join(r['probs'][:3])) if r['probs'] else 'ok'), flush=True)
+
+    def worker(items):
+        for it in items:
+            go(it)
+
+    threads = [threading.Thread(target=worker, args=(serial,))]
+    # the relay lets one address host 4 games: never more relay pairs (relay and bad-relay together) at once
+    nrel = max(1, min(a.jobs, 4))
+    chunks = [parallel[i::nrel] for i in range(nrel)]
+    threads += [threading.Thread(target=worker, args=(c,)) for c in chunks if c]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    if relay_proc:
+        relay_proc.terminate()
+    return report(results, a.report, work)
+
+
+def report(results, path, work):
+    lines = []
+    total = sum(len(r['rows']) for r in results)
+    agree = sum(1 for r in results for x in r['rows'] if x[0])
+    fails = [r for r in results if r['probs']]
+    lines.append('playtest: %d matches played, %d agree on both computers, %d of %d pairs with problems' %
+                 (total, agree, len(fails), len(results)))
+    by_way = {}
+    for r in results:
+        w = by_way.setdefault(r['way'], [0, 0, 0.0])
+        w[0] += len(r['rows'])
+        w[1] += sum(1 for x in r['rows'] if x[0])
+        w[2] += sum(x[1] for x in r['rows'])
+    for w, (n, ok, t) in sorted(by_way.items()):
+        lines.append('  %-11s %4d matches, %4d agree, average match %.0f s of game time' % (w, n, ok, t / n if n else 0))
+    lines.append('')
+    for r in sorted(results, key=lambda r: (r['way'], r['seed'])):
+        lines.append('%s seed %d (%s): %s' % (r['way'], r['seed'], ' '.join(r['rules']), 'ok' if not r['probs'] else 'FAIL'))
+        for i, (ok, t, win, why0, why) in enumerate(r['rows']):
+            lines.append('    match %d: %s at %d s, winner %d %s' % (i + 1, 'agree' if ok else 'DISAGREE', t, win,
+                                                                     ('(' + why + ')') if why else ''))
+        for p in r['probs']:
+            lines.append('    problem: ' + p)
+        if r['probs']:
+            lines.append('    logs: ' + r['dir'])
+    text = '\n'.join(lines) + '\n'
+    print('\n' + text)
+    if path:
+        open(path, 'w').write(text)
+    else:
+        open(os.path.join(work, 'report.txt'), 'w').write(text)
+    return 1 if fails or total == 0 else 0
+
+
+def solo(a):
+    exe, _ = find_exe(a.build)
+    modes = a.modes.split(',')
+    nruns = (a.games + a.per_run - 1) // a.per_run
+    work = a.work or tempfile.mkdtemp(prefix='playtest-solo-')
+    # every mode with every jet before any pair repeats
+    plan = [(modes[i % len(modes)], JETS[(i // len(modes) + i) % len(JETS)], a.seed + i) for i in range(nruns)]
+    print('playtest solo: %d matches in %d runs (%s), game %s, logs in %s' % (nruns * a.per_run, nruns, a.modes, exe, work),
+          flush=True)
+    results, lock = [], threading.Lock()
+
+    def go(item):
+        mode, jet, seed = item
+        rnd = random.Random(seed)
+        rules = rnd.choice(RULES[:8])
+        d = os.path.join(work, 'solo-%s-%s-%d' % (mode, jet, seed))
+        os.makedirs(d, exist_ok=True)
+        log = os.path.join(d, 'game.log')
+        env = game_env(d, log)
+        env['A4C_CHECK'] = '1'
+        args = [exe, '--play', mode, '--jet', jet, '--frames', str(a.per_run * MATCH_CAP_S * 60)]
+        args += game_args(seed, rules, a.per_run, a.per_run * MATCH_CAP_S * 4)
+        t0 = time.monotonic()
+        with open(os.path.join(d, 'game.out'), 'w') as out:
+            try:
+                rc = subprocess.call(args, env=env, stdout=out, stderr=subprocess.STDOUT, cwd=d,
+                                     timeout=a.per_run * MATCH_CAP_S * 4)
+            except subprocess.TimeoutExpired:
+                rc = 'timeout'
+        text = open(os.path.join(d, 'game.out'), encoding='utf-8', errors='replace').read()
+        with open(log, 'a') as lg:
+            for line in text.splitlines():
+                if RE_BAD.search(line):
+                    lg.write(line + '\n')
+        m, bad = parse_log(log)
+        probs = bad[:3]
+        if rc != 0:
+            probs.append('exit code %s' % rc)
+        ended = [x for x in m if x[0] == 'over']
+        if len(ended) < a.per_run:
+            probs.append('%d of %d matches ended' % (len(ended), a.per_run))
+        try:
+            fm = re.search(r'physics faults: (\d+)', open(log, encoding='utf-8', errors='replace').read())
+        except OSError:
+            fm = None
+        if fm and int(fm.group(1)):
+            probs.append('%s physics faults' % fm.group(1))
+        rows = [(True, x[1], x[2], x[3], '') for x in ended]
+        r = dict(way='solo ' + mode, seed=seed, rules=['jet=' + jet] + rules, rows=rows, probs=probs,
+                 secs=time.monotonic() - t0, dir=d)
+        with lock:
+            results.append(r)
+            print('  %-8s %-6s seed %-5d %d/%d matches, %4.0f s %s' % (mode, jet, seed, len(ended), a.per_run, r['secs'],
+                  ('FAIL: ' + '; '.join(probs[:3])) if probs else 'ok'), flush=True)
+
+    def worker(items):
+        for it in items:
+            go(it)
+
+    threads = [threading.Thread(target=worker, args=(plan[i::max(1, a.jobs)],)) for i in range(max(1, a.jobs))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return report(results, a.report, work)
+
+
+def side(a):
+    exe = a.exe or find_exe(a.build)[0]
+    if not a.code or not re.fullmatch(r'\d{6}', a.code):
+        sys.exit('playtest side: --code NNNNNN (six digits, the same on both computers)')
+    log = os.path.abspath(a.log or '%s.log' % a.role)
+    if os.path.exists(log):
+        os.remove(log)
+    home = tempfile.mkdtemp(prefix='playtest-%s-' % a.role)
+    env = game_env(home, log)
+    if a.window:
+        for k in ('A4C_VIDEO', 'A4C_AUDIO'):
+            env.pop(k, None)
+    seed = a.seed
+    args = game_args(seed, a.set or [], a.games, a.games * MATCH_CAP_S)
+    if a.role == 'host':
+        env['A4C_TEST_CODE'] = a.code
+        cmd = [exe, '--host'] + ([a.relay] if a.relay else []) + args
+    else:
+        target = (a.relay + '/') if a.relay else a.join
+        if not target:
+            sys.exit('playtest side guest: --join HOST_ADDRESS or --relay ADDR')
+        cmd = [exe, '--join', target, '--code', a.code] + args
+    print('playtest: %s, log %s' % (' '.join(cmd), log), flush=True)
+    rc = subprocess.call(cmd, env=env)
+    m, bad = parse_log(log)
+    print('playtest: %s played %d matches (exit code %d)%s' % (a.role, len(m), rc, '; ' + '; '.join(bad[:3]) if bad else ''))
+    shutil.rmtree(home, ignore_errors=True)
+    return 0 if rc == 0 and not bad else 1
+
+
+def cmp_main(a):
+    rows, probs = compare(a.host_log, a.guest_log, a.games or 0)
+    for i, (ok, t, win, _, why) in enumerate(rows):
+        print('match %d: %s at %d s, winner %d %s' % (i + 1, 'agree' if ok else 'DISAGREE', t, win, why))
+    for p in probs:
+        print('problem: ' + p)
+    print('playtest: %d matches, %d agree' % (len(rows), sum(1 for r in rows if r[0])))
+    return 1 if probs or not rows else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog='tools/playtest', description=__doc__.split('\n')[0])
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    lo = sub.add_parser('local')
+    lo.add_argument('--games', type=int, default=120)
+    lo.add_argument('--per-pair', type=int, default=5)
+    lo.add_argument('--jobs', type=int, default=4)
+    lo.add_argument('--ways', default='address,relay,bad-address,bad-relay')
+    lo.add_argument('--build')
+    lo.add_argument('--work')
+    lo.add_argument('--report')
+    lo.add_argument('--seed', type=int, default=1)
+    lo.add_argument('--relay-port', type=int, default=27970)
+    so = sub.add_parser('solo')
+    so.add_argument('--games', type=int, default=160)
+    so.add_argument('--per-run', type=int, default=4)
+    so.add_argument('--jobs', type=int, default=4)
+    so.add_argument('--modes', default=','.join(MODES))
+    so.add_argument('--build')
+    so.add_argument('--work')
+    so.add_argument('--report')
+    so.add_argument('--seed', type=int, default=1)
+    si = sub.add_parser('side')
+    si.add_argument('role', choices=['host', 'guest'])
+    si.add_argument('--code')
+    si.add_argument('--join')
+    si.add_argument('--relay')
+    si.add_argument('--games', type=int, default=10)
+    si.add_argument('--exe')
+    si.add_argument('--build')
+    si.add_argument('--log')
+    si.add_argument('--seed', type=int, default=1)
+    si.add_argument('--set', action='append')
+    si.add_argument('--window', action='store_true', help='open a real window and play sound, to watch it')
+    co = sub.add_parser('compare')
+    co.add_argument('host_log')
+    co.add_argument('guest_log')
+    co.add_argument('--games', type=int)
+    a = ap.parse_args()
+    if a.cmd == 'local':
+        return local(a)
+    if a.cmd == 'solo':
+        return solo(a)
+    if a.cmd == 'side':
+        return side(a)
+    return cmp_main(a)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

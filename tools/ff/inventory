@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""tools/ff/inventory - the floppy forge's first step: every byte the game ships, by kind, against a 1.44 MB
+floppy (1,474,560 bytes). Original code for this project; Python 3.8+ standard library only.
+
+usage: tools/ff/inventory [--build DIR] [--packed DIR] [--json FILE] [--report FILE] [--no-program]
+
+What the game reads is found by asking it: a few headless runs (the intro and menu, a match on every map, the
+defence and drone modes, the audit's data sheets) with A4C_FILES=1, which logs every file it loads, plus the songs
+named in src/music.c's THEMES (a menu choice loads them later). Everything else in assets/ (the web pages, the
+build scripts, figure/ and sfx/, which are built into the program) is listed as not shipped.
+
+The program is measured as the floppy build would make it: one CPU each (arm64 and x86_64), -Os, dead code
+stripped, symbols stripped, from build/ff-<cpu> (configured and built here when missing); SDL3's share comes from
+the link map. The budget: the program packed <= 420 KB, the data <= 900 KB, and >= 100 KB for the unpacker, the
+headers and a margin. Today's sizes are given raw and through xz -9e, the yardstick (never shipped); --packed DIR
+adds the forge's own packed sizes when there are some.
+
+The check (exit 1 when it fails): every file a run read is in the inventory, and the kinds add up to the total."""
+import json
+import lzma
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+OUT = os.path.join(ROOT, 'build', 'ff')
+FLOPPY = 1474560
+BUDGET = {'program': 420 * 1024, 'data': 900 * 1024}
+# the songs the floppy keeps (the author's choice): Full Burn and the opening film's cut of it (as scores, rebuilt
+# from the recording), Ghost Squadron, Steel Horizon and the film's cut of it
+FLOPPY_SONGS = ('fullburn', 'fullburn-intro', 'ghost', 'horizon', 'horizon-intro')
+CMAKE = os.environ.get('A4C_CMAKE') or shutil.which('cmake') or 'cmake'  # A4C_CMAKE: a cmake that is not on the PATH
+
+# what each file is, for the floppy: (kind, what the simulation reads from it)
+KINDS = [
+    (r'^maps/.*\.h16$', 'terrain heights', 'sim: heights, collision'),
+    (r'^maps/.*\.mat$', 'terrain materials', 'look; sim: runway and sea flags'),
+    (r'^maps/maps_index\.json$', 'map index', 'sim'),
+    (r'^maps/.*\.json$', 'map sheets (targets, lights, weather)', 'sim: targets, carriers; look: lights, weather'),
+    (r'^maps/.*\.js$', 'map pages (web)', 'not read'),
+    (r'^jets/.*\.glb$', 'meshes (jets, carrier)', 'look; sim: hit boxes from the mesh?'),
+    (r'^jets/jets_data\.json$', 'jet data sheets', 'sim: flight model'),
+    (r'^jets/.*_game\.js$', 'jet and carrier tables', 'sim and look'),
+    (r'^intro/.*\.json$', 'opening film (script, assets)', 'look and sound'),
+    (r'^music/.*\.json$', 'music scores', 'sound'),
+    (r'^music/.*\.wav$', 'music recordings', 'sound'),
+    (r'^music/.*\.loop$', 'music loop points', 'sound'),
+    (r'.*', 'other', '?'),
+]
+
+
+def kind_of(rel):
+    for pat, kind, reads in KINDS:
+        if re.match(pat, rel):
+            return kind, reads
+    return 'other', '?'
+
+
+def game_exe(build):
+    for n in ('TailonLock.app/Contents/MacOS/TailonLock', 'tailonlock', 'TailonLock.exe'):
+        if os.path.isfile(os.path.join(build, n)):
+            return os.path.join(build, n)
+    return None
+
+
+def assets_dir(exe):
+    """the folder the game takes its assets from (its own log line)"""
+    rc, lines = run_game(exe, ['--frames', '1'])
+    for l in lines:
+        m = re.search(r'assets: (/.*/)$', l)
+        if m:
+            return m.group(1)
+    return os.path.join(ROOT, 'assets') + '/'
+
+
+def run_game(exe, args):
+    with tempfile.TemporaryDirectory() as cfg:
+        os.makedirs(os.path.join(cfg, 'tailonlock'))
+        with open(os.path.join(cfg, 'tailonlock', 'settings.ini'), 'w') as f:
+            f.write('intro=1\n')
+        env = dict(os.environ, XDG_CONFIG_HOME=cfg, A4C_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), HOME=cfg,
+                   SDL_VIDEO_DRIVER='dummy', SDL_RENDER_DRIVER='software', SDL_AUDIO_DRIVER='dummy',
+                   A4C_VIDEO='offscreen', A4C_AUDIO='dummy', A4C_FILES='1')
+        p = subprocess.run([exe] + args, env=env, capture_output=True, text=True, timeout=600)
+    return p.returncode, (p.stdout + p.stderr).splitlines()
+
+
+def files_read(exe, adir):
+    """every asset file the runs read, relative to the assets folder"""
+    maps = [m['id'] for m in json.load(open(os.path.join(adir, 'maps', 'maps_index.json')))]
+    runs = [['--frames', '3000']] + [['--frames', '120', '--play', '1p', '--map', m] for m in maps] + \
+        [['--frames', '120', '--play', 'defend'], ['--frames', '60', '--play', 'drone'],
+         ['--audit', '--part', 'spec', '--out', os.devnull]]
+    seen = {}
+    for a in runs:
+        _, lines = run_game(exe, a)
+        for l in lines:
+            m = re.search(r'file: (.*) (\d+)$', l)
+            if m and m.group(1).startswith(adir):
+                seen[m.group(1)[len(adir):]] = int(m.group(2))
+    # the songs a menu choice loads later: a score (.json), else a recording (.wav and its .loop)
+    src = open(os.path.join(ROOT, 'src', 'music.c')).read()
+    keys = re.findall(r'\{ "([a-z0-9-]+)", "[^"]*", [\d.]+f', src)
+    for k in keys:
+        for ext in ('.json', '.wav', '.loop'):
+            rel = 'music/' + k + ext
+            if os.path.isfile(os.path.join(adir, rel)):
+                seen.setdefault(rel, os.path.getsize(os.path.join(adir, rel)))
+                if ext == '.json':
+                    break
+    return seen, keys
+
+
+def xz(data):
+    return len(lzma.compress(data, preset=9 | lzma.PRESET_EXTREME))
+
+
+def build_program(cpu):
+    d = os.path.join(ROOT, 'build', 'ff-' + cpu)
+    exe = os.path.join(d, 'TailonLock.app', 'Contents', 'MacOS', 'TailonLock')
+    if not os.path.isfile(exe):
+        subprocess.run([CMAKE, '--preset', 'macos-release', '-B', d, '-DCMAKE_OSX_ARCHITECTURES=' + cpu,
+                        '-DCMAKE_C_FLAGS_RELEASE=-Os -DNDEBUG', '-DCMAKE_OBJC_FLAGS_RELEASE=-Os -DNDEBUG',
+                        '-DCMAKE_EXE_LINKER_FLAGS=-Wl,-map,%s/link.map -Wl,-dead_strip' % d],
+                       check=True, capture_output=True)
+        subprocess.run([CMAKE, '--build', d, '-j', str(max(1, (os.cpu_count() or 2) - 1)), '--target', 'tailonlock'],
+                       check=True, capture_output=True)
+    stripped = os.path.join(d, 'game.stripped')
+    shutil.copy(exe, stripped)
+    subprocess.run(['strip', stripped], check=True, capture_output=True)
+    return d, stripped
+
+
+def link_shares(mapfile):
+    """bytes stored in the file by where they came from (zero-filled sections left out)"""
+    files, zero, share, sec = {}, [], {}, None
+    for line in open(mapfile, errors='replace'):
+        if line.startswith('# Object files:'):
+            sec = 'o'
+        elif line.startswith('# Sections:'):
+            sec = 's'
+        elif line.startswith('# Symbols:'):
+            sec = 'y'
+        elif line.startswith('# Dead Stripped'):
+            sec = None
+        elif sec == 'o':
+            m = re.match(r'\[\s*(\d+)\]\s+(.*)', line)
+            if m:
+                files[int(m.group(1))] = m.group(2)
+        elif sec == 's':
+            m = re.match(r'0x([0-9A-F]+)\s+0x([0-9A-F]+)\s+\S+\s+(\S+)', line)
+            if m and m.group(3) in ('__bss', '__common', '__thread_bss'):
+                a = int(m.group(1), 16)
+                zero.append((a, a + int(m.group(2), 16)))
+        elif sec == 'y':
+            m = re.match(r'0x([0-9A-F]+)\s+0x([0-9A-F]+)\s+\[\s*(\d+)\]', line)
+            if m:
+                a, n = int(m.group(1), 16), int(m.group(2), 16)
+                if any(s <= a < e for s, e in zero):
+                    continue
+                f = files.get(int(m.group(3)), '')
+                k = 'SDL3' if 'SDL3' in f else 'game core (sim, AI, world)' if 'a4c_core' in f else \
+                    'game (renderers, film, synth, UI, net)' if 'tailonlock.dir' in f else 'linker and system stubs'
+                share[k] = share.get(k, 0) + n
+    return share
+
+
+def packed_size(packed, rel):
+    if not packed:
+        return None
+    for ext in ('', '.tlpk'):
+        p = os.path.join(packed, rel + ext)
+        if os.path.isfile(p):
+            return os.path.getsize(p)
+    return None
+
+
+def main():
+    args = sys.argv[1:]
+    build, packed, jpath, report, program = os.path.join(ROOT, 'build', 'macos-release'), None, None, None, True
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--no-program':
+            program = False
+            i += 1
+            continue
+        if a in ('--build', '--packed', '--json', '--report') and i + 1 < len(args):
+            v = os.path.abspath(args[i + 1])
+            if a == '--build':
+                build = v
+            elif a == '--packed':
+                packed = v
+            elif a == '--json':
+                jpath = v
+            else:
+                report = v
+            i += 2
+            continue
+        sys.exit(__doc__)
+    os.makedirs(OUT, exist_ok=True)
+    jpath = jpath or os.path.join(OUT, 'inventory.json')
+    report = report or os.path.join(OUT, 'inventory.md')
+    exe = game_exe(build)
+    if not exe:
+        sys.exit('inventory: no game in %s' % build)
+    adir = assets_dir(exe)
+    read, songs = files_read(exe, adir)
+
+    # every file in assets/, shipped (read) or not
+    rows, notread = [], []
+    for dp, _, fs in os.walk(adir):
+        for f in fs:
+            rel = os.path.relpath(os.path.join(dp, f), adir).replace(os.sep, '/')
+            (rows if rel in read else notread).append(rel)
+    missing = [r for r in read if not os.path.isfile(os.path.join(adir, r))]
+    files = []
+    for rel in sorted(rows):
+        data = open(os.path.join(adir, rel), 'rb').read()
+        kind, reads = kind_of(rel)
+        files.append({'file': rel, 'kind': kind, 'sim': reads, 'raw': len(data), 'xz': xz(data),
+                      'packed': packed_size(packed, rel)})
+    kinds = {}
+    for f in files:
+        k = kinds.setdefault(f['kind'], {'files': 0, 'raw': 0, 'xz': 0, 'packed': 0, 'sim': f['sim']})
+        k['files'] += 1
+        k['raw'] += f['raw']
+        k['xz'] += f['xz']
+        k['packed'] += f['packed'] or 0
+    data_raw = sum(f['raw'] for f in files)
+    data_xz = sum(f['xz'] for f in files)
+    floppy_set = [f for f in files if not f['file'].startswith('music/') or
+                  (f['kind'] == 'music scores' and os.path.basename(f['file'])[:-5] in FLOPPY_SONGS)]
+    floppy_raw = sum(f['raw'] for f in floppy_set)
+    floppy_xz = sum(f['xz'] for f in floppy_set)
+
+    prog = {}
+    if program:
+        for cpu in ('arm64', 'x86_64'):
+            d, stripped = build_program(cpu)
+            data = open(stripped, 'rb').read()
+            shares = link_shares(os.path.join(d, 'link.map'))
+            prog[cpu] = {'stripped': len(data), 'xz': xz(data), 'shares': shares,
+                         'no_sdl_raw': len(data) - shares.get('SDL3', 0)}
+
+    # the check: everything read is here, and the kinds add up
+    ok = not missing and sum(k['raw'] for k in kinds.values()) == data_raw
+    inv = {'assets': adir, 'files': files, 'kinds': kinds, 'not_shipped': sorted(notread), 'missing': missing,
+           'songs': songs, 'program': prog, 'floppy': FLOPPY, 'budget': BUDGET,
+           'data_raw': data_raw, 'data_xz': data_xz, 'floppy_data_raw': floppy_raw, 'floppy_data_xz': floppy_xz}
+    json.dump(inv, open(jpath, 'w'), indent=1)
+
+    w = open(report, 'w')
+    w.write('# Floppy forge: the inventory\n\nEvery byte the game ships, by kind; a 1.44 MB floppy holds %s bytes. '
+            'xz -9e is the yardstick only.\n\n' % format(FLOPPY, ','))
+    w.write('## Data (what the game reads)\n\n| Kind | Files | Raw | xz -9e | Forge | What reads it |\n|---|---|---|---|---|---|\n')
+    for k, v in sorted(kinds.items(), key=lambda kv: -kv[1]['raw']):
+        w.write('| %s | %d | %s | %s | %s | %s |\n' % (k, v['files'], format(v['raw'], ','), format(v['xz'], ','),
+                                                     format(v['packed'], ',') if v['packed'] else '-', v['sim']))
+    w.write('| **all** | %d | %s | %s | | |\n' % (len(files), format(data_raw, ','), format(data_xz, ',')))
+    w.write('| **floppy set** (Ghost Squadron, Steel Horizon + its film cut; the Full Burn score to come) | %d | %s | %s | | |\n\n' % (
+        len(floppy_set), format(floppy_raw, ','), format(floppy_xz, ',')))
+    if prog:
+        w.write('## Program (one CPU, -Os, stripped)\n\n| | arm64 | x86_64 |\n|---|---|---|\n')
+        w.write('| file | %s | %s |\n' % tuple(format(prog[c]['stripped'], ',') for c in ('arm64', 'x86_64')))
+        for k in sorted(set(prog['arm64']['shares']) | set(prog['x86_64']['shares'])):
+            w.write('| %s | %s | %s |\n' % (k, format(prog['arm64']['shares'].get(k, 0), ','),
+                                           format(prog['x86_64']['shares'].get(k, 0), ',')))
+        w.write('| file, xz -9e | %s | %s |\n' % tuple(format(prog[c]['xz'], ',') for c in ('arm64', 'x86_64')))
+        w.write('| without SDL3, raw | %s | %s |\n\n' % tuple(format(prog[c]['no_sdl_raw'], ',') for c in ('arm64', 'x86_64')))
+        a = prog['arm64']
+        w.write('## The budget (arm64)\n\n| | Budget | Today, xz yardstick |\n|---|---|---|\n')
+        w.write('| program, packed | <= %s | %s with SDL3 (%s raw without it) |\n' % (
+            format(BUDGET['program'], ','), format(a['xz'], ','), format(a['no_sdl_raw'], ',')))
+        w.write('| data | <= %s | %s |\n' % (format(BUDGET['data'], ','), format(floppy_xz, ',')))
+        rest = FLOPPY - a['xz'] - floppy_xz
+        w.write('| unpacker, headers, margin | >= %s | %s left |\n' % (format(100 * 1024, ','), format(rest, ',')))
+        w.write('| **total** | %s | %s |\n\n' % (format(FLOPPY, ','), format(a['xz'] + floppy_xz, ',')))
+    w.write('## Not shipped (in assets/, never read)\n\n%s\n\n' % ', '.join(sorted(notread)))
+    w.write('Check: %s\n' % ('every file read is listed, and the kinds add up' if ok else
+                             'FAILED: missing %s' % missing))
+    w.close()
+    print(open(report).read())
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == '__main__':
+    main()
