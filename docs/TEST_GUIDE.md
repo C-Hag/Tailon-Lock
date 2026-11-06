@@ -29,6 +29,8 @@ its result and of the seal under it, so a certificate cannot be edited without t
 2. On Linux for Windows: cross-build, play the VM's matches (section 4), then `tools/certify windows --vm-logs DIR`.
 3. Each pair of machines: `tools/certify cross --name linux-macos HOST.log GUEST.log ...` (and the other two pairs).
 4. A person ticks section 5 on each system, saved as `certs/<commit>-hands-on-<system>.md`.
+   The CPU pilots' item 22 in `tools/handson` counts crashes before sudden death against its goal of 1 in 50 matches;
+   crashes after it, when nobody can refuel, are reported on their own and do not count.
 5. `tools/certify release certs/<commit>-*.cert --hands-on certs/<commit>-hands-on-*.md`: the release certificate.
    `tools/certify verify CERT` checks any certificate's chain.
 

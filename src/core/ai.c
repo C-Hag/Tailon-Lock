@@ -154,6 +154,8 @@ static void start_leave(const Game *g, Plane *p, const Plane *e, float t) {
  * elsewhere, looking 7 s ahead in realistic handling, every sink toward the gate was a pull-up at full power to
  * 700 m above, round and round, and a fifth of the trips home ran dry */
 #define CIRCUIT_MIN_ALT 120
+#define HOLD_MAX 40.0f /* s on the brakes for the strip at most */
+#define MAYDAY_FUEL 6.0f /* %: this little left and the strip ahead is for us, whoever is on it */
 #define HOME_MAX_THR 0.9f /* military power: the afterburner starts above it (game_burn) */
 /* m/s: realistic, lined up on the way in, slowed to this with the gear and flaps out, so the slope from the gate
  * ends at landing speed (at 135, clean, the jets reached the far end of the runway at 110 still flying, and round
@@ -703,6 +705,7 @@ typedef struct {
 #define FINAL_SPD    170  /* m/s: and slower */
 #define SAME_WAY_SPD 40   /* m/s: a jet in the air going the landing's way faster than this is no danger to it */
 #define HOLD_END     150  /* m from a runway's end: a jet waiting there to take off is at the holding point */
+#define BUSY_DECIDE  600  /* m before the touchdown point: a landing jet goes round for traffic only from here in */
 #define BUSY_ZONE    600  /* m: the landing jet keeps off the busy strip from this far outside its gate in */
 
 static Strip base_strip(int team) {
@@ -954,7 +957,9 @@ void ai_control(Game *g, Plane *p, float dt) {
     } else if (p->onGround && !p->taxi) {
       const Base *b = &BASES[p->team];
       p->u = v3(0, 1, 0);
-      p->f = v3_norm(v3(p->f.x, 0, p->f.z));
+      /* along the runway: full while still rolling, off the centre line and a little skewed, a jet kept that heading across the
+       * edge of the runway as it lifted off, and that is the ground */
+      p->f = v3(0, 0, p->f.z > 0 ? 1 : -1);
       float ahead = 1000 - (p->pos.z - b->z) * (p->f.z > 0 ? 1 : -1);
       if (ahead < 1100 && !onDeckNow(p)) p->f = v3_scale(p->f, -1);
       p->r = v3_cross(p->u, p->f);
@@ -1036,6 +1041,8 @@ void ai_control(Game *g, Plane *p, float dt) {
     float tkd = v3_dist(p->pos, ET->pos);
     goal = v3_add(ET->pos, v3_scale(ET->vel, fminf(tkd / 400, 6)));
     thr = 1;
+    /* the gun run ends in time: past 500 m, over the top of it and on (it flew on into the tanker) */
+    if (tkd < 500) goal = v3_add(ET->pos, v3_add(v3_scale(ET->u, 300), v3_scale(p->f, 400))), hard = true;
     float ang = angle_to(ET->pos, p);
     if (p->locked && p->lockTarget.kind == REF_TANKER && ai->mslCool <= 0 && tkd > 600 && tkd < 4500) {
       msl = true;
@@ -1056,7 +1063,7 @@ void ai_control(Game *g, Plane *p, float dt) {
     gate.y = tdp.y + DECK_GATE * DECK_GS;
     /* the deck busy, from just outside the gate in: no final, and round again from one */
     Strip ds = deck_strip(cv);
-    bool busy = along > -(DECK_GATE + BUSY_ZONE) && strip_busy(g, p, &ds);
+    bool busy = p->fuel >= MAYDAY_FUEL && along > -(DECK_GATE + BUSY_ZONE) && strip_busy(g, p, &ds);
     if (!ai->final_leg) {
       minAlt = CIRCUIT_MIN_ALT;
       bool clear = field_clear(g, p, tdp);
@@ -1099,7 +1106,7 @@ void ai_control(Game *g, Plane *p, float dt) {
         thr = 1;
       }
       /* round again: well off the line close in, or past the bow still flying */
-      else if (!p->onGround && (busy || (fabsf(lat) > 45 && along > -900) || (fabsf(lat) > 20 && along > -400) || along > cv->length * (1 - DECK_TD))) {
+      else if (!p->onGround && ((busy && along > -BUSY_DECIDE) || (fabsf(lat) > 45 && along > -900) || (fabsf(lat) > 20 && along > -400) || along > cv->length * (1 - DECK_TD))) {
         ai->final_leg = false;
         ai->missed++;
         landing = false;
@@ -1121,7 +1128,7 @@ void ai_control(Game *g, Plane *p, float dt) {
     float endZ = b->z - b->dir * 1000;
     /* the runway busy, from just outside the gate in: no final, and round again from one */
     Strip rs = base_strip(p->team);
-    bool busy = (p->pos.z - T.z) * b->dir < (E.z - T.z) * b->dir + BUSY_ZONE && strip_busy(g, p, &rs);
+    bool busy = p->fuel >= MAYDAY_FUEL && (p->pos.z - T.z) * b->dir < (E.z - T.z) * b->dir + BUSY_ZONE && strip_busy(g, p, &rs);
     if (!ai->final_leg) {
       minAlt = CIRCUIT_MIN_ALT;
       bool clear = field_clear(g, p, v3(b->x, 0, b->z));
@@ -1164,8 +1171,9 @@ void ai_control(Game *g, Plane *p, float dt) {
       /* the flare, the last 30 m (and anywhere past the touchdown point, where the goal at the runway's far
        * end left the jet floating its whole length a few metres up): the wheels meet the runway at a few m/s,
        * not the 7-16 of the glide */
-      /* realistic (no arcade drag): a short firm flare, or the float carried it past mid-runway and round again */
-      float flareH = g->realistic ? 8 : 18, sinkMin = g->realistic ? 2.5f : 2;
+      /* realistic (no arcade drag): firm, from 14 m (at 8 m a jet sinking 7 m/s had one second, and landed hard; at 20 the float
+       * cost more runway and more go-rounds) */
+      float flareH = g->realistic ? 14 : 18, sinkMin = g->realistic ? 2.5f : 2;
       if (!p->onGround && (p->pos.y - elev < flareH || rem < 0)) { /* pitch on the sink rate, down to 1.5 at the wheels */
         float want = -fmaxf(sinkMin, (p->pos.y - elev - 3) * 0.45f);
         flare = true;
@@ -1192,7 +1200,10 @@ void ai_control(Game *g, Plane *p, float dt) {
       /* and round again rather than onto the grass: under 20 m over the runway more than 30 m off its centre line
        * (the wheels count only within 35 m of it; jets 40-70 m off at 110 m/s touched down beside it and crashed) */
       bool beside = !p->onGround && agl < 20 && fabsf(p->pos.x - b->x) > 30 && fabsf(p->pos.z - b->z) < 1100;
-      if (overrun || beside || (!p->onGround && busy) || (!p->onGround && agl < 60 && fabsf(p->pos.x - b->x) > 150 && left < 2300)) {
+      /* traffic on the strip: decided close in, not 2.5 km out (a jet rolling out or taking off is gone by then; sent
+       * round at once, finals were thrown away by the hundred) */
+      bool busyNow = busy && rem < BUSY_DECIDE;
+      if (overrun || beside || (!p->onGround && busyNow) || (!p->onGround && agl < 60 && fabsf(p->pos.x - b->x) > 150 && left < 2300)) {
         ai->final_leg = false;
         ai->missed++;
         landing = false;
@@ -1367,12 +1378,14 @@ void ai_control(Game *g, Plane *p, float dt) {
    * jet cannot pull out as hard (the wing's lift grows with speed squared) */
   float ahead = 2.4f + (p->speed < 150 ? 1.5f : 0) + fmaxf(0, -p->f.y) * 2;
   if (g->realistic) ahead *= 1.8f; /* half the arcade's pull, and gravity in the path: start the pull-out sooner */
+  /* above 250 m/s the turn's radius grows with the square of the speed: more time to see the ground coming */
+  else ahead += fmaxf(0, p->speed - 250) * 0.012f;
   vec3 look = v3_add(p->pos, v3_scale(p->vel, ahead));
   float here = terrain_h(p->pos.x, p->pos.z);
   float gh = fmaxf(fmaxf(terrain_h(look.x, look.z), here), terrain_h((p->pos.x + look.x) / 2, (p->pos.z + look.z) / 2));
   bool low = look.y < gh + minAlt || p->pos.y < here + minAlt * 0.5f;
   /* realistic: the hills between, along the whole path ahead */
-  for (int k = 1; g->realistic && k <= 8 && !low; k++) {
+  for (int k = 1; k <= 8 && !low; k++) {
     vec3 q = v3_add(p->pos, v3_scale(p->vel, ahead * (float)k / 8));
     low = q.y < terrain_h(q.x, q.z) + minAlt;
   }
@@ -1405,7 +1418,7 @@ void ai_control(Game *g, Plane *p, float dt) {
     /* on the way home over ground no higher than we are (the sink toward a low gate): a gentle climb on the speed
      * (700 m up at full power each time burnt the fuel home); over a ridge as high as we are, the full pull-up */
     bool ridge = gh > p->pos.y - minAlt;
-    for (int k = 1; g->realistic && k <= 8 && !ridge; k++) {
+    for (int k = 1; k <= 8 && !ridge; k++) {
       vec3 q = v3_add(p->pos, v3_scale(p->vel, ahead * (float)k / 8));
       ridge = terrain_h(q.x, q.z) > p->pos.y - minAlt;
     }
@@ -1414,7 +1427,7 @@ void ai_control(Game *g, Plane *p, float dt) {
     /* on the way in, with landing speed and more: the speed is the pull-up (full power over a ridge before
      * the threshold ran the speed up to 190 m/s, too fast to land, and round again) */
     thr = (landing || gentle) && p->speed > 120 ? 0 : 1;
-    hard = p->f.y < 0; /* nose down toward the ground: roll level and pull */
+    hard = p->f.y < 0 || (ridge && p->speed > 250); /* nose down toward the ground, or fast at a ridge: roll level and pull */
     if (p->drone && ai->bfm >= BFM_COBRA) ai->bfm = BFM_PURSUIT;
     vec = direct = false;
   }
@@ -1459,6 +1472,10 @@ void ai_control(Game *g, Plane *p, float dt) {
     pitch = fminf(pitch, p->f.y < 0 ? 0.6f : 0.25f);
     thr = 1;
   }
+  /* the tank empty: no thrust to save a stall, so the nose stays down enough to keep flying speed (dropped flat at
+   * 75 kt, jets fell out of the sky a kilometre from their own runway) */
+  if (p->fuel <= 0 && !p->onGround && !p->taxi && !vec && p->speed < (g->classic ? 72 : 90) * 1.25f && !flare)
+    pitch = fminf(pitch, p->speed < (g->classic ? 72 : 90) * 1.1f ? -0.3f : 0);
   if (direct) {
     pitch = dp;
     roll = dr;
@@ -1471,7 +1488,10 @@ void ai_control(Game *g, Plane *p, float dt) {
   /* home for fuel in realistic handling, and nothing after us: no afterburner (past 0.9 it burns five times
    * the fuel, and the pull-ups and the near-stall rule's full power on the way in emptied the tanks) */
   if (g->realistic && ai->refuel && !threat && !p->drone) thr = fminf(thr, HOME_MAX_THR);
-  if (hold_for_strip(g, p)) thr = 0; /* on the brakes (off the catapult's power) until the strip is clear */
+  /* on the brakes (off the catapult's power) until the strip is clear; never for long: jets holding for each other
+   * sat on the runway a minute and more */
+  if (hold_for_strip(g, p) && ai->holdT < HOLD_MAX) thr = 0, ai->holdT += dt;
+  if (!p->taxi) ai->holdT = 0;
   p->throttle += clampf(thr - p->throttle, -0.8f * dt, 0.8f * dt);
   c->gun = gun;
   c->msl = msl;

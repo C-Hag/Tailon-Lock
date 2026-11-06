@@ -29,7 +29,8 @@ one pilot every quarter second.
 ## 2. Flying
 
 - [ ] No crash into the ground that was not caused by being hit (`CRASHED` deaths with no attacker within 6 s): at
-      most 1 in 50 matches
+      most 1 in 50 matches, before sudden death. Crashes after it are reported on their own line and do not count:
+      nobody can refuel then, by the rules, so jets run dry (the owner, 2026-11-05)
 - [ ] At the map's edge the jet turns back without flying into the ground or leaving the arena
 - [ ] Over hills the terrain avoidance clears every ridge; in realistic handling too
 - [ ] No pilot pulls more g than its jet allows; G-LOC only where the rules have G effects on, and rare
@@ -57,10 +58,10 @@ one pilot every quarter second.
 ## 5. Matches
 
 - [ ] Every match ends: no timeout in the audit, no unfinished match in the play tests
-- [ ] Matches are short: the audit's length lines average 7.25 minutes at most, and at most 5 % of the matches reach
+- [ ] Matches are short: the audit's length lines average 7.30 minutes at most, and at most 5 % of the matches reach
       the 30-minute sudden death (the share over 10 minutes is reported). (It was 6.5; the owner, 2026-11-03: "6.5 to
       7 is okay", when the CPU's landing rework made fewer jets lost on the way home and the matches longer; then
-      2026-11-04: "Yes 7.25", when the runway rule (no landing on a busy runway) took the mean to 7.21.)
+      2026-11-04: "Yes 7.25", when the runway rule (no landing on a busy runway) took the mean to 7.21; 2026-11-06: "Raise the limit" to 7.30, for 0.2.0 at 7.267.)
 - [ ] Every mode works with every jet: 1P, 2P, co-op, defend, defend1, drone, drone2
 - [ ] Ground targets get attacked and destroyed in the modes that have them
 - [ ] Defend mode: the carrier is defended and the waves come; the match ends either way

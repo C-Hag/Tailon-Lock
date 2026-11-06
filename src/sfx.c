@@ -42,6 +42,8 @@ static double listened;          /* seconds of sound played */
 static float lim_gain = 1;        /* the limiter's gain, 1 when nothing is near the ceiling */
 #define LIM_CEIL    0.891f        /* -1 dBFS */
 #define LIM_RELEASE 0.99979f      /* back towards 1 with a 100 ms time constant at 48 kHz */
+static float duck = 1, duck_to = 1; /* the music's duck (the film's kills only): stays exactly 1 everywhere else */
+#define DUCK_RATE   0.0005f       /* per sample: a 40 ms time constant, no step in the music, so no click */
 static uint32_t noise = 0x12345678u;
 
 static float white(void) {
@@ -105,7 +107,12 @@ static void mix_chunk(float *buf, int n) {
       out += E->lp * E->gain;
     }
     out *= enabled ? MASTER : 0;
-    float l = (out + mus[2 * i]) * volume, r = (out + mus[2 * i + 1]) * volume;
+    if (duck != duck_to) {
+      duck += (duck_to - duck) * DUCK_RATE;
+      if (fabsf(duck_to - duck) < 1e-4f) duck = duck_to;
+    }
+    /* before the volume and the limiter, so VOLUME, the children's cap and the ceiling hold as ever; it only lowers */
+    float l = (out + mus[2 * i] * duck) * volume, r = (out + mus[2 * i + 1] * duck) * volume;
     /* peak limiter: the gain drops at once to keep the louder channel under the ceiling and recovers slowly */
     float pk = fmaxf(fabsf(l), fabsf(r));
     lim_gain = 1 - (1 - lim_gain) * LIM_RELEASE;
@@ -113,6 +120,12 @@ static void mix_chunk(float *buf, int n) {
     buf[2 * i] = l * lim_gain;
     buf[2 * i + 1] = r * lim_gain;
   }
+}
+
+void sfx_duck_music(float gain) {
+  sfx_lock();
+  duck_to = gain < 1 ? gain : 1;
+  sfx_unlock();
 }
 
 /* The sound thread asks for n stereo frames, as many as its device wants (CoreAudio can ask for 2048 or more). */

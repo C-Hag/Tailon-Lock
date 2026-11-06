@@ -102,7 +102,8 @@ typedef struct {
   int   overshoots, stalls, glocs, greys, reversals, rounds, hits, missiles, kills, deaths, crashes, collisions;
   int   refuels, tankers, landings;
   /* the state last tick */
-  bool  alive, taxi, ground, stall, gloc, grey, refuel, ahead;
+  bool  alive, taxi, ground, stall, gloc, grey, refuel, ahead, rollingOff;
+  float offWatch;
   float lastRevT, lastRoll, prevRollSign, bankPrev, aheadT, health, ammo, vy, airborneT, spawnT, leftGroundT;
   int   stores, kills0, score;
   /* refuel episode */
@@ -605,18 +606,25 @@ static void hits(Game *g) {
 static void missions(Game *g, Plane *p, Pilot *P, float dt) {
   const char *who = p->name;
   bool air = !p->taxi && !p->onGround;
+  /* a jet that goes straight off again from its landing's roll-out has not departed: its next seconds count as the landing's */
+  if (!P->taxi && p->taxi) P->rollingOff = p->speed > 30;
   /* take-off: off the ground and still flying five seconds later */
   if (P->alive && P->taxi && p->alive && !p->taxi) {
-    P->toWatch = 5;
+    if (P->rollingOff) P->offWatch = 5;
+    else P->toWatch = 5;
     if (P->takeoffT < 0) P->takeoffT = g->time - P->spawnT;
   }
+  if (P->offWatch > 0 && p->alive) P->offWatch -= dt;
+  if (P->alive && !p->alive && (P->offWatch > 0 || (P->taxi && P->rollingOff)) && p->deathMsg && strcmp(p->deathMsg, "SHOT DOWN"))
+    mission(g, MS_LANDING, false, "%s %s rolling off from a landing (%s)", who, p->deathMsg, JETS[p->jet].name);
+  if (!p->alive) P->offWatch = 0;
   if (P->toWatch > 0 && p->alive) {
     P->toWatch -= dt;
     if (P->toWatch <= 0) mission(g, MS_TAKEOFF, true, "%s", "");
   }
   /* shot down while rolling or climbing out is the fight, not the take-off */
   if (P->alive && !p->alive && (P->taxi || P->toWatch > 0) && p->deathMsg && !strcmp(p->deathMsg, "SHOT DOWN")) P->toWatch = 0;
-  else if (P->alive && !p->alive && (P->taxi || P->toWatch > 0)) {
+  else if (P->alive && !p->alive && ((P->taxi && !P->rollingOff) || P->toWatch > 0)) {
     mission(g, MS_TAKEOFF, false, "%s %s on take-off (%s)", who, p->deathMsg ? p->deathMsg : "lost", JETS[p->jet].name);
     P->toWatch = 0;
   }

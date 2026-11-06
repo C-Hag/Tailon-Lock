@@ -44,7 +44,7 @@ const JY = DECK - NF_MINY;
 const deck = (t, lx, lz, ly = JY) => C.shipLocal(CAR, t, [lx, ly, lz]);
 const G = 9.81;
 
-const S = { format: 'ace4combat-intro', version: 7, title: GAME.title, duration: 0, menu_at: 0,
+const S = { format: 'ace4combat-intro', version: 8, title: GAME.title, duration: 0, menu_at: 0,
   music: {}, env: {}, actors: [], flares: [], events: [], shots: [], cards: [], fx: [] };
 const ACT = {};
 function actor(id, o) { const a = Object.assign({ id, keys: [] }, o); ACT[id] = a; S.actors.push(a); return a; }
@@ -252,10 +252,10 @@ actor('carrier', { kind: 'ship', model: 'cvn90', team: 0, ship: CAR, wake: 1 });
 actor('frigate1', { kind: 'ship', model: 'frigate', team: 0, ship: { x: 3900, z: -3000, heading: 0, speed: 14 }, wake: 0.6 });
 actor('frigate2', { kind: 'ship', model: 'frigate', team: 0, ship: { x: 5700, z: -3000, heading: 0, speed: 14 }, wake: 0.6 });
 // parked jets on deck (carrier-local position, heading relative to the ship)
-const parked = [[22, -95, -70], [22, -118, -70], [-38, -12, 60], [20, -140, -110]];
+const parked = [[22, -95, -70], [22, -118, -70], [24, -72, -70], [20, -140, -110]];
 parked.forEach(([lx, lz, h], i) => actor('parked' + (i + 1), { kind: 'static', model: 'nf24', team: 0, attach: 'carrier', pos: [lx, JY, lz], heading: h }));
 const blue1 = actor('blue1', { kind: 'jet', model: 'nf24', team: 0, callsign: 'VIPER 1' });
-const blue2 = actor('blue2', { kind: 'jet', model: 'nf24', team: 0, callsign: 'VIPER 2' });
+const blue2 = actor('blue2', { kind: 'jet', model: 'ja46', team: 0, callsign: 'VIPER 2' });   // JA 46 Gladan
 const red1 = actor('red1', { kind: 'jet', model: 'ks55', team: 1, callsign: 'BANDIT 1' });
 // the wingman is not a pilot: a DR-7 Vesper, the unmanned drone of Beat the Drone! (MESH_DRONE in the game)
 const red2 = actor('red2', { kind: 'jet', model: 'dr7', team: 1, callsign: 'VESPER' });
@@ -267,13 +267,13 @@ const red2 = actor('red2', { kind: 'jet', model: 'dr7', team: 1, callsign: 'VESP
 // about 25 degrees of bank),
 // then a gentler reversal (15 degrees) back onto the run heading. It keeps climbing all the way (a jet off the
 // catapult never dives back at the sea): 6 degrees off the bow, then a shallow half-degree climb for the low run.
-function launch(a, lx, tStart, stroke, tEnd, side) {
+function launch(a, lx, tStart, stroke, tEnd, side, z0 = 56, ly = JY) {
   const pts = [];
-  for (let t = 0; t < tStart - 1e-6; t += 1) pts.push([t, ...deck(t, lx, 56)]);
-  pts.push([tStart, ...deck(tStart, lx, 56)]);
-  const accel = 2 * 95 / (stroke * stroke);
-  for (let k = 1; k <= 10; k++) { const t = tStart + stroke * k / 10, s = 0.5 * accel * (t - tStart) ** 2; pts.push([+t.toFixed(3), ...deck(t, lx, 56 + s)]); }
-  const tb = tStart + stroke, P0 = deck(tb, lx, 151), v0 = CAR.speed + accel * stroke;
+  for (let t = 0; t < tStart - 1e-6; t += 1) pts.push([t, ...deck(t, lx, z0, ly)]);
+  pts.push([tStart, ...deck(tStart, lx, z0, ly)]);
+  const accel = 2 * (151 - z0) / (stroke * stroke);
+  for (let k = 1; k <= 10; k++) { const t = tStart + stroke * k / 10, s = 0.5 * accel * (t - tStart) ** 2; pts.push([+t.toFixed(3), ...deck(t, lx, z0 + s, ly)]); }
+  const tb = tStart + stroke, P0 = deck(tb, lx, 151, ly), v0 = CAR.speed + accel * stroke;
   const bump = (x, a0, a1) => x <= a0 || x >= a1 ? 0 : Math.sin(Math.PI * (x - a0) / (a1 - a0)) ** 2;   // smooth 0-1-0
   const speed = tau => v0 + 16 * tau;
   // flight path angle (degrees): rotate, climb, then pull up hard (2026-10-31, the storyboard: the pair
@@ -298,7 +298,7 @@ function launch(a, lx, tStart, stroke, tEnd, side) {
 }
 const t1End = bar(4.5);         // 20.61: end of the low run, start of the climb
 const runB1 = launch(blue1, 8, 10.0, 2.05, t1End, 1);
-const runB2 = launch(blue2, -8, 10.6, 2.05, t1End, -1);
+const runB2 = launch(blue2, -8, 10.95, 1.7, t1End, -1, 80, DECK + 0.92);   // spotted well ahead of Viper 1, so the two never overlap on the deck, and off the bow as before
 { // close up alongside the leader (line abreast) by the end of the low run, so both go through the barrier together
   // (measured at the same moment on both paths: their last points are at different times)
   // (2026-10-31: in height as well, now that they climb hard, and sooner, so the drone has both together for the roll)
@@ -352,15 +352,16 @@ fly(blue1, pullUp(runB1), { yaw: 0, coordinated: true, aoa: 10.0 + 2.05, rollFre
 fly(blue2, pullUp(runB2), { yaw: 0, coordinated: true, aoa: 10.6 + 2.05, rolls: [[tMerge + 0.4, 0], [tMerge + 0.9, -65], [tMerge + 2.0, -70]] });
 const mB1 = state(blue1, tMerge), mB2 = state(blue2, tMerge);
 // bandits come down the line from the north, just above and to the left
-const vR = 215;
+// (version 10: the approach from the cockpit, and the cut to the outside as they pass, on the merge cue)
+const vR = 215, T_TALLY = +(bar(10) - 5).toFixed(3), T_CP = 22.8, T_MERGE = +(tMerge - 0.15).toFixed(3);   // the bandits are there from the cut into the cockpit
 function bandit(a, ref, off, roll) {
   const pass = add(ref.pos, off), d = dirOf(180, -4);
   const pts = [];
-  for (let t = tMerge - 2.4; t <= tMerge + 1.7 + 1e-6; t += 0.25) pts.push([+t.toFixed(3), ...add(pass, mul(d, vR * (t - tMerge)))]);
-  fly(a, pts, { yaw: 180, rolls: [[tMerge - 2.4, 0], [tMerge + 0.2, 0], [tMerge + 0.7, roll]] });
+  for (let t = T_CP; t <= tMerge + 2.2 + 1e-6; t += 0.25) pts.push([+t.toFixed(3), ...add(pass, mul(d, vR * (t - tMerge)))]);
+  fly(a, pts, { yaw: 180, rolls: [[T_CP, 0], [tMerge + 0.2, 0], [tMerge + 0.7, roll]] });
 }
-bandit(red1, mB1, [-30, 9, 0], -80);
-bandit(red2, mB2, [-46, 18, 0], 75);
+bandit(red1, mB1, [-7, 7, 0], -80);   // between the Vipers: tight enough for a very long lens
+bandit(red2, mB2, [7, -6, 0], 75);
 
 // Version 6 flies the dogfight as two continuous fights, so each can be one long take: Viper 1 against the KS-55
 // straight out of the merge (bars 7 - 11), then Viper 2 against the drone (bars 11 - 15), and the drone's run for the
@@ -400,10 +401,13 @@ const pursue = (b, lead) => {
 // missile takes the flares. Viper 1 stays in lag behind the turning bandit, it reverses, Viper 1 cuts across, closes,
 // and the second missile goes through the late flares. Splash one.
 let killT;
+const FIGHT1_YAW = 65;
 {
-  const s = state(blue1, tS7), f = norm([s.vel[0], 0, s.vel[2]]), yaw0 = Math.atan2(f[0], f[2]) / D2R;
+  // the whole fight is turned toward the sun at the cut, and the bandit's turn kept small: the flares go into the sun, and the kill is still against it
+  const s0 = state(blue1, tS7), sp = Math.hypot(s0.vel[0], s0.vel[2]), s = Object.assign({}, s0, { vel: [sp * Math.sin(FIGHT1_YAW * D2R), s0.vel[1], sp * Math.cos(FIGHT1_YAW * D2R)] });
+  const f = norm([s.vel[0], 0, s.vel[2]]), yaw0 = FIGHT1_YAW;
   const R0 = add(add(s.pos, mul(f, 560)), [0, 70, 0]);
-  fly(red1, onward({ pos: R0, vel: mul(f, 215) }, tS7, tS11, { yaw: t => t < tS7 + 0.9 ? yaw0 : t < tS7 + 3.6 ? yaw0 - 115 : yaw0 - 60,
+  fly(red1, onward({ pos: R0, vel: mul(f, 215) }, tS7, tS11, { yaw: t => t < tS7 + 0.9 ? yaw0 : t < tS7 + 3.6 ? yaw0 + 70 : yaw0 + 40,
     rate: 26, pitch: 0, prate: 6, speed: 225 }));
   const pu = pursue(red1, 0.8);
   fly(blue1, onward(s, tS7, tS11 + 1, { yaw: pu.yaw, rate: 22, pitch: pu.pitch, prate: 14, speed: 245 }));
@@ -437,6 +441,13 @@ let killT;
   guns(blue2, +(tS9 + 5.2).toFixed(3), +(tS9 + 6.0).toFixed(3));
   for (const a of [red2, blue2]) (a.trail = a.trail || []).push([+(tS9 + 2.5).toFixed(3), +(tS11 + 0.3).toFixed(3)]);
 }
+// Viper 1 is back from its kill at the start of the second fight: top cover over the scissors, in the same picture
+{
+  const m = t => lerp3(state(blue2, t).pos, state(red2, t).pos, 0.5), pts = [];
+  for (let t = tS9; t <= tS11 - 0.1; t += 0.25) pts.push([+t.toFixed(3), ...add(m(t), [0, 62, 0])]);
+  pts.push([+(tS11 + 0.05).toFixed(3), ...add(m(tS11 + 0.05), [0, 62, 0])]);
+  fly(blue1, pts, { smooth: 0.8, rollRate: 90 });
+}
 // ---------- scenery ----------
 // A towering cumulus stands off to the north-west as scenery (an extra cloud next to the map's own weather).
 const CLOUD = { x: 4200, z: 2500, base: 1020, top: 1500 };
@@ -449,7 +460,13 @@ const CLOUD = { x: 4200, z: 2500, base: 1020, top: 1500 };
     const rad = 115 + 110 * R() * (1 - h * 0.4);
     puffs.push([Math.round(Math.cos(a) * d), Math.round(h * (H - rad * 0.7) + rad * 0.3), Math.round(Math.sin(a) * d), Math.round(rad)]);
   }
-  S.env.extra_clouds = [Object.assign({}, CLOUD, { puffs })];
+  const tower = (x, z, base, top, seed) => {   // towers either side of the sun, for the last chase
+    const Q = rng(seed), p = [], Ht = top - base;
+    for (let i = 0; i < 36; i++) { const h = Math.pow(Q(), 0.8), rr = (1 - h * 0.45) * 520, a = Q() * Math.PI * 2, d = Math.sqrt(Q()) * rr, rad = 150 + 130 * Q() * (1 - h * 0.4);
+      p.push([Math.round(Math.cos(a) * d), Math.round(h * (Ht - rad * 0.7) + rad * 0.3), Math.round(Math.sin(a) * d), Math.round(rad)]); }
+    return { x, z, base, top, puffs: p };
+  };
+  S.env.extra_clouds = [Object.assign({}, CLOUD, { puffs }), tower(8200, 4600, 760, 2100, 91), tower(8600, 800, 700, 1900, 92)];
   // the last chase flies east into the sunrise at about 1 km: clear the towering cumulus that stands on its path
 }
 {
@@ -465,17 +482,14 @@ const CLOUD = { x: 4200, z: 2500, base: 1020, top: 1500 };
     chase.push([+t.toFixed(3), ...lerp3(own, [s[1] + 6, s[2] - 18, s[3]], ease(clamp((t - tS11) / 2.6, 0, 1)))]);
   }
   fly(blue2, chase, { smooth: 0.7, rollRate: 90 });
-  // Viper 1 comes around from the splash and joins on the right, high
-  const s1 = state(blue1, tS11), v1 = s1.vel;
-  const join = [];
-  for (let t = tS11; t <= tKill2 + 0.75 + 1e-6; t += 0.25) {
-    const own = add(s1.pos, mul(v1, t - tS11));
-    const r = at(red2, t - 3.3), rs = state(red2, t - 3.3), side = norm(cross([0, 1, 0], rs.f));
-    const slot = add([r[1], r[2], r[3]], add(mul(side, -170), [0, 45, 0]));
-    const k = ease(clamp((t - tS11) / 3.4, 0, 1));
-    join.push([+t.toFixed(3), ...lerp3(own, slot, k)]);
-  }
+  // Viper 1 flies on Viper 2's right through the pursuit, then drops back on its beam, out of the cockpit's view
+  const T_L = bar(21), slot = (t, sd, fw, up) => { const st = state(blue2, t), side = norm(cross([0, 1, 0], [st.vel[0], 0, st.vel[2]])), f = norm(st.vel); return add(add(add(st.pos, mul(side, sd)), mul(f, fw)), [0, up, 0]); };
+  const join = [], join2 = [];
+  for (let t = tS11; t <= T_L + 0.5; t += 0.25) join.push([+t.toFixed(3), ...slot(t, 38, 12, 14)]);
+  // from the cockpit of Viper 2 it is in the windscreen: ahead of it, a little high and right, on the way to the drone
+  for (let t = T_L; t <= tKill2 + 0.75 + 1e-6; t += 0.25) join2.push([+t.toFixed(3), ...slot(t, 26, 130, 10)]);
   fly(blue1, join, { smooth: 0.45 });
+  fly(blue1, join2, { smooth: 0.8, rollRate: 90 });
 }
 // the last missile: Viper 2 fires so that it hits on bar 13. Each try is rolled back.
 let killT2, killPos2;
@@ -495,15 +509,51 @@ for (const a of [blue1, blue2]) for (let t = 10; t < tKill2; t += 0.25) {
   const q = at(a, t); if (q && q[2] < groundAt(q[1], q[3]) + 40 && groundAt(q[1], q[3]) > 1) throw new Error(a.id + ' hits the ground at ' + t.toFixed(2));
 }
 S.env.clear_clouds = [0, 1, 2, 3].map(k => { const q = at(red2, lerp(tS11, tKill2 + 1, k / 3)); return [Math.round(q[1]), Math.round(q[3]), 700]; });
-// after the kill both Vipers pull up and split, left and right, toward the sun
-fly(blue2, onward(state(blue2, killT2), killT2, tEnd, { yaw: t => t < killT2 + 2 ? 40 : 30, rate: 30, pitch: 28, prate: 14, speed: 270 }));
-fly(blue1, onward(state(blue1, killT2), killT2, tEnd, { yaw: 110, rate: 24, pitch: 22, prate: 12, speed: 270 }));
+// and the line to the sun from where the KS-55 dies: a low sun goes behind any cumulus on the horizon
+S.env.clear_clouds.push([7300, 2900, 1100], [9100, 3200, 1200], [11100, 3550, 1300], [13100, 3900, 1400]);
+// the last missile decides where the finale cuts
+const L2 = S.actors.filter(a => a.kind === 'missile').pop().spawn;
+const tFinale = +(L2 + 0.8).toFixed(3);
+// after the kill (version 10: "dive slightly and break away, not follow the destroyed plane all the way
+// down"): Viper 2 eases its nose down a few degrees for two seconds, then breaks off in a hard climbing turn to the
+// right, away from the falling wreck; Viper 1 stays on its wing
+const BRK = { side: 1, dive: -8, climb: 14, rate: 15 };
+{
+  const K = state(blue2, killT2), sp0 = len(K.vel), yaw0 = Math.atan2(K.vel[0], K.vel[2]) / D2R, gam0 = Math.asin(clamp(K.vel[1] / sp0, -1, 1)) / D2R;
+  const gamAt = tau => tau < 1.0 ? lerp(gam0, BRK.dive, ease(tau / 1.0)) : tau < 1.8 ? BRK.dive : lerp(BRK.dive, BRK.climb, ease(clamp((tau - 1.8) / 2.0, 0, 1)));
+  const turn = tau => ease(clamp((tau - 1.6) / 0.7, 0, 1)) * (1 - ease(clamp((tau - 8.5) / 1.2, 0, 1)));   // about 110 degrees, then away
+  let p = K.pos.slice(), yaw = yaw0; const pts = [], dt = 0.05;
+  for (let tau = 0, k = 0; killT2 + tau <= tEnd + 0.3 + 1e-6; tau += dt, k++) {
+    if (k % 5 === 0) pts.push([+(killT2 + tau).toFixed(3), ...p]);
+    yaw += BRK.side * BRK.rate * turn(tau) * dt;
+    p = add(p, mul(dirOf(yaw, gamAt(tau)), (sp0 + 6 * tau) * dt));
+  }
+  fly(blue2, pts, { smooth: 0.5, coordinated: true, rollRate: 120 });
+  const st = state(blue2, killT2 - 0.3), side = norm(cross([0, 1, 0], [st.vel[0], 0, st.vel[2]]));
+  const wing = t => { const q = state(blue2, t), sd = norm(cross([0, 1, 0], [q.vel[0], 0, q.vel[2]])), f = norm([q.vel[0], 0, q.vel[2]]);
+    return add(add(add(q.pos, mul(sd, 34 * BRK.side)), mul(f, -22)), [0, 12, 0]); };
+  const pre = t => add(add(state(blue2, Math.min(t, killT2 - 0.01)).pos, mul(side, 20)), [0, 7, 0]), w1 = [];
+  for (let t = tFinale; t <= tEnd + 0.3 + 1e-6; t += 0.25) w1.push([+t.toFixed(3), ...lerp3(pre(t), wing(Math.max(t, killT2)), ease(clamp((t - killT2) / 1.6, 0, 1)))]);
+  fly(blue1, w1, { smooth: 0.5, coordinated: true, rollRate: 120 });
+}
+// Viper 2 flies on Viper 1's wing through the first fight (the fight of its own opens at the cut after it)
+{
+  const tmp = { keys: [] }, pts = [];
+  for (let t = tS7; t <= tS9 + 0.2; t += 0.25) { const st = state(blue1, Math.min(t, tS9 - 0.02)), sd = norm(cross([0, 1, 0], [st.vel[0], 0, st.vel[2]])), f = norm([st.vel[0], 0, st.vel[2]]); pts.push([+t.toFixed(3), ...add(add(add(st.pos, mul(sd, 34)), mul(f, 46)), [0, 14, 0])]); }
+  fly(tmp, pts, { smooth: 0.8, rollRate: 90 });
+  const a0 = blue2.keys.filter(k => k && k[0] < r2(tS7)), a1 = blue2.keys.filter(k => k && k[0] >= r2(tS9));
+  // (the keys of the later path keep their segments: only the first fight's stretch is replaced)
+  const rest = blue2.keys.slice(blue2.keys.findIndex(k => k && k[0] >= r2(tS9)));
+  const edge = (tr, t) => C.sample(tr, t).map((v, q) => +v.toFixed(q ? 2 : 3));
+  const end0 = edge(track(blue2), r2(tS7) - 0.002), end1 = edge(C.track(tmp.keys), r2(tS9) - 0.002);
+  blue2.keys = [...a0, end0, null, ...tmp.keys.filter(k => k && k[0] < r2(tS9)), end1, null, ...rest]; blue2._track = null;
+}
 for (const a of [blue1, blue2]) (a.trail = a.trail || []).push([r2(killT2 + 0.2), r2(killT2 + 4)]);
 // afterburner windows [t0, t1, level]
 blue1.ab = [[9.4, 9.9, 0.5], [9.9, tS7 + 1.2, 1], [tS7 + 3.5, killT, 0.8], [tS11 - 0.3, tEnd, 1]];
-blue2.ab = [[9.6, 10.4, 0.5], [10.4, tEnd, 1]];
-red1.ab = [[tMerge - 2.4, killT, 0.9]];
-red2.ab = [[tMerge - 2.4, killT2, 0.8]];
+blue2.ab = [[9.6, 10.75, 0.5], [10.75, tEnd, 1]];
+red1.ab = [[T_CP, killT, 0.9]];
+red2.ab = [[T_CP, killT2, 0.8]];
 for (const a of [blue1, blue2, red1, red2]) a.visible = [[0, 999]];
 
 // ---------- deck crew ----------
@@ -528,12 +578,12 @@ const CREW = { yellow: '#f0cf2e', green: '#3c9e52', blue: '#3f6fd6', red: '#cf3a
 function crew(id, jersey, keys, poses) {
   actor(id, { kind: 'crew', attach: 'carrier', jersey: CREW[jersey], helmet: CREW[jersey], keys: keys.map(k => [k[0], k[1], DECK, k[2], k[3]]), poses });
 }
-crew('shooter1', 'yellow', [[0, 19, 72, -90]], [[0, 'stand'], [8.9, 'tension'], [9.8, 'launch'], [10.7, 'point'], [11.6, 'stand']]);
-crew('shooter2', 'yellow', [[0, -19, 72, 90]], [[0, 'stand'], [9.5, 'tension'], [10.4, 'launch'], [11.3, 'point'], [12.2, 'stand']]);
+crew('shooter1', 'yellow', [[0, 24, 52, -90]], [[0, 'stand'], [8.9, 'tension'], [9.8, 'launch'], [10.7, 'point'], [11.6, 'stand']]);
+crew('shooter2', 'yellow', [[0, -21, 94, 90]], [[0, 'stand'], [9.5, 'tension'], [10.75, 'launch'], [11.6, 'point'], [12.4, 'stand']]);
 crew('green1', 'green', [[0, 12, 52, -90], [8.4, 12, 52, -90], [9.2, 17, 44, 160], [12, 17, 44, 160]], [[0, 'kneel'], [8.4, 'walk'], [9.2, 'thumbs'], [10.2, 'stand']]);
 crew('green2', 'green', [[0, -12, 52, 90], [8.7, -12, 52, 90], [9.5, -17, 44, 200], [12, -17, 44, 200]], [[0, 'kneel'], [8.7, 'walk'], [9.5, 'thumbs'], [10.6, 'stand']]);
-crew('blue1c', 'blue', [[0, -24, 92, 180], [8, -24, 80, 180]], [[0, 'walk']]);
-crew('blue2c', 'blue', [[0, -29, 84, 180], [8, -29, 71, 180]], [[0, 'walk']]);
+crew('blue1c', 'blue', [[0, 27, 96, 180], [8, 27, 86, 180]], [[0, 'walk']]);
+crew('blue2c', 'blue', [[0, 30, 84, 180], [8, 30, 72, 180]], [[0, 'walk']]);
 crew('blue3c', 'blue', [[0, 26, 102, -170], [12, 24, 84, -170]], [[0, 'walk']]);
 crew('white1', 'white', [[0, 27, -12, -60]], [[0, 'stand'], [9.4, 'salute'], [10.4, 'stand']]);
 crew('red1c', 'red', [[0, -31, 34, 70]], [[0, 'stand']]);
@@ -541,9 +591,11 @@ crew('purple1', 'purple', [[0, 24, 30, -120]], [[0, 'stand']]);
 crew('green3', 'green', [[0, -2, 40, 0]], [[0, 'kneel'], [9.0, 'stand'], [10.5, 'point']]);
 // steam drifting off the catapult tracks before the launch (carrier-local segments)
 S.emitters = [
-  { type: 'steam', attach: 'carrier', a: [8, DECK + 0.1, 58], b: [8, DECK + 0.1, 150], t0: 0, t1: 13, rate: 10 },
-  { type: 'steam', attach: 'carrier', a: [-8, DECK + 0.1, 58], b: [-8, DECK + 0.1, 150], t0: 0, t1: 13.5, rate: 10 },
-  { type: 'steam', attach: 'carrier', a: [-25, DECK + 0.1, -49], b: [-37, DECK + 0.1, 30], t0: 0, t1: 13, rate: 4 }
+  { type: 'steam', attach: 'carrier', a: [8, DECK + 0.1, 58], b: [8, DECK + 0.1, 150], t0: 8.6, t1: 11, rate: 6 },
+  { type: 'steam', attach: 'carrier', a: [-8, DECK + 0.1, 58], b: [-8, DECK + 0.1, 150], t0: 8.6, t1: 11, rate: 6 },
+  { type: 'steam', attach: 'carrier', a: [-25, DECK + 0.1, -49], b: [-37, DECK + 0.1, 30], t0: 0, t1: 13, rate: 4 },
+  { type: 'steam', attach: 'carrier', a: [-8, DECK + 0.1, 66], b: [-8, DECK + 0.1, 96], t0: 8, t1: 11.5, rate: 12 },
+  { type: 'steam', attach: 'carrier', a: [8, DECK + 0.1, 50], b: [8, DECK + 0.1, 90], t0: 8, t1: 11, rate: 22 }
 ];
 
 // ---------- vapour ----------
@@ -603,10 +655,14 @@ function shot(name, t0, t1, fn, desc, opt = {}) {
     prev = [yaw, roll];
     keys.push([r2(t), r2(c.pos[0]), r2(c.pos[1]), r2(c.pos[2]), r2(yaw), r2(pitch), r2(roll), r2(c.fov || fov0)]);
   }
+  FS_CLOSEUP = opt.closeup || null;
+  // every jet of the film is in every shot unless the shot says why not (tools/frame_check.js holds it to that)
+  const absent = [...(opt.absent || []).map(([id, reason, from, to]) => Object.assign({ id, reason }, from != null ? { from } : {}, to != null ? { to } : {})),
+    ...(opt.parkedIn ? [] : ['parked1', 'parked2', 'parked3', 'parked4'].map(id => ({ id, reason: 'parked aft on the deck, not in the action' })))];
   if (opt.subjects) frameSubjects(keys, opt.subjects, t0, t1);
-  const s = { name, t0: r2(t0), t1: r2(t1), desc, cam: keys };
+  const s = { name, t0: r2(t0), t1: r2(t1), desc, cam: keys, absent };
   if (opt.subjects) s.subjects = opt.subjects.map(x => (Array.isArray(x) ? [x[0], r2(x[1]), r2(Math.min(x[2], t1))] : x));
-  for (const k of ['scene', 'lens', 'rig', 'attach', 'hud', 'vibe', 'in']) if (opt[k] != null) s[k] = opt[k];
+  for (const k of ['scene', 'lens', 'rig', 'attach', 'hud', 'vibe', 'in', 'shade', 'closeup']) if (opt[k] != null) s[k] = opt[k];
   S.shots.push(s);
 }
 
@@ -615,13 +671,22 @@ function shot(name, t0, t1, fn, desc, opt = {}) {
 // shot asked for would lose one, the aim moves just enough to keep it in, and the lens widens when they do not fit;
 // both corrections are smoothed over about a second, so the camera eases instead of twitching. A ship counts by its
 // bow and stern, so the whole ship stays in the picture. tools/frame_check.js checks the result.
-const FRAME_IN = 0.74, ASPECT = 16 / 9, BOX = 2.35;
+const FRAME_IN = 0.8, ASPECT = 16 / 9, BOX = 2.35;
+const JBOX = { nf24: [-9.2, 9.8, 9.6, -1.6, 3.2], ks55: [-9.2, 9.8, 9.6, -1.6, 3.2], dr7: [-6.2, 6.6, 6.4, -1.1, 2.1], ja46: [-7.8, 8.6, 5.3, -0.95, 3.5] };   // as in tools/frame_check.js
+let FS_CLOSEUP = null;   // this jet may run past the edge: only its centre counts
 function subjectPoints(id, t) {
   if (id === 'carrier') return [C.shipLocal(CAR, t, [0, 20, 163]), C.shipLocal(CAR, t, [0, 20, -159])];
   const a = S.actors.find(x => x.id === id);
+  if (a.kind === 'crew') { const k = at(a, t) || a.keys[a.keys.length - 1]; return [C.shipLocal(CAR, t, [k[1], k[2] + 0.9, k[3]])]; }
   if ((a.spawn != null && t < a.spawn) || (a.end != null && t > a.end)) return [];
   const s = at(a, t);
-  return s ? [[s[1], s[2], s[3]]] : [];
+  if (!s) return [];
+  if (id === FS_CLOSEUP) return [[s[1], s[2], s[3]]];
+  // the jet's whole bounding box, as tools/frame_check.js has it
+  const fr = C.frame(s[4], s[5], s[6]), out = [], [f0, f1, sp, u0, u1] = JBOX[a.model] || JBOX.nf24;
+  for (const f of [f0, f1]) for (const r of [-sp, sp]) for (const u of [u0, u1])
+    out.push([0, 1, 2].map(i => s[i + 1] + fr.f[i] * f + fr.r[i] * r + fr.u[i] * u));
+  return out;
 }
 function frameSubjects(keys, subjects, t0, t1) {
   const fix = keys.map(k => {
@@ -629,8 +694,8 @@ function frameSubjects(keys, subjects, t0, t1) {
     const pts = [];
     for (const x of subjects) {
       const [id, a, b] = Array.isArray(x) ? x : [x, -1e9, 1e9];
-      if (t < a || t > b || t > t1 + 0.6) continue;
-      for (const w of subjectPoints(id, t)) {
+      if (t < a || t > b || t > t1 + 0.11) continue;   // (the key just past the cut holds the last frame of the take)
+      for (const w of subjectPoints(id, Math.min(t, t1 - 0.01))) {
         const d = sub(w, [k[1], k[2], k[3]]), z = dot(d, fr.f);
         if (z > 0.5) pts.push([dot(d, fr.r) / z, dot(d, fr.u) / z]);
       }
@@ -654,7 +719,7 @@ function frameSubjects(keys, subjects, t0, t1) {
   };
   const wide = fix.map((_, i) => Math.max(...fix.slice(Math.max(0, i - 4), i + 5).map(f => f[2])));
   keys.forEach((k, i) => {
-    const sx = sm(i, j => fix[j][0]), sy = sm(i, j => fix[j][1]), tn = sm(i, j => wide[j]);
+    const sx = sm(i, j => fix[j][0]), sy = sm(i, j => fix[j][1]), tn = Math.max(sm(i, j => wide[j]), wide[i]);
     const fr = C.frame(k[4], k[5], k[6]);
     const f = norm(add(add(fr.f, mul(fr.r, sx)), mul(fr.u, sy)));
     let yaw = Math.atan2(f[0], f[2]) / D2R;
@@ -664,6 +729,27 @@ function frameSubjects(keys, subjects, t0, t1) {
     k[5] = r2(Math.asin(clamp(f[1], -1, 1)) / D2R);
     k[7] = r2(2 * Math.atan(tn) / D2R);
   });
+  // the easing lags where a shot starts: a last touch where it would leave anything too near the edge
+  for (const k of keys) {
+    const fr = C.frame(k[4], k[5], k[6]), th = Math.tan(k[7] * D2R / 2), W = 0.88 * th * ASPECT, H = W / BOX;
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const x of subjects) {
+      const [id, a, b] = Array.isArray(x) ? x : [x, -1e9, 1e9];
+      if (k[0] < a || k[0] > b || k[0] > t1 + 0.11) continue;
+      for (const w of subjectPoints(id, Math.min(k[0], t1 - 0.01))) {
+        const d = sub(w, [k[1], k[2], k[3]]), z = dot(d, fr.f);
+        if (z > 0.5) { x0 = Math.min(x0, dot(d, fr.r) / z); x1 = Math.max(x1, dot(d, fr.r) / z); y0 = Math.min(y0, dot(d, fr.u) / z); y1 = Math.max(y1, dot(d, fr.u) / z); }
+      }
+    }
+    if (x0 > x1) continue;
+    const sx = x1 > W ? x1 - W : x0 < -W ? x0 + W : 0, sy = y1 > H ? y1 - H : y0 < -H ? y0 + H : 0;
+    if (!sx && !sy) continue;
+    const f = norm(add(add(fr.f, mul(fr.r, sx)), mul(fr.u, sy)));
+    let yaw = Math.atan2(f[0], f[2]) / D2R;
+    while (yaw - k[4] > 180) yaw -= 360;
+    while (yaw - k[4] < -180) yaw += 360;
+    k[4] = r2(yaw); k[5] = r2(Math.asin(clamp(f[1], -1, 1)) / D2R);
+  }
 }
 // a camera bolted to an actor
 function rigShot(name, t0, t1, a, offset, dir, desc, opt = {}) {
@@ -705,138 +791,168 @@ function flatFrame(a, t, tau, tmin) {
   const v = smooth(tt => state(a, tt).vel, t, tau, tmin), f = norm([v[0], 0, v[2]]);
   return { f, side: norm(cross([0, 1, 0], f)) };
 }
-// 1 Flyby at dawn, wide: in from high off the carrier's stern a kilometre out, closing and coming down along her port
-// side, then past the bow and turning to look back along the whole ship. Water, carrier and horizon stay in the frame
-// all the way: the camera looks no lower than the horizon allows, and the framing keeps bow and stern in.
-const FLY = C.track([[0, -260, 230, -1050], [1.8, -320, 170, -560], [3.6, -300, 105, -60], [5.2, -250, 70, 340], [6.4, -200, 60, 520]]);
+// ---- Version 8: the camera, 11 shots in three acts. Low, long lenses and the low sun behind the jets. Every shot lists
+// every jet that shows in it: frameSubjects keeps each one's whole bounding box in the letterbox, and frame_check holds it to that ----
+const DAWN_ABS = [['red1', 'still inbound: its path starts at the cut into the cockpit shot'], ['red2', 'still inbound: its path starts at the cut into the cockpit shot']];
+const SHADE = 0.68;   // backlit: the jets a little darker (and the crew black), the grade unchanged
+const azDir = az => [Math.sin(az * D2R), 0, Math.cos(az * D2R)];
+const bearing = (a, b) => Math.atan2(b[0] - a[0], b[2] - a[2]) / D2R;
+const lens = mm => lensFov(mm);
+// Act 1. The close-in on the carrier at dawn, in from high off her stern a kilometre out, closing and coming down along
+// her port side, then past the bow and turning to look back along the whole ship. Water, carrier and horizon stay in the
+// frame all the way: the camera looks no lower than the horizon allows, and the framing keeps bow and stern in.
+// Version 10 ("focus on the planes taking off, not behind the carrier"): high off her bow, looking back
+// down the deck at the two alert jets on the bow catapults, the escorts either side of her; the camera sinks and
+// closes slowly, the lens creeping in on the jets.
+// (version 11: the first new cut's dawn) 135 mm, a metre over the deck from off her port side, on the line to the sun,
+// so both jets stand against it. A slow push and a slow arc; the sun stays in the top of the frame.
 shot('sunrise', 0, 5.2, t => {
-  const u = clamp(t / 5.2, 0, 1), e = ease(u), k = C.sample(FLY, t);
-  const pos = C.shipLocal(CAR, t, [k[1], k[2], k[3]]), look = C.shipLocal(CAR, t, [0, 22, lerp(40, -30, e)]);
-  // hold the horizon in the picture: look down at most two thirds of the frame's visible half-height
-  const fov = lerp(62, 52, e), vhalf = Math.atan(Math.tan(fov * D2R / 2) * ASPECT / BOX) / D2R;
-  const d = norm(sub(look, pos)), pitch = Math.max(Math.asin(d[1]) / D2R, -0.62 * vhalf);
-  return { pos, yaw: Math.atan2(d[0], d[2]) / D2R, pitch, roll: -4 * Math.sin(Math.PI * u), fov };
-}, 'A wide flyby of CVN-90 Stormhaven at dawn: in from high off the stern, closing down her port side and past the bow, the whole ship, the sea and the horizon in the frame.', { lens: 20, rig: 'camera helicopter', vibe: { a: 0.004, f: 0.5 }, subjects: ['carrier'] });
-// 2 The control room (combat information centre), drawn by the engine rather than rendered from the world: the radar
-// operator calls the contacts, the supervisor sounds the alert, the commander sends the alert fighters. The camera
-// keys only hold a pose for engines that need one.
+  const u = ease(clamp(t / 5.2, 0, 1)), az = lerp(70, 86, u), D = lerp(96, 78, u), d = azDir(az);
+  const c = deck(t, 0, 56, DECK + 1), pos = [c[0] - d[0] * D, DECK + 1, c[2] - d[2] * D];
+  return { pos, yaw: az, pitch: 1.5, fov: lens(135) };
+}, 'Dawn on the deck through a long lens: both alert jets against the low sun in heat haze, a slow push and arc.', { absent: DAWN_ABS, lens: 135, rig: 'long lens at deck height off the port side', shade: SHADE, vibe: { a: 0.002, f: 0.4 }, subjects: ['blue1', 'blue2'] });
 const CIC_POSE = { pos: deck(5.5, 2.2, 100, DECK + 0.7), look: deck(5.5, 4, 60, DECK + 2.2), fov: lensFov(18) };
-shot('cic', 5.2, 9.0, () => CIC_POSE, 'Inside the carrier\'s control room: the radar operator calls the contacts, the supervisor sounds the alert, the commander sends the alert fighters.', { scene: 'cic', in: { type: 'dissolve', dur: 0.5 } });
-const T_LAUNCH_D = +(HIT - BAR / 4).toFixed(3);
-// 2 On deck, one take from 18 mm to the launch: a slow dolly at knee height ahead of the alert jets, a crane move to the
-// shooter as the klaxon goes, then the operator swings onto Viper 1 as it charges down the catapult and past
-shot('deck', 9.0, T_LAUNCH_D, t => {
-  const u = clamp((t - 5.5) / 2.5, 0, 1), k = ease(clamp((t - 7.4) / 1.6, 0, 1)), w = clamp((t - 8) / 2, 0, 1);
-  const pos0 = deck(t, lerp(2.2, 0.4, u), lerp(100, 95, u), DECK + 0.7), look0 = deck(t, 4, 60, DECK + 2.2);
-  const pos1 = deck(t, 25, lerp(101.5, 100, w), DECK + 1.1), look1 = deck(t, lerp(15, 14, w), 67, DECK + 1.6);
-  const j = ease(clamp((t - 10.05) / 0.9, 0, 1)), jet = smooth(tt => add(P(blue1, tt), [0, 1.2, 0]), t, 0.12, 5.5);
-  const fov = lerp(lerp(lensFov(18), lensFov(70), k), lensFov(26), ease(clamp((t - 10.0) / 1.1, 0, 1)));
-  return { pos: lerp3(pos0, pos1, k), look: lerp3(lerp3(look0, look1, k), jet, j), fov };
-}, 'One take on the flight deck: knee height ahead of the jets in the steam, a crane move to the shooter as the klaxon goes, his run-up and launch signals, then a swing onto Viper 1 as the catapult fires and it roars past.', { subjects: [['blue1', 10.4, 99]], lens: 18, rig: 'dolly on deck, crane to the shooter, panning with the launch', vibe: { a: 0.004, f: 1.2 }, in: { type: 'dissolve', dur: 0.3 } });
-// Version 6 cuts like a film: 8 shots, every take 5 to 8 seconds, each on one continuous piece of action.
-const T_CHASE = bar(3.5), T_SKIM = bar(6.5), T_LOCK = bar(21);
-// The storyboard (2026-10-31): cut away from the launch as Viper 1 is off the bow, to a drone ahead of the
-// climbing pair; then a camera plane off their wing as they reach the speed of sound
-const T_DRONE = 12.6, T_BOOM = 17.4;
-// 3 Launch, one 7.2 s take from a beat before the band hit, from a camera plane coming up behind the carrier: high
-// off her starboard quarter it has the whole ship in the frame as Viper 1 comes down the catapult and both Vipers go
-// off the bow; it flies on past the ship and closes in behind the pair, a little high and to the right, through
-// Viper 1's victory roll, the clearing turns and the climb
-const T_LAUNCH = +(HIT - BAR / 4).toFixed(3);
-const T_JOIN = 16.4, CHASE_ANG = 35 * D2R;
-const pairAt = t => smooth(tt => lerp3(P(blue1, tt), P(blue2, tt), 0.4), t, 0.3, T_LAUNCH);
-const chasePos = t => {   // behind the pair: 35 degrees off Viper 1's tail on its right, a little high
-  const fr = flatFrame(blue1, Math.max(t, 12.05), 0.5, 12.05);
-  return add(pairAt(t), add(add(mul(fr.f, -95 * Math.cos(CHASE_ANG)), mul(fr.side, 95 * Math.sin(CHASE_ANG))), [0, 14, 0]));
-};
-const PLANE0 = deck(T_LAUNCH, 100, -159 - 180, 70), PLANE1 = chasePos(T_JOIN);
-shot('launch', T_LAUNCH, T_DRONE, t => {
-  const u0 = clamp((t - T_LAUNCH) / (T_JOIN - T_LAUNCH), 0, 1), u = 0.45 * u0 + 0.55 * u0 * u0, w = ease(clamp((t - 13.6) / (T_JOIN + 0.6 - 13.6), 0, 1));   // it gathers speed
-  const pos = lerp3(lerp3(PLANE0, PLANE1, u), chasePos(t), w);
-  // first along the deck to the bow (the whole ship and the jets on it), then onto the pair
-  const bow = deck(t, 0, 140, 25), k = ease(clamp((t - 12.0) / 1.6, 0, 1));
-  return { pos, look: lerp3(lerp3(bow, P(blue1, t), 0.5), add(pairAt(t), [0, 2, 0]), k), fov: lensFov(lerp(24, 35, w)) };
-}, 'From a camera plane coming up behind the carrier: the whole ship, afterburners lit, as Viper 1 comes down the catapult and leaves the bow.', { subjects: [['carrier', T_LAUNCH, 13.2], 'blue1', ['blue2', 11.6, 99]], lens: 24, rig: 'camera plane behind the carrier', vibe: { a: 0.004, f: 2.5 } });
-// 3b The drone, 16 mm: it starts 45 degrees up and ahead of the take-off point, looking back at Viper 1 leaving the bow
-// with the carrier behind, then flies on ahead of the leader along its climb, 15 degrees above its path, so we look at
-// the noses as they roll and accelerate up toward the lens. It lets them close from 60 m to 26 m. The whole carrier
-// stays in the frame until the cut.
-const pairMid = t => lerp3(P(blue1, t), P(blue2, t), 0.5);
+const INBOUND = [['red1', 'still inbound: its path starts at the cut into the cockpit shot'], ['red2', 'still inbound: its path starts at the cut into the cockpit shot']];
+const DOWN = ['red1', 'shot down at ' + killT.toFixed(2) + ' s in fight1, and its wreck goes with that take'];
+shot('cic', 5.2, 9.0, () => CIC_POSE, 'Inside the carrier\'s control room: the radar operator calls the contacts, the supervisor sounds the alert, the commander sends the alert fighters.', { absent: ['blue1', 'blue2', 'red1', 'red2'].map(id => [id, 'the shot is inside the control room']), scene: 'cic', in: { type: 'dissolve', dur: 0.5 } });
+// Catapult, the take-off, one take, a close-up of Viper 2. At its tail as the burners light, Viper 1 behind it against the
+// deck; it swings forward with Viper 1 as that goes, past the shooter, and after Viper 2 down the deck, inboard of the
+// edge so the hull never shows; off the bow it swings out and draws level, the sun over it, in slow motion.
+const zLocal = (z, t) => z - C.shipPos(CAR, t)[2];
+const EDGE = C.track([[0, -24, 0, 0], [66, -24, 0, 0], [118, -17, 0, 0], [135, -15, 0, 0], [150, -14, 0, 0], [165, -12, 0, 0], [400, -12, 0, 0]]);   // just inboard of the port edge, by ship z
+const T_CAT = 13.7;
+shot('catapult', 9.0, T_CAT, t => {
+  const v2 = smooth(tt => P(blue2, tt), t, 0.1, 9), v1 = smooth(tt => P(blue1, tt), t, 0.1, 9);
+  const back = lerp(25, 6, ease(clamp((t - 13.0) / 0.7, 0, 1))), z2 = zLocal(v2[2], t) - back, hold = lerp(71, 69, ease(clamp((t - 9) / 1.4, 0, 1)));
+  const z = 0.5 * (hold + z2 + Math.sqrt((hold - z2) ** 2 + 4));   // a soft max: it waits, then runs, and never backs up
+  const lx = lerp(lerp(-24, C.sample(EDGE, clamp(z, 0, 400))[1], ease(clamp((t - 10.2) / 0.8, 0, 1))), -38, ease(clamp((t - 13.0) / 0.7, 0, 1)));
+  // (up a little as it runs: its eye above the deck furniture, which then stays against the dark deck)
+  const y = lerp(DECK + lerp(1.2, 3, ease(clamp((t - 10.9) / 0.8, 0, 1))), v2[1] - 3, ease(clamp((t - 12.9) / 0.8, 0, 1)));
+  const pos = C.shipLocal(CAR, t, [lx, y, z]), j = ease(clamp((t - 13.0) / 0.7, 0, 1)), aim = lerp3(v2, v1, lerp(0.5, 0.2, j));
+  const w = ease(clamp((t - 10.0) / 1.1, 0, 1));
+  return { pos, yaw: lerp(97, bearing(pos, aim), w), pitch: Math.max(1.5, Math.asin(clamp((aim[1] + 1.5 - pos[1]) / dist(pos, aim), -1, 1)) / D2R), fov: lens(24) };
+}, 'One take on the catapults: at Viper 2\'s nozzle as the burners light, Viper 1 going, the shooter black against the sky, then after Viper 2 down the deck, off the bow in slow motion and level with it, the sun over it.', { lens: 24, absent: INBOUND, closeup: 'blue2', rig: 'close on Viper 2 at deck level, then along the edge, then alongside', shade: SHADE, vibe: { a: 0.003, f: 1.3 }, in: { type: 'dissolve', dur: 0.3 },
+  subjects: ['blue1', 'blue2'] });
+// (version 11, from the owner's own edit: the 0.1.0 camera drone over the climb, then riding low beside the pair against
+// the sun through the boom, as in the first new cut)
+// Drone, 16 mm: it starts 45 degrees up and ahead of the pair as they leave the bow, looking back at them with the
+// carrier behind, then flies on ahead of the leader along its climb, 15 degrees above its path, so we look at the
+// noses as they roll and accelerate up toward the lens. It lets them close from 42 m to 22 m.
+const T_RIDE = 18.0;
 const leadMid = t => lerp3(P(blue1, t), P(blue2, t), 0.3);
-shot('drone', T_DRONE, T_BOOM, t => {
-  const u = ease(clamp((t - T_DRONE) / (T_BOOM - T_DRONE), 0, 1)), w = ease(clamp((t - T_DRONE) / 1.8, 0, 1));
-  const m = smooth(leadMid, t, 0.3, T_DRONE), v = norm(smooth(tt => state(blue1, tt).vel, t, 0.5, T_DRONE));
-  const D = lerp(60, 26, u), side = norm(cross([0, 1, 0], [v[0], 0, v[2]]));
-  const start = add(m, [0, 0.71 * D, 0.71 * D]);          // 45 degrees up and ahead, over the take-off point at the cut
+shot('drone', T_CAT, T_RIDE, t => {
+  const u = ease(clamp((t - T_CAT) / (T_RIDE - T_CAT), 0, 1)), w = ease(clamp((t - T_CAT) / 1.8, 0, 1));
+  const m = smooth(leadMid, t, 0.3, T_CAT), v = norm(smooth(tt => state(blue1, tt).vel, t, 0.5, T_CAT));
+  const D = lerp(42, 22, u), side = norm(cross([0, 1, 0], [v[0], 0, v[2]]));
+  const start = add(m, [0, 0.71 * D, 0.71 * D]);
   const lead = add(add(m, mul(v, D * Math.cos(15 * D2R))), add(mul([0, 1, 0], D * Math.sin(15 * D2R)), mul(side, 6)));
-  return { pos: lerp3(start, lead, w), look: add(m, mul(v, 4)), fov: lensFov(16) };
-}, 'A camera drone that starts 45 degrees above and ahead of the take-off point, wide, and leads the climb: looking back at the noses with the whole carrier behind them as Viper 2 follows Viper 1 off the bow, the victory roll, and both accelerating up toward the lens.', { subjects: ['carrier', 'blue1', 'blue2'], lens: 16, rig: 'camera drone leading the pair', vibe: { a: 0.004, f: 1.5 } });
-// 3c The boom, 24 mm: a camera plane off their right wing, 20 m above them and flying their climb at 125 m/s. The pair
-// (about 200 m/s) comes up from behind, passes it on the ba-boom (vapour cones) and pulls away into the climb.
-const BOOM = (() => { const m = pairMid(19.5), v = norm(state(blue1, 19.5).vel); return { p: add(add(m, mul(norm(cross([0, 1, 0], [v[0], 0, v[2]])), 48)), [0, 20, 0]), v }; })();
-shot('boom', T_BOOM, T_SKIM, t => {
-  const pos = add(BOOM.p, mul(BOOM.v, 125 * (t - 19.5))), m = smooth(pairMid, t, 0.2, T_BOOM);
-  const f = norm(sub(m, pos)), yaw = Math.atan2(f[0], f[2]) / D2R, pitch = 0.8 * Math.asin(f[1]) / D2R;
-  return { pos, yaw, pitch, fov: lensFov(lerp(24, 40, ease(clamp((t - 20.2) / 2.5, 0, 1)))) };
-}, 'High over the sea as they reach the speed of sound: a camera plane off their right wing; the pair comes up from behind, passes it with vapour cones on the ba-boom, and pulls away climbing toward the bandits.', { subjects: ['blue1', 'blue2'], lens: 24, rig: 'camera plane off the right wing', vibe: { a: 0.004, f: 3 } });
-// 4 Cockpit, 5.6 s: Viper 1 low over the sea, the pull-up, the KS-55 and the drone growing from dots, flashing past at
-// the merge, and the break
-const COCKPIT = [0, 1.75, 2.6], FWD = [0, -0.06, 1];
-rigShot('cockpit', T_SKIM, tS7, blue1, COCKPIT, FWD, 'In the cockpit of Viper 1, the head-up display and the NF-24 panel: the climb, the KS-55 and the drone grow from dots, flash past at the merge, and Viper 1 rolls into the break.', { lens: 21, rig: 'cockpit camera', hud: { actor: 'blue1', target: 'red1', panel: true }, vibe: { a: 0.003, f: 14 } });
-// 5 Viper 1 against the KS-55, one 6.8 s take: on the right wing as the first missile drops off the rail and lights;
-// the camera jet falls back and widens out to hold both jets through the turns, the second missile and splash one
+  return { pos: lerp3(start, lead, w), look: add(m, mul(v, 4)), fov: lensFov(20) };
+}, 'A camera drone above and ahead of the pair as they leave the bow, wide, leading the climb: looking back at the noses with the carrier behind them, the victory roll, and both accelerating up toward the lens.', { absent: INBOUND, subjects: ['blue1', 'blue2'], lens: 16, rig: 'camera drone leading the pair', vibe: { a: 0.004, f: 1.5 } });
+// Ride, 20 mm: a camera jet low beside Viper 2 on the sun side's far side, looking across the pair into the sun and
+// the water; they go through the barrier beside it, vapour cones on the ba-boom.
+shot('ride', T_RIDE, T_CP, t => {
+  const own = smooth(tt => P(blue2, tt), t, 0.25, T_RIDE), fr = flatFrame(blue2, t, 0.5, T_RIDE), u = ease(clamp((t - T_RIDE) / 3, 0, 1));
+  const pos = add(add(add(own, mul(fr.side, lerp(-34, -28, u))), mul(fr.f, lerp(12, -6, u))), [0, lerp(-11, -8, u), 0]);
+  const m = lerp3(P(blue1, t), P(blue2, t), 0.5), d = norm(sub(m, pos));
+  return { pos, yaw: Math.atan2(d[0], d[2]) / D2R, pitch: Math.asin(d[1]) / D2R + 2, fov: lens(20) };
+}, 'Riding low beside the pair, looking across them into the sun and the water: Viper 1 and the Gladan side by side, vapour cones and the ba-boom.', { absent: INBOUND, lens: 20, rig: 'camera jet close on the wing', shade: SHADE, vibe: { a: 0.003, f: 4 }, in: { type: 'dissolve', dur: 0.4 }, subjects: ['blue1', 'blue2'] });
+const T_LOCK = bar(21);
+// Act 2. Viper 1's cockpit: the bandits are on the scope and in the HUD's brackets long before they can be seen; by the
+// end of the take they are in the windscreen.
+rigShot('cockpit', T_CP, T_MERGE, blue1, [0, 1.75, 2.6], [0, -0.06, 1], 'In Viper 1\'s cockpit: two contacts on the scope and in the head-up display\'s brackets, then the KS-55 and the drone in the windscreen, growing from dots until they fill it as they pass.', { absent: [['blue1', 'the camera is in its cockpit: the game does not draw that jet'], ['blue2', 'on Viper 1\'s beam, behind the cockpit\'s field of view']], lens: 21, rig: 'cockpit camera', hud: { actor: 'blue1', target: 'red1', panel: true }, vibe: { a: 0.003, f: 14 } });
+// Merge, from outside: a very long lens high on the line, on the bandits' side: the Vipers come at it, the bandits go away from
+// it, all four in the frame from the cut to the end. They cross with vapour cones on the music's crash and break.
+const MP = [4500, 548, 2450];   // (version 11: 300 m west, off the line of the airfield's runway, which showed under the merge through the long lens)
+shot('merge', T_MERGE, tS7, t => {
+  const c = [blue1, blue2, red1, red2].map(a => P(a, Math.min(t, 31.1))).reduce((m, p) => add(m, mul(p, 0.25)), [0, 0, 0]);
+  return { pos: MP, look: c, fov: lens(500) };
+}, 'From outside, a very long lens high on the line of the merge: the Vipers coming on, the KS-55 and the drone going away, stacked by the lens; they cross with vapour cones and all four break.', { lens: 500, rig: 'very long lens, panning', vibe: { a: 0.001, f: 1 }, subjects: ['blue1', 'blue2', 'red1', 'red2'] });
+// Viper 1 against the KS-55, one long take down the line of the fight through a long lens, low behind Viper 1: the missile
+// goes out ahead of it, the flares fan out in slow motion, the fight turns, the second missile, and the KS-55 goes up.
 shot('fight1', tS7, tS9, t => {
-  const s = state(blue1, t), fr = flatFrame(blue1, t, 0.5, tS7);
-  const k = ease(clamp((t - tS7 - 0.6) / 2.4, 0, 1));
-  const bandit = smooth(tt => P(red1, tt), t, 0.3, tS7);
-  const sep = dist(s.pos, bandit), D = lerp(35, clamp(sep * 0.3, 60, 150), k);
-  const pos = add(s.pos, add(add(mul(fr.side, lerp(15, D * 0.6, k)), mul(fr.f, lerp(-30, -D, k))), [0, lerp(4, D * 0.3, k), 0]));
-  const look = lerp3(add(s.pos, mul(fr.f, 300)), lerp3(s.pos, bandit, 0.7), ease(clamp((t - tS7 - 0.4) / 1.6, 0, 1)));
-  return { pos, look, fov: lerp(lensFov(20), lensFov(28), k) };
-}, 'On Viper 1\'s wing: fox two, the KS-55 fans out flares and the missile takes them. The camera falls back and holds both jets as Viper 1 stays in the bandit\'s turn, cuts across its reversal and fires again. Splash one.', { subjects: ['blue1', 'red1'], lens: 20, rig: 'camera jet on the wing, falling back into a wide chase', vibe: { a: 0.004, f: 5 } });
-// 6 Viper 2 against the drone, one 6.8 s take: a camera jet off to the side keeps both in frame as the drone fires,
-// Viper 2 breaks into it, and the two fall into the scissors until Viper 2 gets the guns
+  const Q = q => Math.min(q, 38.78), tt0 = Math.min(t, 38.75), own = smooth(q => P(blue1, Q(q)), tt0, 0.3, tS7), u = ease(clamp((t - 33) / 3.5, 0, 1));
+  const off = ease(clamp((t - 36.9) / 1.6, 0, 1)), d = azDir(lerp(70, 82, u)), side = [d[2], 0, -d[0]];
+  // looking into the sun all the way, dropping back as the fight opens out across the frame; after the kill it slides
+  // out and up, clear of the smoke the Vipers fly through
+  const pos = add(add(add(own, mul(d, -lerp(150, 250, u))), mul(side, -lerp(40, 120, off))), [0, lerp(12, 30, off), 0]);
+  return { pos, yaw: lerp(70, 82, u) + 4, pitch: -1, fov: lens(90) };
+}, 'Into the sun through a long lens, level behind Viper 1 with Viper 2 on its wing: fox two, the flares fan out against the sun in slow motion and take the missile. The fight turns into the sun, the second missile, and the KS-55 goes up against it in slow motion, shards and smoke.', { absent: [['red2', 'away from this fight: no path until it opens fight2 at 38.8 s']], lens: 90, rig: 'long lens level in trail, to one side', shade: SHADE, vibe: { a: 0.002, f: 2 }, subjects: ['blue1', 'blue2', 'red1'] });
+// Viper 2 and the drone: a slow half circle round the fight, closing as the two cross, the sun behind them at the crossing.
 shot('fight2', tS9, tS11, t => {
-  const mid = smooth(tt => lerp3(P(blue2, tt), P(red2, tt), 0.5), t, 0.4, tS9);
-  const sep = smooth(tt => [dist(P(blue2, tt), P(red2, tt)), 0, 0], t, 0.6, tS9)[0];
-  const fr = flatFrame(blue2, t, 1.0, tS9), D = clamp(sep * 1.1, 150, 520);
-  return { pos: add(add(add(mid, mul(fr.side, -D)), mul(fr.f, -0.35 * D)), [0, 0.25 * D, 0]), look: mid, fov: lensFov(28) };
-}, 'From a camera jet alongside: the drone fires at Viper 2, flares and a hard break, the missile misses; the drone overshoots and the two reverse across each other in a flat scissors until Viper 2 is on the guns.', { subjects: ['blue2', 'red2'], lens: 28, rig: 'camera jet abeam, pacing the fight', vibe: { a: 0.004, f: 2 } });
-
-// the last missile's launch decides where the finale cuts
-const L2 = S.actors.filter(a => a.kind === 'missile').pop().spawn;
-const tFinale = +(L2 + 0.45).toFixed(3);
-// 10 Lock, one take in Viper 2's cockpit: the drone runs for the sunrise, jinking; Viper 1 joins on the right; the lock
-// diamond closes, tone, fox two
-// 7 Pursuit, 50 mm: over Viper 2's shoulder as the drone runs for the sunrise, jinking; Viper 1 joins on the right
+  const mid = smooth(tt => lerp3(P(blue2, tt), P(red2, tt), 0.5), t, 0.6, tS9);
+  const sep = smooth(tt => [dist(P(blue2, tt), P(red2, tt)), 0, 0], t, 0.9, tS9)[0];
+  const u = clamp((t - tS9) / (tS11 - tS9), 0, 1), th = lerp(358, 178, 0.5 * u + 0.5 * ease(u)), D = clamp(sep * 0.8, 170, 380);
+  const d = azDir(th);
+  return { pos: add(mid, [d[0] * D, -0.22 * D, d[2] * D]), look: mid, roll: 7 * Math.sin(Math.PI * u), fov: lens(38) };
+}, 'A slow half circle round the fight, low: the drone fires at Viper 2, flares and a hard break; the two cross against the sun in a flat scissors, wingtip trails, until Viper 2 is on the guns.', { absent: [DOWN], lens: 38, rig: 'camera jet orbiting the fight', shade: 0.85, vibe: { a: 0.002, f: 1.5 }, subjects: ['blue1', 'blue2', 'red2'] });
+// Act 3. Pursuit, from ahead through a long lens, the sun behind the camera: the drone coming on, the two Vipers behind
+// it, stacked by the lens, closing on the lens as it backs away more slowly than they run.
 shot('pursuit', tS11, T_LOCK, t => {
-  const s = state(blue2, t), fr = flatFrame(blue2, t, 0.6, tS11);
-  const drone = smooth(tt => P(red2, tt), t, 0.4, tS11);
-  const back = norm(smooth(tt => state(blue2, tt).vel, t, 0.6, tS11));   // along its climb, not just level
-  const own = smooth(tt => P(blue2, tt), t, 0.3, tS11);
-  return { pos: add(add(add(own, mul(back, -55)), mul(fr.side, 7)), [0, 5, 0]), look: lerp3(own, drone, 0.35), fov: lensFov(35) };
-}, 'Over Viper 2\'s shoulder: the drone runs for the sunrise, weaving; Viper 1 joins high on the right.', { subjects: ['blue2', 'red2'], lens: 35, rig: 'camera jet in trail', vibe: { a: 0.004, f: 4 } });
-rigShot('lock', T_LOCK, tFinale, blue2, COCKPIT, FWD, 'In Viper 2\'s cockpit: the drone runs for the sunrise, jinking, Viper 1 joins on the right, the lock closes and Viper 2 fires.', { lens: 21, rig: 'cockpit camera', hud: { actor: 'blue2', target: 'red2', panel: true, lock: [r2(L2 - 2.2), r2(L2 - 0.5)] }, vibe: { a: 0.003, f: 14 } });
+  // (version 11: the 0.1.0 take, over Viper 2's shoulder, 35 mm)
+  const fr = flatFrame(blue2, t, 0.6, tS11), drone = smooth(tt => P(red2, tt), t, 0.4, tS11);
+  const back = norm(smooth(tt => state(blue2, tt).vel, t, 0.6, tS11)), own = smooth(tt => P(blue2, tt), t, 0.3, tS11);
+  return { pos: add(add(add(own, mul(back, -55)), mul(fr.side, 38)), [0, 6, 0]), look: lerp3(own, drone, 0.5), fov: lensFov(35) };
+}, 'Over the Gladan\'s shoulder: the drone runs for the sunrise, weaving; Viper 1 with them.', { absent: [DOWN], closeup: 'blue1', subjects: ['blue2', 'red2'], lens: 35, rig: 'camera jet in trail', vibe: { a: 0.004, f: 4 } });
+rigShot('lock', T_LOCK, tFinale, blue2, [0, 1.75, 2.6], [0, -0.06, 1], 'In Viper 2\'s cockpit, the sun through the canopy: Viper 1 ahead in the windscreen, the drone beyond it running for the sunrise, jinking; the lock closes and Viper 2 fires.', { absent: [DOWN, ['blue2', 'the camera is in its cockpit: the game does not draw that jet']], lens: 21, rig: 'cockpit camera', hud: { actor: 'blue2', target: 'red2', panel: true, lock: [r2(L2 - 2.2), r2(L2 - 0.5)] }, vibe: { a: 0.003, f: 14 } });
 // 11 Finale, 40 mm: behind Viper 2 into the sun; the hit on bar 13, the Vipers split, and the fire and smoke
 // drift together into the title, a cloud in the dawn sky. The camera glides to a stop and holds under the menu.
-const FIN = (() => { const s = state(blue2, killT2); return { p: add(add(s.pos, mul(s.f, -55)), [0, 10, 0]), v: s.vel }; })();
+const splash2End = () => S.events.find(e => e.type === 'splash' && e.actor === 'red2').pos;
+const splash2Pre = () => S.events.find(e => e.type === 'splash' && e.actor === 'red2').t;
+// (version 11: in close behind the Gladan, as in the 0.1.0 finale, off the line to the sun)
+const FIN_BACK = 150, FIN_UP = -30, FIN_AIM = 0.02;   // a little below them, the shot into the bright sky
+const finAt = t => add(add(smooth(tt => P(blue2, tt), t, 0.25, tFinale - 1), mul(azDir(55), -FIN_BACK)), [0, FIN_UP, 0]);
+const FIN = { p: finAt(killT2 - 0.05), v: mul(state(blue2, killT2 - 0.05).vel, 0.4) };
+const FIN_ABS = [DOWN, ['red2', 'the wreck has gone into the sea', r2(splash2Pre())], ...['blue1', 'blue2'].map(id => [id, 'broken away out of the picture, under the menu', r2(killT2 + 25.6)])];
 shot('finale', tFinale, tEnd, t => {
   let pos;
-  if (t <= killT2) { const s = state(blue2, t); pos = add(add(s.pos, mul(s.f, -55)), [0, 10, 0]); }
+  if (t <= killT2) pos = finAt(Math.min(t, killT2 - 0.05));
   else { const tau = t - killT2; pos = add(FIN.p, mul(FIN.v, (1 - Math.exp(-1.4 * tau)) / 1.4)); }
-  const d = dist(pos, killPos2), aim = sub(killPos2, [0, 0.07 * d, 0]);
-  let look = lerp3(P(red2, Math.min(t, killT2 - 0.01)) || aim, aim, ease(clamp((t - (killT2 - 1.0)) / 1.0, 0, 1)));
-  // as the title thins away the camera tilts down after the falling wreck to see it splash into the sea
-  const sp = S.events.find(e => e.type === 'splash' && e.actor === 'red2');
-  const k = ease(clamp((t - (sp.t - 3.8)) / 3.2, 0, 1));
-  if (k > 0) look = lerp3(look, add(sp.pos, [0, 25, 0]), 0.85 * k);
-  return { pos, look, fov: lerp(lensFov(40), lensFov(32), k) };
-}, 'Behind Viper 2, into the sun: the missile hits on bar 13 (34.24 s), the Vipers split, and the fire and smoke drift together into ' + GAME.logo + ', a cloud in the dawn sky; it vaporizes as the camera tilts down to the wreck splashing into the sea.', { subjects: [['red2', tFinale, killT2]], lens: 40, rig: 'camera jet in trail, then hovering' });
+  const d = dist(pos, killPos2), aim = add(killPos2, [0, FIN_AIM * d, 0]);
+  const look = lerp3(P(red2, Math.min(t, killT2 - 0.01)) || aim, aim, ease(clamp((t - (killT2 - 1.0)) / 1.0, 0, 1)));
+  return { pos, look, fov: lerp(lensFov(60), lensFov(40), ease(clamp((t - killT2 - 0.2) / 2.4, 0, 1))) };
+}, 'Behind the Gladan into the sun: Viper 2 (the Gladan) hits the drone on bar 13, dives a little and breaks away to the right with Viper 1 on its wing, and the fire and smoke drift together into ' + GAME.logo + ', a cloud in the dawn sky, which the camera holds as it thins away.', { absent: FIN_ABS, subjects: ['blue1', 'blue2', 'red2'], lens: 40, rig: 'camera jet in trail, then hovering on the title' });
+
+// Slow motion: the film clock (the music) to story time. The rate eases down and up, and the time lost is made up by
+// easing a little faster, before the slow part or after it, never by a jump: the two clocks are the same again before
+// every sync point (checked below), and everywhere else.
+function buildWarp() {
+  const bump = (m, a, b, r) => ease(clamp((m - a) / r, 0, 1)) * ease(clamp((b - m) / r, 0, 1));
+  const WIN = [
+    { slow: [12.15, 13.25, 0.45], fast: [13.3, 15.75] },   // off the bow, made up through the overpass
+    { slow: [31.95, 33.05, 0.38], fast: [33.1, 35.3] },    // the flares
+    { slow: [killT + 0.03, killT + 0.81, 0.45], fast: [killT + 0.81, 38.75] },   // splash one
+    { fast: [55.2, 57.3], slow: [57.42, 58.42, 0.55] },    // into the last kill: the flares and the missile
+    { slow: [58.46, 59.7, 0.42], fast: [59.7, 61.6] }      // the last kill
+  ];
+  const h = 0.005, integ = (a, b, f) => { let v = 0; for (let m = a; m < b; m += h) v += f(m) * h; return v; };
+  for (const w of WIN) {
+    w.f = m => bump(m, w.slow[0], w.slow[1], 0.3);
+    w.g = m => bump(m, w.fast[0], w.fast[1], 0.5);
+    w.k = (1 - w.slow[2]) * integ(w.slow[0], w.slow[1], w.f) / integ(w.fast[0], w.fast[1], w.g);
+  }
+  const keys = []; let s = 0, n = 0;
+  for (let m = 12.1; m < 61.7; m += h, n++) {
+    let d = 0;
+    for (const w of WIN) { if (m >= w.slow[0] && m <= w.slow[1]) d -= (1 - w.slow[2]) * w.f(m); if (m >= w.fast[0] && m <= w.fast[1]) d += w.k * w.g(m); }
+    if (n % 16 === 0 && (Math.abs(s) > 1e-3 || d !== 0 || !keys.length || keys[keys.length - 1][0] !== keys[keys.length - 1][1])) keys.push([r3(m), r3(m + s)]);
+    s += d * h;
+    if (!WIN.some(w => m >= Math.min(w.slow[0], w.fast[0]) && m <= Math.max(w.slow[1], w.fast[1]))) s = 0;
+  }
+  keys.push([61.7, 61.7]);
+  const clock = t => { if (t < keys[0][0]) return t; for (let i = 1; i < keys.length; i++) if (t < keys[i][0]) return keys[i - 1][1] + (keys[i][1] - keys[i - 1][1]) * (t - keys[i - 1][0]) / (keys[i][0] - keys[i - 1][0]); return t; };
+  for (const c of [HIT, bar(2), 19.5, tMerge, tS7, 31.342, 35.442, killT, tS9, tS11, killT2, tForm1, bar(26), tGone1])
+    if (Math.abs(clock(c) - c) > 0.012) throw new Error('slow motion is off the music at ' + c + ': ' + clock(c));
+  let top = 0; for (let i = 1; i < keys.length; i++) { const r = (keys[i][1] - keys[i - 1][1]) / (keys[i][0] - keys[i - 1][0]); top = Math.max(top, r); if (r < 0.2) throw new Error('warp stalls at ' + keys[i][0]); }
+  const inv = v => { for (let i = 1; i < keys.length; i++) if (v < keys[i][1]) return keys[i - 1][0] + (keys[i][0] - keys[i - 1][0]) * (v - keys[i - 1][1]) / (keys[i][1] - keys[i - 1][1]); return v; };
+  console.error('peaks ' + WIN.map(w => (1 + w.k).toFixed(2)).join(' ') + '; fastest ' + top.toFixed(2) + 'x; takes on the film clock: ' + S.shots.map(x => x.name + ' ' + (Math.min(inv(x.t1), 66.43) - inv(x.t0)).toFixed(2)).join(', '));
+  return keys;
+}
+const r3 = v => Math.round(v * 1000) / 1000;
 
 // ---------- cards, effects, sounds ----------
 // the title forms, holds a moment, then vaporizes into thin air (3.5 s), gone as the wreck splashes into the sea
 const splash2 = S.events.find(e => e.type === 'splash' && e.actor === 'red2');
-const tForm0 = r2(killT2 + 0.35), tForm1 = r2(killT2 + 3.3), tGone1 = r2(splash2.t), tGone0 = r2(tGone1 - 3.5);
+const tForm0 = r2(killT2 + 0.35), tForm1 = r2(killT2 + 3.3), tGone1 = r2(splash2.t), tGone0 = r2(tGone1 - 1.25);
 S.cards = [
   { t0: 1.4, t1: 5.1, style: 'location', text: 'SOMEWHERE IN THE PACIFIC', type: 16 },
   { t0: 3.6, t1: 5.1, style: 'sub', text: '05:47 LOCAL  -  CVN-90 STORMHAVEN', type: 28 },
@@ -845,6 +961,9 @@ S.cards = [
   { t0: 7.05, t1: 8.05, style: 'dialog', speaker: 'SUPERVISOR', text: 'ALERT, ALERT! WE HAVE INBOUND.', type: 40 },
   { t0: 8.1, t1: 9.2, style: 'dialog', speaker: 'COMMANDER', text: 'SEND THE BIRDS.', type: 22 },
   { t0: +(half(1) - 0.2).toFixed(2), t1: half(1) + 1.6, style: 'callsign', text: 'VIPER 1  -  NF-24 CORMORANT' },
+  { t0: 15.6, t1: 17.2, style: 'callsign', text: 'VIPER 2  -  JA 46 GLADAN' },
+  { t0: T_CP + 0.5, t1: T_CP + 2.4, style: 'radio', text: 'VIPER 1, TWO CONTACTS ON THE SCOPE!' },
+  { t0: T_TALLY - 0.9, t1: T_TALLY + 0.5, style: 'radio', text: 'VIPER 1, TALLY TWO!' },
   { t0: tMerge, t1: tMerge + 1.4, style: 'callsign', text: 'MERGED  -  KS-55 GRIFON  +  DR-7 VESPER DRONE' },
   { t0: tS7 + 0.2, t1: tS7 + 1.3, style: 'radio', text: 'VIPER 1, FOX TWO!' },
   { t0: tS7 + 4.3, t1: tS7 + 5.3, style: 'radio', text: 'VIPER 1, FOX TWO!' },
@@ -863,10 +982,14 @@ S.fx = [
   { t0: 0, t1: r2(tGone1 - 1.0), type: 'letterbox', amount: 1 },
   { t0: r2(tGone1 - 1.0), t1: r2(tGone1 + 0.4), type: 'letterbox', from: 1, to: 0 },
   { t0: 0, t1: 5.5, type: 'haze', y0: 0.5, y1: 1, amount: 1.4 },
-  { t0: 10.0, t1: T_LAUNCH, type: 'haze', y0: 0.66, y1: 1, amount: 0.7 },
+  { t0: 9.0, t1: 13.0, type: 'haze', y0: 0.66, y1: 1, amount: 0.7 },
+  { t0: 13.7, t1: 15.0, type: 'haze', y0: 0.5, y1: 1, amount: 1.2 },
+  { t0: 0, t1: 66.43, type: 'glow', amount: 0.75 },
   { t0: 9.0, t1: 10.0, type: 'alarm', period: 0.9 },
   { t0: 9.6, t1: 10.0, type: 'shake', amount: 0.35 },
-  { t0: 11.2, t1: T_LAUNCH, type: 'shake', amount: 1.2 },
+  { t0: 10.1, t1: 11.2, type: 'shake', amount: 0.5 },
+  { t0: 15.35, t1: 15.75, type: 'shake', amount: 0.5 },
+  { t0: r2(killT), t1: r2(killT + 0.5), type: 'flash', color: '#fff2dc', from: 0.22, to: 0 },
   { t0: r2(tSkim - 0.2), t1: r2(tSkim + 0.2), type: 'shake', amount: 1 },
   { t0: tMerge - 0.05, t1: tMerge + 0.45, type: 'shake', amount: 0.8 },
   { t0: tS7 + 0.2, t1: tS7 + 0.5, type: 'shake', amount: 0.5 },
@@ -876,8 +999,8 @@ S.fx = [
   { t0: tForm0, t1: 1e9, type: 'smoketitle', text: GAME.logo, pos: killPos2, form: [tForm0, tForm1], dissolve: [tGone0, tGone1], seed: 2026 }
 ];
 S.events.push({ t: 8.3, type: 'sound', name: 'klaxon', repeat: 2, every: 0.9 });
-S.events.push({ t: 10.0, type: 'sound', name: 'catapult' }, { t: 10.6, type: 'sound', name: 'catapult' });
-S.events.push({ t: 11.6, type: 'sound', name: 'flyby' }, { t: r2(tSkim - 0.3), type: 'sound', name: 'flyby' }, { t: tMerge - 0.15, type: 'sound', name: 'flyby' });
+S.events.push({ t: 10.0, type: 'sound', name: 'catapult' }, { t: 10.95, type: 'sound', name: 'catapult' });
+S.events.push({ t: 11.6, type: 'sound', name: 'flyby' }, { t: 15.1, type: 'sound', name: 'flyby' }, { t: r2(tSkim - 0.3), type: 'sound', name: 'flyby' }, { t: tMerge - 0.15, type: 'sound', name: 'flyby' });
 S.events.push({ t: r2(tForm0 + 0.3), type: 'sound', name: 'cloud' });
 // sonic booms as the jets go through the barrier low over the sea: the skim pass, then the merge, a little further off
 // the two jets abreast each make their own boom (each one a "ba-boom", the bow and tail shock of its N-wave); side
@@ -890,7 +1013,136 @@ S.menu_at = r2(tGone1 + 0.5);
 S.music = { module: 'recording', track: 'fullburn-intro', name: 'Full Burn, Arp sound DMX10 (film cut)', start_offset: 0,
   cues: { band_hit: HIT, bar: +BAR.toFixed(5), riff: bar(2), verse: bar(10), pre: bar(18), chorus: bar(26), merge: tMerge, dogfight: tS7, last_kill: r2(killT2), title_formed: tForm1, title_gone: tGone1 },
   note: 'Times are seconds from the first music sample. After the band hit, bar n starts at band_hit + n * bar.' };
+// Jets out of the story are not there, so nothing passes through the back of another take; a Viper is the finale's camera.
+const hide = (a, cut, t1 = 1e9) => { const t0 = r2(cut), last = C.sample(track(a), t0 - 0.002), i = a.keys.findIndex(k => k && k[0] > t0 - 0.002); if (i < 0) return; const j = a.keys.findIndex((k, q) => q >= i && k && k[0] >= r2(t1)); a.keys = [...a.keys.slice(0, i), last.map((v, q) => +v.toFixed(q ? 2 : 3)), ...(j < 0 ? [] : [null, ...a.keys.slice(j)])]; a._track = null; };   // (a key right up to the cut: the cockpit before the finale rides on it)
+// The drone has no path through the first fight; the KS-55's wreck goes with its take; the bandits are there to the end of the merge.
+hide(red2, tS7, tS9); hide(red1, tS9);
+S.events = S.events.filter(e => !(e.type === 'splash' && e.actor === 'red1'));
+S.warp = buildWarp();
 S.env = Object.assign({ map: 'twin-isles', time_of_day: 'dawn', weather: 'scattered', assets: 'intro_assets.json' }, S.env);
+
+// ---------- version 9: the longer launch ----------
+// The film's cut of the score plays the opening's build 8 bars longer (tools/fullburn_score.py INTRO_CUT): the
+// arpeggios of bars 3-4 twice more, and bars 5-6 three times before the band hit. The picture gets two new takes
+// from it, and everything else keeps its place against the music:
+//   `fleet` (0 - OPEN) opens the film: the carrier group at dawn through a long lens from far off, the ship black
+//   against the sunrise with the sun just over her, before the close-in;
+//   `deck` (DECK_T - DECK_T + DECK_D) after the control room: one crane move on Viper 1 on its catapult, from the
+//   launch bar at deck level up past the cockpit and out to the shooter's run-up signal, the jet blast rolling
+//   steam under it, before the catapult take.
+// Each is made by moving the story after its start that much later (insertTime): times, keys, windows and cues. The
+// carrier group starts that much further back, so the ship is where it was at every moment after the insert, and
+// the jets parked on her deck before it go back with her: the world after each insert is the one before, later.
+const OPEN = r3(4 * BAR), DECK_T = 5.2, DECK_D = r3(4 * BAR);   // version 10: the deck take before the control room   // 7.661 s each: four bars
+const SONG_SHIFT = +(8 * BAR).toFixed(4);   // the score: 8 bars (15.3218 s); the picture is a millisecond off it, well inside a frame
+function insertTime(P, D, keepAt) {
+  const sh = t => (t >= P - 1e-9 && t < 1e8 ? r3(t + D) : t);   // 'forever' ends stay forever
+  const sh1 = (t0, t1) => (t1 <= P + 1e-9 || t1 >= 1e8 ? t1 : t0 < P - 1e-9 && t1 - P < 1.0 ? t1 : r3(t1 + D));   // an end just past the insert stays
+  const win = w => { const a = w[0]; w[0] = sh(w[0]); w[1] = sh1(a, w[1]); };
+  const keep = o => keepAt && keepAt(o);
+  for (const s of [CAR, ...S.actors.filter(a => a.kind === 'ship' && a.ship !== CAR).map(a => a.ship)]) {
+    const h = s.heading * D2R; s.x = r2(s.x - Math.sin(h) * s.speed * D); s.z = r2(s.z - Math.cos(h) * s.speed * D);
+  }
+  const back = [-Math.sin(CAR.heading * D2R) * CAR.speed * D, 0, -Math.cos(CAR.heading * D2R) * CAR.speed * D];
+  const moveKeys = (keys, world) => {
+    let last = null;
+    const out = [];
+    for (const k of keys) {
+      if (!k) { out.push(null); last = null; continue; }
+      if (k[0] < P - 1e-9) { if (world) { k[1] = r2(k[1] + back[0]); k[3] = r2(k[3] + back[2]); } last = k; out.push(k); continue; }
+      const k2 = k.slice(); k2[0] = sh(k[0]);
+      if (last && last[0] < P - 1e-9) {   // across the insert: the jet rides the deck the whole time, so fill in
+        const n = Math.ceil((k2[0] - last[0]) / 0.5);
+        for (let i = 1; i < n; i++) { const u = i / n; out.push(last.map((v, c) => (c ? r2(v + (k2[c] - v) * u) : r3(last[0] + (k2[0] - last[0]) * u)))); }
+      }
+      out.push(k2); last = k2;
+    }
+    return out;
+  };
+  for (const a of S.actors) {
+    const world = a.kind === 'jet' || a.kind === 'missile';
+    if (a.keys) a.keys = moveKeys(a.keys, world);
+    for (const f of ['ab', 'cone', 'vapour', 'visible']) if (a[f]) a[f].forEach(win);
+    if (Array.isArray(a.trail)) a.trail.forEach(win);
+    if (a.poses) a.poses = a.poses.map(([t, n]) => [sh(t), n]);
+    for (const f of ['spawn', 'end', 'dead']) if (a[f] != null) a[f] = sh(a[f]);
+    a._track = null;
+  }
+  for (const f of S.flares) f.t = sh(f.t);
+  for (const e of S.events) { if (e.t != null) e.t = sh(e.t); if (e.t0 != null) { const a = e.t0; e.t0 = sh(a); e.t1 = sh1(a, e.t1); } }
+  for (const s of S.shots) {
+    const a = s.t0; s.t0 = sh(a); s.t1 = sh1(a, s.t1);
+    s.cam = moveKeys(s.cam, true);
+    for (const x of s.absent || []) { if (x.from != null) x.from = sh(x.from); if (x.to != null) x.to = sh(x.to); }
+    if (s.subjects) s.subjects = s.subjects.map(x => (Array.isArray(x) ? [x[0], sh(x[1]), sh(x[2])] : x));
+    if (s.hud && s.hud.lock) s.hud.lock = s.hud.lock.map(sh);
+  }
+  for (const list of [S.cards, S.fx, S.emitters]) for (const c of list) {
+    if (keep(c)) continue;
+    // steam that starts just before the insert belongs to the shot after it: move it whole
+    if (list === S.emitters && c.t0 < P - 1e-9 && c.t0 > P - 1.5 && c.t1 > P) { c.t0 = r3(c.t0 + D); c.t1 = r3(c.t1 + D); continue; }
+    const a = c.t0; c.t0 = sh(a); c.t1 = sh1(a, c.t1);
+    for (const f of ['form', 'dissolve']) if (c[f]) c[f] = c[f].map(sh);
+  }
+  S.warp = S.warp.map(([m, s]) => [sh(m), sh(s)]);
+  for (const k in S.music.cues) if (k !== 'bar') S.music.cues[k] = sh(S.music.cues[k]);
+  S.duration = sh(S.duration); S.menu_at = sh(S.menu_at);
+}
+// the deck first (it is later in the film), then the opening: the alarm and its shake stay at the start of the deck
+// take; the film's fade-in, the grade, the glow, the letterbox and the location cards stay at the very start
+insertTime(DECK_T, DECK_D);
+insertTime(0, OPEN, o => o.t0 === 0 && (o.type === 'fade' || o.type === 'grade' || o.type === 'glow' || o.type === 'letterbox') || o.style === 'location' || o.style === 'sub');
+// before the shifted start the jets sit on the deck as they did at its first key, and ride along with her
+for (const a of [blue1, blue2]) {
+  const k0 = a.keys[0], v = [Math.sin(CAR.heading * D2R) * CAR.speed, 0, Math.cos(CAR.heading * D2R) * CAR.speed], pre = [];
+  for (let t = 0; t < k0[0] - 1e-6; t += 0.5) pre.push([r3(t), r2(k0[1] - v[0] * (k0[0] - t)), k0[2], r2(k0[3] - v[2] * (k0[0] - t)), ...k0.slice(4)]);
+  a.keys = [...pre, ...a.keys]; a._track = null;
+}
+const DT1 = DECK_T + OPEN;   // where the deck take starts now
+// the location cards over the fleet, the haze of the sunrise there too
+for (const c of S.cards) if (c.style === 'location' || c.style === 'sub') { c.t0 = r2(c.t0 + 0.6); c.t1 = r2(OPEN - 0.25); }
+S.fx.push({ t0: 0, t1: OPEN + 0.5, type: 'haze', y0: 0.45, y1: 1, amount: 1.6 });
+// (version 11, as in the owner's edit) The opening is the 0.1.0 flyby at dawn, slower: in from high off the carrier's
+// stern a kilometre out, closing and coming down along her port side toward the bow, the whole ship, the sea and the
+// horizon in the frame; it dissolves into the long lens on the deck.
+{
+  const K = OPEN / 5.2;   // the 0.1.0 track, stretched over the longer opening
+  const FLY0 = C.track([[0, -260, 230, -1050], [1.8 * K, -320, 170, -560], [3.6 * K, -300, 105, -60], [5.2 * K, -250, 70, 340], [6.4 * K, -200, 60, 520]]);
+  shot('fleet', 0, OPEN, t => {
+    const u = clamp(t / OPEN, 0, 1), e = ease(u), k = C.sample(FLY0, t);
+    const pos = C.shipLocal(CAR, t, [k[1], k[2], k[3]]), look = C.shipLocal(CAR, t, [0, 22, lerp(40, -30, e)]);
+    const fov = lerp(62, 52, e), vhalf = Math.atan(Math.tan(fov * D2R / 2) * ASPECT / BOX) / D2R;
+    const d = norm(sub(look, pos)), pitch = Math.max(Math.asin(d[1]) / D2R, -0.62 * vhalf);
+    return { pos, yaw: Math.atan2(d[0], d[2]) / D2R, pitch, roll: -4 * Math.sin(Math.PI * u), fov };
+  }, 'A wide flyby of CVN-90 Stormhaven at dawn: in from high off the stern, closing down her port side toward the bow, the whole ship, the sea and the horizon in the frame.',
+  { absent: DAWN_ABS, parkedIn: true, lens: 20, rig: 'camera helicopter', vibe: { a: 0.004, f: 0.5 }, subjects: ['carrier'] });
+}
+// the close-in now dissolves in from the fleet
+S.shots.find(s => s.name === 'sunrise').in = { type: 'dissolve', dur: 1.0 };
+S.shots.find(s => s.name === 'cic').in = { type: 'dissolve', dur: 0.5 };
+// Deck: Viper 1 on the starboard bow catapult, the shooter to its right, the sun beyond them (east, to starboard).
+// From the launch bar at deck level, up the nose and past the cockpit, then out to the port side for the jet in
+// profile with the blast steam rolling under it, ending low on the shooter's run-up signal against the sun.
+{
+  const L = (t, l) => C.shipLocal(CAR, t, l);
+  const DK = DECK;
+  const PK = C.track([[0, -6, DK + 0.6, 72], [2.3, -9, DK + 2.5, 66], [4.0, -14, DK + 5.0, 60], [5.9, -28, DK + 3.0, 54], [DECK_D + 1.2, -36, DK + 1.6, 50.5]]);
+  const LK = C.track([[0, 8, DK + 1.2, 62], [2.3, 8, JY + 1.0, 59], [4.0, 8, JY + 1.4, 57], [5.9, 12, JY + 0.4, 55], [DECK_D + 1.2, 19, DK + 1.6, 53]]);
+  const MM = C.track([[0, 0, 0, 0, 50], [2.3, 0, 0, 0, 50], [4.0, 0, 0, 0, 60], [5.9, 0, 0, 0, 40], [DECK_D + 1.2, 0, 0, 0, 35]]);
+  shot('deck', DT1, DT1 + DECK_D, t => {
+    const tt = t - DT1, p = C.sample(PK, tt), l = C.sample(LK, tt), m = C.sample(MM, tt);
+    return { pos: L(t, [p[1], p[2], p[3]]), look: L(t, [l[1], l[2], l[3]]), fov: lens(m[4]) };
+  }, 'One crane move on Viper 1 waiting on its catapult before the alarm: the launch bar at deck level, up the nose past the cockpit, out to the jet in profile with the catapult steam drifting under it, and down to the deck crew against the sun.',
+  { absent: [...INBOUND, ['blue2', 'on the port catapult, behind the camera']], closeup: 'blue1', lens: 50, rig: 'crane on the deck', shade: SHADE, vibe: { a: 0.002, f: 0.9 }, in: { type: 'dissolve', dur: 0.3 },
+    subjects: ['blue1'] });
+  // steam leaking from the catapult track under Viper 1 while it waits
+  S.emitters.push({ type: 'steam', attach: 'carrier', a: [6, DK + 0.1, 66], b: [10, DK + 0.1, 96], t0: r2(DT1), t1: r2(DT1 + DECK_D + 0.3), rate: 4 });
+}
+S.shots.sort((a, b) => a.t0 - b.t0);
+S.music.song_shift = SONG_SHIFT;
+S.music.cues.deck = DT1;
+S.version = 11;
+
 for (const a of S.actors) delete a._track;
 fs.writeFileSync(process.argv[2] || 'intro_script.json', JSON.stringify(S));
 console.error('script', (JSON.stringify(S).length / 1024).toFixed(0), 'KB; kills at', killT.toFixed(2), killT2.toFixed(2), '; shots', S.shots.map(s => s.name + ' ' + s.t0 + '-' + s.t1).join(', '));

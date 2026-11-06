@@ -176,7 +176,7 @@ shared world, so the pilot sees the captain on deck and the turrets' hits.
 The three CIWS guns are the last line against missiles; the two SAM
 launchers reach 7.5 km. Land back on the deck to climb out of the jet.
 
-**Music editor** (MUSIC EDITOR in the menu, or `--music-editor`): a piano
+**Music editor** (a development tool, hidden from the menu: `--music-editor`): a piano
 roll over the soundtrack, playing live on the SID synth. Pick an instrument
 on the left (M mutes, S solos), double-click to add a note, drag to move it
 (its end to lengthen it), drag on empty space to box-select, right-click to
@@ -211,7 +211,7 @@ hold their fire until close and shoot in short bursts.
 holding it blacks the pilot out for a few seconds; below about -2.5 G it
 reds out. Set it to ARCADE to fly without them.
 
-Tab switches cockpit and chase view, Esc or Start pauses, M toggles sound,
+Tab steps through cockpit, chase and flyby view, Esc or Start pauses, M toggles sound,
 Alt+Enter or F11 toggles fullscreen. In 1 player both key sets fly your jet.
 Pads join seats in the order they were plugged in. Settings are saved in
 `~/.config/tailonlock/settings.ini` (`%APPDATA%\TailonLock` on Windows,

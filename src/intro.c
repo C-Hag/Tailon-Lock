@@ -128,7 +128,7 @@ static Frame frame_of(float yaw, float pitch, float roll) {
 
 /* ---- the script ------------------------------------------------------- */
 enum { K_SHIP, K_STATIC, K_JET, K_MISSILE, K_CREW };
-enum { M_CVN90, M_FRIGATE, M_NF24, M_KS55, M_DR7, M_MISSILE };
+enum { M_CVN90, M_FRIGATE, M_NF24, M_KS55, M_DR7, M_JA46, M_MISSILE };
 typedef struct { float t0, t1, v; } Win;
 
 typedef struct {
@@ -160,7 +160,7 @@ static int     nemit;
 static vec3    env_sun;
 static bool    has_sun;
 static bool    dawn_title;      /* a smoke title in the bright sky: dark text under it */
-static float   clear_sky[4][3]; /* env.clear_clouds */
+static float   clear_sky[8][3]; /* env.clear_clouds */
 static int     nclear;
 
 typedef struct { float t; vec3 p, v; float life; } FlareDef;
@@ -173,6 +173,7 @@ typedef struct {
   bool  roll, guns, panel; /* panel: the game's HUD and instrument panel (version 5) */
   float lock0, lock1;       /* the lock closes over [lock0, lock1], or both -1 */
   float vibe_a, vibe_f;
+  float shade;         /* backlight: how far this shot dims the jets and the crew */
   int   in;              /* IN_CUT, IN_DISSOLVE or IN_WHIP (version 3) */
   float in_dur, in_dir;
   bool  scene;           /* the control room, drawn in code (cic.c), not the 3D world */
@@ -198,9 +199,9 @@ typedef struct {
 enum { EV_EXPLODE, EV_KILL, EV_SPLASH, EV_GUNS, EV_SOUND };
 enum { SND_KLAXON, SND_CATAPULT, SND_MISSILE, SND_FLARES, SND_EXPLODE, SND_CLOUD, SND_FLYBY, SND_BOOM, SND_BOOM_TAIL, SND_BOOM_ECHO, SND_RUMBLE, SND_OTHER };
 enum { CS_LOCATION, CS_SUB, CS_ALERT, CS_ALERT_SUB, CS_CALLSIGN, CS_RADIO, CS_TITLE, CS_PRESS, CS_SUBTITLE, CS_DIALOG };
-enum { FX_FADE, FX_FLASH, FX_LETTERBOX, FX_ALARM, FX_RADAR, FX_SHAKE, FX_GRADE, FX_HAZE, FX_SMOKETITLE, FX_NONE };
+enum { FX_FADE, FX_FLASH, FX_LETTERBOX, FX_ALARM, FX_RADAR, FX_SHAKE, FX_GRADE, FX_HAZE, FX_SMOKETITLE, FX_GLOW, FX_SEAHAZE, FX_NONE };
 
-#define MAX_ACT 24
+#define MAX_ACT 32
 static Actor    act[MAX_ACT];
 static int      nact;
 static FlareDef *flares;
@@ -214,8 +215,10 @@ static int      ncards;
 static Fx       *fxs;
 static int      nfx;
 static float    menu_at = 36;
+static Track    warp;    /* slow motion: [film clock, story time] pairs; outside them the two are the same */
 static Cloud    extra[4];
 static char     music_key[32];
+static float    song_shift;   /* how far the film's cut of its music runs behind the song (repeated bars) */
 static int      nextra;
 static Mesh     nf24, nf24_lod;
 static bool     ready;
@@ -294,6 +297,8 @@ bool intro_init(void) {
     nf24.lod = &nf24_lod;
   menu_at = numv(S, "menu_at", 36);
   snprintf(music_key, sizeof music_key, "%s", strv(json_get(S, "music"), "track"));
+  song_shift = numv(json_get(S, "music"), "song_shift", 0);
+  if (!(song_shift >= 0 && song_shift < 120)) song_shift = 0;
 
   const Json *e;
   JSON_FOR(e, json_get(S, "poses")) {
@@ -317,7 +322,7 @@ bool intro_init(void) {
     a->kind = !strcmp(kind, "ship") ? K_SHIP : !strcmp(kind, "static") ? K_STATIC : !strcmp(kind, "missile") ? K_MISSILE
             : !strcmp(kind, "crew") ? K_CREW : K_JET;
     a->model = !strcmp(model, "cvn90") ? M_CVN90 : !strcmp(model, "frigate") ? M_FRIGATE : !strcmp(model, "ks55") ? M_KS55
-             : !strcmp(model, "nf24") ? M_NF24 : !strcmp(model, "dr7") ? M_DR7 : M_MISSILE;
+             : !strcmp(model, "nf24") ? M_NF24 : !strcmp(model, "dr7") ? M_DR7 : !strcmp(model, "ja46") ? M_JA46 : M_MISSILE;
     a->team = (int)numv(e, "team", 0);
     a->spawn = numv(e, "spawn", -1);
     a->end = numv(e, "end", -1);
@@ -430,6 +435,7 @@ bool intro_init(void) {
     s->lock1 = lk ? (float)json_at(lk, 1)->num : -1;
     s->vibe_a = vb ? numv(vb, "a", 0) : 0;
     s->vibe_f = vb ? numv(vb, "f", 1) : 1;
+    s->shade = numv(e, "shade", 1);
     const Json *in = json_get(e, "in");
     const char *it = in ? strv(in, "type") : "";
     s->in = !strcmp(it, "dissolve") ? IN_DISSOLVE : !strcmp(it, "whip") ? IN_WHIP : IN_CUT;
@@ -462,7 +468,8 @@ bool intro_init(void) {
     const char *type = strv(e, "type");
     f->type = !strcmp(type, "fade") ? FX_FADE : !strcmp(type, "flash") ? FX_FLASH : !strcmp(type, "letterbox") ? FX_LETTERBOX
             : !strcmp(type, "alarm") ? FX_ALARM : !strcmp(type, "radar") ? FX_RADAR : !strcmp(type, "shake") ? FX_SHAKE
-            : !strcmp(type, "grade") ? FX_GRADE : !strcmp(type, "haze") ? FX_HAZE : !strcmp(type, "smoketitle") ? FX_SMOKETITLE : FX_NONE;
+            : !strcmp(type, "grade") ? FX_GRADE : !strcmp(type, "haze") ? FX_HAZE : !strcmp(type, "smoketitle") ? FX_SMOKETITLE
+            : !strcmp(type, "glow") ? FX_GLOW : !strcmp(type, "seahaze") ? FX_SEAHAZE : FX_NONE;
     snprintf(f->text, sizeof f->text, "%s", strv(e, "text"));
     const Json *pp = json_get(e, "pos"), *fm = json_get(e, "form");
     if (json_count(pp) == 3) f->pos = vecv(pp);
@@ -474,7 +481,6 @@ bool intro_init(void) {
     f->d0 = dz ? (float)json_num(json_at(dz, 0)) : 1e9f;
     f->d1 = dz ? (float)json_num(json_at(dz, 1)) : 1e9f;
     f->seed = (uint32_t)numv(e, "seed", 1);
-    if (f->type == FX_SMOKETITLE) dawn_title = true;
     f->warm = numv(e, "warm", 0);
     f->vignette = numv(e, "vignette", 0);
     f->grain = numv(e, "grain", 0);
@@ -489,9 +495,10 @@ bool intro_init(void) {
     f->contacts = (int)numv(e, "contacts", 0);
     f->bearing = numv(e, "bearing", 0);
   }
+  parse_track(json_get(S, "warp"), 2, &warp);
   load_clouds(json_get(json_get(S, "env"), "extra_clouds"));
   JSON_FOR(e, json_get(json_get(S, "env"), "clear_clouds")) {
-    if (nclear >= 4) break;
+    if (nclear >= 8) break;
     for (int q = 0; q < 3; q++) clear_sky[nclear][q] = (float)json_num(json_at(e, q));
     nclear++;
   }
@@ -504,12 +511,13 @@ bool intro_init(void) {
 
 bool intro_available(void) { return ready; }
 int  intro_music(void) { return music_theme_index(music_key[0] ? music_key : "horizon-intro"); }
+float intro_song_shift(void) { return song_shift; }
 
 /* ---- run state ---------------------------------------------------------- */
 enum { P_SMOKE, P_FIRE, P_FLASH, P_DEBRIS, P_STEAM, P_SPRAY, P_FSMOKE };
 static const struct { uint32_t c0, c1; float a; } PK[7] = {
   { 0x969296, 0x5c5860, 0.55f }, { 0xffec96, 0xd24618, 1 }, { 0xfffae1, 0xffbe5a, 1 }, { 0x28221e, 0x1e1c1a, 1 },
-  { 0xf5f0ec, 0xd2ced6, 0.5f },  { 0xf0f4fa, 0xc8d6e6, 0.45f }, { 0xece8ec, 0xaaa6b0, 0.5f },
+  { 0xf5f0ec, 0xd2ced6, 0.5f },  { 0xf0f4fa, 0xc8d6e6, 0.45f }, { 0xd8d4d8, 0x8a868f, 0.42f },
 };
 typedef struct { int k; vec3 p, v; float life, max, s, g, d; } Part;
 #define INTRO_PARTS 3200
@@ -524,7 +532,7 @@ static int     ntrail[MAX_ACT];
 static vec3    lastPos[MAX_ACT];
 static bool    hasLast[MAX_ACT];
 
-static float  t_now, t_sim, wall, hold_t, hold_start;
+static float  t_now, t_sim, t_film, wall, hold_t, hold_start; /* t_now: story time; t_film: the film clock, for the grain */
 static int    ev_next;
 static bool   holding, quiet, music_on;
 static Rng    R;
@@ -534,11 +542,22 @@ static int     npending;
 
 static float rnd(void) { return (float)rng_f(&R); }
 
+/* the music's duck at a kill: -4 dB for half a second (sfx.c eases it) */
+#define DUCK_LEN  0.5f
+#define DUCK_GAIN 0.631f
+static float duck_end;
+static bool  ducked;
+static void duck_music(bool on) {
+  if (on != ducked) sfx_duck_music(on ? DUCK_GAIN : 1);
+  ducked = on;
+}
+
 static void reset(void) {
   nparts = ntracers = 0;
   memset(ntrail, 0, sizeof ntrail);
   memset(hasLast, 0, sizeof hasLast);
-  t_now = t_sim = wall = 0;
+  t_now = t_sim = t_film = wall = duck_end = 0;
+  duck_music(false);
   ev_next = 0;
   holding = quiet = false;
   npending = 0;
@@ -565,10 +584,10 @@ static void explode(vec3 pos, float size) {
     float v = 20 + 40 * rnd(), life = 0.45f + 0.6f * rnd(), r = 3 + 3 * size * rnd();
     part(P_FIRE, pos, v3_scale(d, v), life, r, 9, 1.6f);
   }
-  for (int i = 0; i < 16 * size; i++) {
+  for (int i = 0; i < 6 * size; i++) {
     vec3 d = rdir(0.3f);
-    float off = 4 * rnd(), v = 12 + 20 * rnd(), life = 2.5f + 2 * rnd();
-    part(P_SMOKE, v3_add(pos, v3_scale(d, off)), v3_scale(d, v), life, 7 + 5 * size, 9, 1.2f);
+    float off = 4 * rnd(), v = 12 + 20 * rnd(), life = 1.4f + 1.2f * rnd();
+    part(P_FSMOKE, v3_add(pos, v3_scale(d, off)), v3_scale(d, v), life, 3 + 2 * size, 5, 1.2f);
   }
   if (size > 1)
     for (int i = 0; i < 26; i++) {
@@ -667,6 +686,7 @@ static void step(float t, float dt) {
     if (e->type == EV_EXPLODE) {
       explode(e->pos, e->size);
       play_sound(SND_EXPLODE, 1);
+      if (e->size > 1 && !quiet) duck_end = t_film + DUCK_LEN; /* a kill: the music steps back so it is heard */
     } else if (e->type == EV_SOUND) {
       play_sound(e->sound, e->vol);
       for (int r = 1; e->sound == SND_KLAXON && r <= e->repeat && npending < 16; r++)
@@ -726,22 +746,22 @@ static void step(float t, float dt) {
       continue;
     }
     if (a->dead >= 0 && t >= a->dead) {
-      float x = (rnd() - 0.5f) * 8, y = (rnd() - 0.5f) * 8, z = (rnd() - 0.5f) * 8, life = 0.4f + 0.3f * rnd(), r = 4 + 3 * rnd();
+      float x = (rnd() - 0.5f) * 8, y = (rnd() - 0.5f) * 8, z = (rnd() - 0.5f) * 8, life = 0.18f + 0.12f * rnd(), r = 3 + 2 * rnd();
       part(P_FIRE, fr.pos, v3(x, y, z), life, r, 6, 1.5f);
-      float sx = (rnd() - 0.5f) * 4, sy = 2 + rnd() * 3, sz = (rnd() - 0.5f) * 4, slife = 3 + 2 * rnd();
-      part(P_SMOKE, fr.pos, v3(sx, sy, sz), slife, 5, 8, 1.2f);
+      float sx = (rnd() - 0.5f) * 4, sy = 2 + rnd() * 3, sz = (rnd() - 0.5f) * 4, slife = 0.5f + 0.3f * rnd();
+      part(P_SMOKE, fr.pos, v3(sx, sy, sz), slife, 3, 5, 1.2f);
       continue;
     }
     float sp = hasLast[i] ? v3_dist(lastPos[i], fr.pos) / dt : 0;
     lastPos[i] = fr.pos;
     hasLast[i] = true;
     /* catapult steam while the jet runs down the deck */
-    if (fr.pos.y < 30 && fr.pos.y > 19 && sp > 20 && sp < 130 && rnd() < 0.35f) {
+    if (fr.pos.y < 23 && fr.pos.y > 19 && sp > 20 && sp < 130 && rnd() < 0.12f) {
       float x = (rnd() - 0.5f) * 4, y = 2 + 3 * rnd(), z = (rnd() - 0.5f) * 4, life = 0.9f + 0.6f * rnd();
       part(P_STEAM, v3_sub(fr.pos, v3(0, 1.2f, 0)), v3(x, y, z), life, 1.5f, 3.5f, 1.6f);
     }
     /* sea spray under a low jet in afterburner */
-    float tail = a->model == M_NF24 ? 9.2f : a->model == M_DR7 ? 5.6f : JETS[0].tail;
+    float tail = a->model == M_NF24 ? 9.2f : a->model == M_DR7 ? 5.6f : a->model == M_JA46 ? 7.8f : JETS[0].tail;
     if (in_win(a->ab, a->nab, t) > 0 && fr.pos.y < 45 && fr.pos.y > 5 && rnd() < 0.9f) {
       vec3 tp = v3_sub(fr.pos, v3_scale(fr.f, tail + 6));
       float px = tp.x + (rnd() - 0.5f) * 5, pz = tp.z + (rnd() - 0.5f) * 5;
@@ -750,7 +770,7 @@ static void step(float t, float dt) {
     }
     /* wingtip vapour */
     if (in_win(a->trail, a->ntrail, t) > 0) {
-      float span = a->model == M_NF24 ? 9.4f : a->model == M_DR7 ? 5.6f : 7;
+      float span = a->model == M_NF24 ? 9.4f : a->model == M_DR7 ? 5.6f : a->model == M_JA46 ? 5.2f : 7;
       if (ntrail[i] == 128) {
         memmove(trails[i], trails[i] + 1, sizeof(TrailPt) * 127);
         ntrail[i]--;
@@ -774,13 +794,16 @@ static void step(float t, float dt) {
     vec3 p;
     if (flare_pos(&flares[i], t, &p) && rnd() < 0.7f) {
       float x = (rnd() - 0.5f) * 2, z = (rnd() - 0.5f) * 2;
-      part(P_FSMOKE, p, v3(x, 1, z), 1.6f, 1.6f, 3.5f, 1.2f);
+      part(P_FSMOKE, p, v3(x * 0.4f, 0.6f, z * 0.4f), 1.8f, 0.7f, 1.4f, 1.2f);
     }
   }
   for (int i = 0; i < nparts;) {
     Part *q = &parts[i];
     q->v = v3_scale(q->v, expf(-q->d * dt));
-    if (q->k == P_DEBRIS) q->v.y -= 9.81f * dt;
+    if (q->k == P_DEBRIS) {
+      q->v.y -= 9.81f * dt;
+      if (rnd() < 0.2f) part(P_SMOKE, q->p, v3(0, 1, 0), 1.4f, 1.1f, 3, 1.5f); /* each shard trails smoke */
+    }
     else if (q->k == P_SPRAY) q->v.y -= 6 * dt;
     else if (q->k == P_SMOKE || q->k == P_FSMOKE) q->v.y += 0.8f * dt;
     q->p = v3_add(q->p, v3_scale(q->v, dt));
@@ -789,6 +812,17 @@ static void step(float t, float dt) {
     if (q->life <= 0 || q->p.y < -2) parts[i] = parts[--nparts];
     else i++;
   }
+}
+
+/* The film clock to story time. The music, and so the picture's sync points, run on the film clock. */
+static float warped(float m) {
+  if (!warp.nseg) return m;
+  const float *k = warp.segs[0].k;
+  int n = warp.segs[0].n;
+  if (m < k[0] || m >= k[(n - 1) * 2]) return m;
+  for (int i = 1; i < n; i++)
+    if (m < k[i * 2]) return k[i * 2 - 1] + (k[i * 2 + 1] - k[i * 2 - 1]) * (m - k[i * 2 - 2]) / fmaxf(k[i * 2] - k[i * 2 - 2], 1e-4f);
+  return m;
 }
 
 static void advance(float to) {
@@ -818,6 +852,8 @@ bool intro_holding(void) { return holding; }
 static void enter_hold(bool skipped) {
   if (holding) return;
   holding = true;
+  duck_end = 0;
+  duck_music(false); /* never left down when the film stops */
   if (skipped && t_now < menu_at) {
     /* jump to the menu point quietly, keeping only what is on screen there */
     quiet = true;
@@ -837,8 +873,9 @@ bool intro_update(float dt) {
   wall += dt;
   if (!holding) {
     double mc = music_on ? music_clock() : -1;
-    float t = mc >= 0 ? (float)mc : wall;
-    advance(t);
+    t_film = mc >= 0 ? (float)mc : wall;
+    advance(warped(t_film));
+    duck_music(t_film < duck_end);
     if (t_now >= menu_at) enter_hold(false);
   } else {
     /* the last shot keeps drifting at a quarter speed and stops at the end of its keys */
@@ -846,6 +883,7 @@ bool intro_update(float dt) {
     float t = fminf(hold_t + (wall - hold_start) / 4, end);
     if (t > t_sim) advance(t);
     else t_now = t;
+    t_film = t_now;
   }
   r3d_extra_clouds(extra, nextra);
   r3d_clear_clouds((const float (*)[3])clear_sky, nclear);
@@ -876,6 +914,10 @@ static const Mesh *model_mesh(int m) {
   case M_KS55: {
     int k = jets_find("ks55");
     return &JETS[k >= 0 ? k : 0].mesh[1];
+  }
+  case M_JA46: {
+    int k = jets_find("ja46");
+    return &JETS[k >= 0 ? k : 0].mesh[0];
   }
   default: return NULL;
   }
@@ -940,8 +982,9 @@ static const CrewKit *kit_for(uint32_t jersey, uint32_t helmet) {
 }
 
 /* side must be square to dir: mesh x = width, y = depth, z = along the limb */
+static float shade_now;
 static void limb(Framebuffer *fb, const View *V, const Mesh *M, vec3 from, vec3 dir, vec3 side) {
-  r3d_mesh(fb, V, M, from, side, v3_cross(dir, side), dir, 1, 1);
+  r3d_mesh(fb, V, M, from, side, v3_cross(dir, side), dir, 1, shade_now < 1 ? 0.1f : 1); /* a figure against the sun is a black shape */
 }
 
 /* The current pose, blended from the previous one over 0.25 s. */
@@ -995,7 +1038,7 @@ static void draw_crew(Framebuffer *fb, const View *V, const Actor *a, const Fram
 
 /* Wing vapour from the g load and the vapour cone of a fast pass. */
 static void draw_vapour(const View *V, const Actor *a, const Frame *fr, float t, int i) {
-  float span = a->model == M_NF24 ? 8.5f : a->model == M_DR7 ? 5 : 7;
+  float span = a->model == M_NF24 ? 8.5f : a->model == M_DR7 || a->model == M_JA46 ? 5 : 7;
   float v = in_win(a->vapour, a->nvapour, t), c = in_win(a->cone, a->ncone, t);
   r3d_sprite_kind(SPR_SOFT);
   if (v > 0)
@@ -1039,19 +1082,22 @@ static void draw_actors(Framebuffer *fb, const View *V, float t) {
     r3d_gloss(a->kind == K_JET || a->kind == K_STATIC ? 1.0f : -1.0f);
     if (!M) continue;
     bool dead = a->dead >= 0 && t >= a->dead;
-    r3d_mesh(fb, V, M, fr.pos, fr.r, fr.u, fr.f, 1, dead ? 0.35f : 1);
+    r3d_mesh(fb, V, M, fr.pos, fr.r, fr.u, fr.f, 1, (dead ? 0.35f : 1) * (a->kind == K_SHIP ? 1 : shade_now));
     if (a->kind != K_JET || dead) continue;
     draw_vapour(V, a, &fr, t, i);
     float ab = in_win(a->ab, a->nab, t);
     if (ab > 0) {
       /* two nozzles, or the drone's one square vectoring nozzle on the centre line */
-      bool one = a->model == M_DR7;
-      float tail = a->model == M_NF24 ? 9.2f : one ? 5.6f : 9.7f, fl = 0.85f + 0.3f * sinf(t * 61 + i) * sinf(t * 37);
+      bool one = a->model == M_DR7 || a->model == M_JA46;
+      float tail = a->model == M_NF24 ? 9.2f : a->model == M_JA46 ? 8.4f : one ? 5.6f : 9.7f, fl = 0.85f + 0.3f * sinf(t * 61 + i) * sinf(t * 37);
       for (int s = -1; s <= 1; s += 2) {
         if (one && s > 0) break;
         vec3 n0 = v3_add(v3_add(fr.pos, v3_scale(fr.f, -tail + 0.2f)), v3_scale(fr.r, one ? 0 : 0.85f * s));
         r3d_seg(fb, V, n0, v3_add(n0, v3_scale(fr.f, -(4 + 6 * ab) * fl)), hexc(0xff9a3a), 1.3f, 0.8f * ab, 1);
         r3d_seg(fb, V, n0, v3_add(n0, v3_scale(fr.f, -(2.5f + 3 * ab) * fl)), hexc(0xfff2c8), 0.7f, 0.95f, 1);
+        r3d_sprite_kind(SPR_GLOW); /* the hot nozzle itself */
+        r3d_ball(V, n0, (0.8f + 0.7f * ab) * fl, hexc(0xffa850), 0.7f);
+        r3d_sprite_kind(SPR_SOFT);
       }
     }
   }
@@ -1067,8 +1113,8 @@ static void draw_actors(Framebuffer *fb, const View *V, float t) {
     if (!flare_pos(&flares[i], t, &p)) continue;
     float k = 1 - (t - flares[i].t) / flares[i].life;
     r3d_sprite_kind(SPR_GLOW);
-    r3d_ball(V, p, 2.5f * k + 1.2f, hexc(0xffe6aa), 0.7f * k);
-    r3d_ball(V, p, 1.2f + 0.6f * sinf(t * 50 + flares[i].t), hexc(0xffffff), 1);
+    r3d_ball(V, p, 1.6f * k + 0.9f, hexc(0xffd890), 0.8f * k);
+    r3d_ball(V, p, 0.6f + 0.25f * sinf(t * 50 + flares[i].t), hexc(0xffffff), 1); /* the hot core */
     r3d_sprite_kind(SPR_SOFT);
   }
   for (int i = 0; i < ntracers; i++)
@@ -1077,6 +1123,12 @@ static void draw_actors(Framebuffer *fb, const View *V, float t) {
     const Part *q = &parts[i];
     if (i == nparts - 1) r3d_sprite_kind(SPR_SOFT);
     float u = 1 - q->life / q->max;
+    if (q->k == P_DEBRIS) { /* a tumbling shard */
+      float w = u * 14 + (float)i;
+      vec3 d = v3_scale(v3(sinf(w), cosf(w * 0.7f), sinf(w * 1.3f + 1)), q->s * (0.8f + (float)(i % 3)));
+      r3d_seg(fb, V, v3_sub(q->p, d), v3_add(q->p, d), hexc(0x201c1a), 0.25f + 0.15f * (float)(i % 4), 1, 1);
+      continue;
+    }
     float a = PK[q->k].a * (q->k == P_FIRE || q->k == P_FLASH ? 1 - u : (1 - u) * fminf(1, u * 6 + 0.3f));
     r3d_sprite_kind(q->k == P_FIRE || q->k == P_FLASH ? SPR_GLOW : SPR_SOFT);
     r3d_ball(V, q->p, q->s, mixc(PK[q->k].c0, PK[q->k].c1, u), a);
@@ -1246,9 +1298,10 @@ static void draw_overlay(Framebuffer *fb, float t, bool panel) {
     case CS_SUBTITLE: {
       /* under the smoke title, fading in */
       float k = clampf((t - c->t0) / 1.2f, 0, 1);
-      /* deep violet on the bright dawn sky, faded in from the sky colour */
+      /* warm white with a shadow, so it reads over the sea and the sky alike (the deep violet it had was lost on
+       * the grey sea under the finale's title); it brightens in from a dim grey */
       int sc = text_scale(u0 * 0.022f);
-      if (k > 0.05f) fb_text(fb, s, W / 2.0f, H * 0.42f + u0 * 0.115f, sc, mixc(0xf2dcc4, 0x3c2f78, k), ALIGN_CENTER, 0);
+      if (k > 0.05f) fb_text(fb, s, W / 2.0f, H * 0.42f + u0 * 0.115f, sc, mixc(0x6a6470, 0xf6ead8, k), ALIGN_CENTER, 1);
       break;
     }
     }
@@ -1272,7 +1325,7 @@ static bool cockpit_plane(Plane *p, int idx, const Actor *a, float t) {
   p->idx = idx;
   p->team = a->team;
   p->hidx = -1;
-  int j = jets_find(a->model == M_KS55 ? "ks55" : "nf24");
+  int j = jets_find(a->model == M_KS55 ? "ks55" : a->model == M_JA46 ? "ja46" : "nf24");
   p->jet = j >= 0 ? j : 0;
   { /* the call sign (or the id), at most what the name holds: copied, not printed, so no compiler sees a cut */
     const char *nm = a->callsign[0] ? a->callsign : a->id;
@@ -1319,6 +1372,7 @@ static void draw_game_cockpit(Framebuffer *fb, const Camera *cam, float F, const
   int me = -1, tgt = -1;
   for (int i = 0; i < nact && g->nplanes < MAX_PLANES; i++) {
     if (act[i].kind != K_JET || !cockpit_plane(&g->planes[g->nplanes], g->nplanes, &act[i], t)) continue;
+    if (i != sh->hud && act[i].team == act[sh->hud].team) continue; /* the film's HUD tags no wingman: he stays visible */
     if (i == sh->hud) me = g->nplanes;
     if (i == sh->target) tgt = g->nplanes;
     g->nplanes++;
@@ -1516,7 +1570,7 @@ static void title_layout(const Fx *f, int W, int H) {
   fb_clear(&m, 0);
   fb_text(&m, f->text, 1, mh / 2.0f, sc, 0xFFFFFFFFu, ALIGN_LEFT, 0);
   fb_text(&m, f->text, 1 + (sc + 3) / 4, mh / 2.0f, sc, 0xFFFFFFFFu, ALIGN_LEFT, 0);
-  tp_step = fmaxf(3, size / 15);
+  tp_step = fmaxf(3, size / 20);
   float ox = W / 2.0f - mw / 2.0f, oy = H * 0.42f - mh / 2.0f;
   int cap = (int)((mw / tp_step + 2) * (mh / tp_step + 2));
   tpuffs = calloc((size_t)cap, sizeof *tpuffs);
@@ -1531,6 +1585,8 @@ static void title_layout(const Fx *f, int W, int H) {
       q->d = tp_rand();
       q->sx = tp_rand() - 0.5f;
       q->sy = tp_rand() - 0.5f;
+      float big = fmaxf(fabsf(q->sx), fabsf(q->sy)), len = sqrtf(q->sx * q->sx + q->sy * q->sy); /* a round fireball, not a square */
+      if (len > 0) q->sx *= big / len, q->sy *= big / len;
       float curl = 0.3f + 0.7f * tp_rand(), turn = tp_rand() < 0.5f ? -1.0f : 1.0f; /* one draw after the other */
       q->curl = curl * turn;
       q->ph = tp_rand() * 6.2831853f;
@@ -1578,7 +1634,7 @@ static void draw_smoke_title(Framebuffer *fb, const Fx *f, const Camera *cam, fl
         x += (sinf(0.7f * t + q->ph) * 0.35f) * tp_step + driftx;
         y += (cosf(0.55f * t + 1.3f * q->ph) * 0.25f) * tp_step + drifty;
       }
-      float r = tp_step * q->size * lerpf(0.5f, 1.45f, e) * (1 + 0.08f * sinf(t * 1.3f + q->ph));
+      float r = tp_step * q->size * lerpf(0.5f, 1.2f, e) * (1 + 0.08f * sinf(t * 1.3f + q->ph));
       /* dissolving: each puff lets go in turn, drifts up and away with the wind, swells and thins out */
       float fade = 1;
       if (t > f->d0) {
@@ -1607,6 +1663,44 @@ static void draw_smoke_title(Framebuffer *fb, const Fx *f, const Camera *cam, fl
       }
       soft_puff(fb, x, y, r, hexc(col), a * fade);
     }
+}
+
+/* Looking down from height the sea's mirror of the sky breaks into hard blotches: a haze below the jets softens them. */
+static void sea_haze(const View *V, const Camera *c, float t) {
+  const Fx *f;
+  if (!active_fx(FX_SEAHAZE, t, &f) || c->f.y > -0.15f || c->pos.y < 60) return;
+  /* just beyond the farthest jet, and high enough that its lower edge never cuts through the sea */
+  float k = clampf((-c->f.y - 0.15f) / 0.35f, 0, 1), d = 60;
+  for (int i = 0; i < nact; i++) {
+    Frame fr;
+    if (act[i].kind == K_JET && actor_frame(&act[i], t, &fr)) {
+      float z = v3_dot(v3_sub(fr.pos, c->pos), c->f);
+      if (z > 0 && z < 900) d = fmaxf(d, z + 30);
+    }
+  }
+  d = fminf(d, c->pos.y - 10);
+  r3d_sprite_kind(SPR_SOFT);
+  r3d_ball(V, v3_add(c->pos, v3_scale(c->f, d)), d * 3, hexc(0x8e7884), f->amount * k);
+}
+
+/* The low sun in the lens: a soft bloom on the disc, a veil round it and two ghosts across the centre. The bloom and veil lie behind the world, so a
+ * jet in front of the sun cuts them; the ghosts are in the lens. Under the grade, like everything in the picture. */
+static void lens_glow(const View *V, const Camera *c, float t) {
+  const Fx *f;
+  float z = v3_dot(LIGHT, c->f);
+  if (!active_fx(FX_GLOW, t, &f) || z < 0.25f) return;
+  float x = v3_dot(LIGHT, c->r) / z, y = v3_dot(LIGHT, c->u) / z, a = f->amount * clampf(1.2f - sqrtf(x * x + y * y) * 0.6f, 0, 1);
+  static const float G[4][3] = { { 1, 0.1f, 0.5f }, { 1, 0.26f, 0.28f }, { -0.35f, 0.03f, 0.05f }, { -0.8f, 0.06f, 0.035f } }; /* where, size, strength */
+  /* the sky's disc has a hard edge: soft layers over it make it a soft ball of light */
+  r3d_sprite_kind(SPR_SOFT);
+  for (int i = 0; i < 3; i++) r3d_ball(V, v3_add(c->pos, v3_scale(LIGHT, 4000)), 4000 * 0.07f, hexc(0xfff0d8), 1);
+  r3d_sprite_kind(SPR_GLOW);
+  for (int i = 0; i < 4; i++) {
+    float d = i > 1 ? 5 : 4000;
+    vec3 w = v3_add(c->pos, v3_scale(v3_add(c->f, v3_add(v3_scale(c->r, x * G[i][0]), v3_scale(c->u, y * G[i][0]))), d));
+    r3d_ball(V, w, d * G[i][1], hexc(i == 2 ? 0xffd8a0 : i ? 0xffb070 : 0xffe0b0), a * G[i][2]);
+  }
+  r3d_sprite_kind(SPR_SOFT);
 }
 
 /* Draws one shot's picture at time t (yaw_off for a whip pan); returns its
@@ -1650,11 +1744,14 @@ static void render_shot(Framebuffer *fb, const Shot *sh, float t, float yaw_off,
   if ((float)W / H > 1.9f) F = (W / 2.0f) / tanf(vfov * 0.9f);
   View V;
   hide_actor = sh->hud;
+  shade_now = sh->shade;
   r3d_begin(fb, &cam, 0, 0, W, H, F, false, t, &V);
   r3d_whitecaps(fb, &V, t);
   draw_wakes(fb, &V, t);
+  sea_haze(&V, &cam, t);
   draw_actors(fb, &V, t);
   r3d_gloss(-1);
+  lens_glow(&V, &cam, t);
   r3d_end(fb, &V, t);
   hide_actor = -1;
   *cam_out = cam;
@@ -1767,7 +1864,7 @@ void intro_render(Framebuffer *fb) {
   const Fx *st = NULL;
   bool title = active_fx(FX_SMOKETITLE, t, &st);
   if (title && !gpu) draw_smoke_title(fb, st, &cam, F, t); /* in the picture, under the grade */
-  grade_and_haze(fb, t);
+  grade_and_haze(fb, t_film);
   if (title && gpu) draw_smoke_title(fb, st, &cam, F, t); /* on the HUD layer, over the picture */
   if (room) lay_scene(fb, room, t, room_a, gpu);
   bool panel = sh->hud >= 0 && sh->panel;

@@ -1046,8 +1046,9 @@ def p_certify(log):
     if PLAT_SKIP_CERT:
         return False, 'skipped (--skip-certify): the ladder is not done until tools/certify run passes'
     rc, out = sh([sys.executable, os.path.abspath(__file__), 'run'], log=log + '.log')
-    last = [l for l in out.splitlines() if l.strip()][-3:]
-    return rc == 0, ' | '.join(l.strip() for l in last)[:300]
+    # the run prints the certificate's full path, and this line is sealed: only the file's name goes in
+    last = [re.sub(r'\S*[/\\](\S+\.cert)', r'\1', l.strip()) for l in out.splitlines() if l.strip()][-3:]
+    return rc == 0, ' | '.join(last)[:300]
 
 
 def plat_preflight(a):
@@ -1076,8 +1077,7 @@ def plat(a):
     if missing:
         print('certify: the ladder needs these and cannot find them, so nothing was run: ' + ', '.join(missing))
         return 1
-    st = Stack('platform ladder', system())
-    st.sys = 'plat-' + system()
+    st = Stack('platform ladder', 'plat-' + system())
     for n, name, fn in ((0, 'build', p_build), (1, 'core', p_core), (2, 'cycles', p_cycles), (3, 'window', p_window),
                         (4, 'sound', p_sound), (5, 'pads', p_pads), (6, 'gpu', p_gpu), (7, 'certify', p_certify)):
         st.block(n, 'P%d-%s' % (n, name), fn)

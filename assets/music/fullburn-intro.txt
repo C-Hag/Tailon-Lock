@@ -5,5 +5,10 @@ cut and timing as the DMX3 version it replaces, so the film's sync points are un
 it from the recording instead of a score (music.c, themes with a .wav), once, and the menu's own theme
 takes over when it ends.
 
+Intro version 9 (2026-11-05): the film plays the score (fullburn-intro.json), not this recording, and that score
+repeats 8 bars of the song's intro (bars 1-4, 3-4, 3-4, 5-6, 5-6, 5-6, then 7 on), so the band hit is at 27.31 s. This
+recording keeps the old 66 s cut and is out of step with the version 9 film. The game never plays it while
+fullburn-intro.json is there: a score always wins over a recording of the same theme (music.c, load_recording).
+
 All our own audio: the SID chips, our 80s-rig synths and our own drum machine (h2h-drum). No samples,
 no attribution needed.

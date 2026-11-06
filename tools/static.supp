@@ -124,3 +124,4 @@ clang-tidy bugprone-suspicious-memory-comparison tests/test_sfx.c # the mix in o
 clang-tidy bugprone-casting-through-void src/core/json.c # the allocator's header before its blocks: -Wcast-align's way through void *, alignment certain (safe-c-2026-11-02.md)
 clang-tidy bugprone-casting-through-void src/editor.c # a Patch's float field at its offsetof: -Wcast-align's way through void *, alignment certain (safe-c-2026-11-02.md)
 clang-tidy bugprone-casting-through-void src/platform/plat_win.c # GetProcAddress's FARPROC to the named function's own type (-Wcast-function-type's way through void *); WASAPI's byte buffer to float only after fill has checked the address is aligned for float (C11 6.3.2.3), else through an aligned chunk and memcpy
+clang-tidy clang-analyzer-optin.taint.GenericTaint tools/ff/loader.c # it runs the copy it just made in a new 0700 folder under the player's own TMPDIR: mkdtemp refuses to reuse one

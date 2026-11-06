@@ -9,6 +9,7 @@
  * with alpha (particles, smoke, cloud puffs, night lights) are collected,
  * sorted far to near as the JS painter's list was, and drawn last. */
 #include "render3d.h"
+#include "viewfx.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -744,8 +745,9 @@ static void add_lights(const View *V, float time) {
 }
 
 /* ---- cameras and views ------------------------------------------------ */
-static Camera cam_for(const Game *g, const Plane *p, bool demo) {
+static Camera cam_for(const Game *g, const Plane *p, bool demo, float *zoom) {
   Camera c;
+  *zoom = 1;
   if (!p->alive && p->hasDeath) {
     float t = g->time * 0.35f;
     c.pos = v3_add(p->deathPos, v3(cosf(t) * 140, 60, sinf(t) * 140));
@@ -764,6 +766,7 @@ static Camera cam_for(const Game *g, const Plane *p, bool demo) {
   } else if (p->chase) {
     c.pos = v3_add(v3_add(p->pos, v3_scale(p->f, -38)), v3_scale(p->u, 9));
     c.ext = true;
+    if (!getenv("A4C_CAM")) viewfx_camera(g, p, &c, zoom); /* the banking chase or the flyby (viewfx.c) */
     /* test pictures (A4C_CAM=X,Y,Z): the chase camera at that point beside the jet (its right, up, forward,
      * metres), looking at it */
     const char *at = getenv("A4C_CAM");
@@ -1069,6 +1072,8 @@ void render_scene(Framebuffer *fb, Game *g, const Camera *cam, int vx, int vy, i
                 (uint8_t)lerpf((float)c[0][2], (float)c[1][2], t)),
             a, 1);
   }
+  viewfx_update(g); /* contrails, vapour, spray, steam: for the eye only (viewfx.c) */
+  viewfx_draw(fb, &V, g);
   spr_kind = SPR_SOFT;
   r3d_end(fb, &V, g->time);
   r3d_last = V;
@@ -1080,7 +1085,9 @@ void render_view(Framebuffer *fb, Game *g, Plane *p, int vx, int vy, int vw, int
     command_render(fb, g, vx, vy, vw, vh);
     return;
   }
-  int ph = opts.panel ? (int)roundf(fmaxf(52, fminf(vh * 0.24f, vw * 0.21f))) : 0;
+  /* the outside views (chase, flyby) show the picture whole: the HUD, no instrument panel */
+  bool outside = p->chase && p->alive && !opts.demo && !(g->classic && p->mapview);
+  int ph = opts.panel && !outside ? (int)roundf(fmaxf(52, fminf(vh * 0.24f, vw * 0.21f))) : 0;
   int sh = vh - ph;
   if (g->classic && p->mapview && p->alive && !opts.demo) {
     fb_clip(fb, vx, vy, vw, sh);
@@ -1093,17 +1100,19 @@ void render_view(Framebuffer *fb, Game *g, Plane *p, int vx, int vy, int vw, int
     }
     return;
   }
-  Camera cam = cam_for(g, p, opts.demo);
+  float zoom = 1;
+  Camera cam = cam_for(g, p, opts.demo, &zoom);
   View V;
   /* from the cockpit, a pilot's field of view: about 88 degrees across a
    * 16:9 view and 45 up and down (the old view was 99 by 53, a fisheye) */
   if (!cam.ext) scene_F = fminf(vw * 0.5f / tanf(44 * PI_F / 180), sh * 0.5f / tanf(22.5f * PI_F / 180));
+  else if (zoom > 1) scene_F = fminf(vw * 0.75f, (float)sh) * zoom; /* the flyby's long lens */
   render_scene(fb, g, &cam, vx, vy, vw, sh, &V, cam.ext ? NULL : p);
 
   HudView hv = { V.cam.pos, V.cam.r, V.cam.u, V.cam.f, V.vx, V.vy, V.vw, V.sh, V.cx, V.cy, V.F };
   if (!opts.demo) hud_draw(fb, g, p, &hv, opts.label);
   fb_clip_reset(fb);
-  if (opts.panel) {
+  if (ph > 0) {
     fb_clip(fb, vx, vy + sh, vw, ph);
     hud_panel(fb, g, p, (float)vx, (float)(vy + sh), (float)vw, (float)ph);
     fb_clip_reset(fb);

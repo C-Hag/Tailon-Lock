@@ -79,6 +79,7 @@
 #include "platform/plat.h"
 #include "raster.h"
 #include "render3d.h"
+#include "viewfx.h"
 #include "sfx.h"
 #include "synth.h"
 #include "ui.h"
@@ -201,6 +202,7 @@ static void start_with(App *app, const Settings *s, uint32_t seed) {
   memcpy(R.load, s->load, sizeof R.load);
   game_new_rules(&app->game, s->mode, s->diff, coop, s->jets, seed, &R);
   app->match_seed = seed;
+  plat_log("match: seed %u", (unsigned)seed);
   app->wm = (WatchMatch){ seed, R, s->tod, s->weather };
   input_reset();
   app->state = ST_PLAY;
@@ -517,11 +519,11 @@ static void music_update(App *app) {
   bool on = s->sound && s->music;
   /* the intro plays its own music; it carries on under the menu until it ends, or, when the menu's theme is the
    * same song (the film's cut of Full Burn starts half a second before it), the menu's theme takes over at the
-   * same place in the song, with no seam */
+   * same place in the song, with no seam (the film's cut plays some bars twice: intro_song_shift) */
   if (app->intro_keep && app->state == ST_MENU && on && music_current() == music_theme_index("fullburn-intro") &&
       !strcmp(THEMES[s->track].key, "fullburn") && music_clock() > 0.6) {
     app->intro_keep = false;
-    music_continue(s->track, -0.5);
+    music_continue(s->track, -0.5 - intro_song_shift());
   }
   if (app->intro_keep && app->state == ST_MENU && music_finished()) app->intro_keep = false;
   if (app->state == ST_INTRO || (app->intro_keep && app->state == ST_MENU)) {
@@ -620,8 +622,8 @@ static void on_key(App *app, const PlatKey *k) {
     if (k->key == 27 || k->key == PKEY_F(1)) pause_game(app);
     else if (k->key == PKEY_F(2) && !k->repeat) to_menu(app); /* classic classic rules: F2 quits */
     else if (k->key == '\t' && !k->repeat) {
-      for (int i = 0; i < app->game.nplanes; i++)
-        if (!app->game.planes[i].is_ai) app->game.planes[i].chase = !app->game.planes[i].chase;
+      for (int i = 0; i < app->game.nplanes; i++) /* cockpit, chase, flyby (viewfx.c) */
+        if (!app->game.planes[i].is_ai) game_event(&app->game.planes[i], viewfx_cycle(&app->game.planes[i]));
     } else if (k->key == 'm' && !k->repeat && !app->game.classic) { /* M banks in the classic keys */
       app->settings.sound = !app->settings.sound;
       config_save(&app->settings);
@@ -1264,6 +1266,7 @@ static bool loop_init(int argc, char **argv, int *exit_code) {
       else p->throttle = 1;
     }
     if (*c == 'k' && app.state == ST_INTRO) intro_to_menu(&app); /* test hook: skip the intro */
+    if (*c == 'V') viewfx_cycle(&app.game.planes[app.game.locals[0]]); /* test hook: Tab, player 1's next view */
     if (*c == 'b') { /* test hook: CPU pilots fly the players' jets, to play whole matches unattended */
       app.bots = true;
       bots_fly(&app);

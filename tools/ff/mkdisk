@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""tools/ff/mkdisk - one 1.44 MB FAT12 floppy image of a folder, by our own code. Original code for this project; Python
+3.8+ standard library only. The same files give the same bytes on every system.
+
+usage: tools/ff/mkdisk FOLDER OUT.img [--label NAME]
+       tools/ff/mkdisk --check OUT.img FOLDER      the image's files equal the folder's, byte for byte; prints what is free
+       tools/ff/mkdisk --fuzz OUT.img N [SEED]     N damaged copies of the image through the reader: no exception
+
+Exit 1 when the files do not fit or the check fails."""
+import os
+import struct
+import sys
+
+SECTOR = 512
+SECTORS = 2880
+RESERVED = 1
+FATS = 2
+FAT_SECTORS = 9
+ROOT_ENTRIES = 224
+PER_TRACK = 18
+HEADS = 2
+ROOT_START = RESERVED + FATS * FAT_SECTORS
+DATA_START = ROOT_START + ROOT_ENTRIES * 32 // SECTOR
+CLUSTERS = SECTORS - DATA_START
+STAMP_DATE = ((2026 - 1980) << 9) | (11 << 5) | 5  # fixed, so that an image can be made again to the byte
+OK_SHORT = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$%\'-_@~`!(){}^#&')
+
+
+def is_short(name):
+    base, dot, ext = name.partition('.')
+    return 0 < len(base) <= 8 and len(ext) <= 3 and '.' not in ext and set(base + ext) <= OK_SHORT
+
+
+def short_name(name, used):
+    if is_short(name):
+        base, _, ext = name.partition('.')
+        return (base.ljust(8) + ext.ljust(3)).encode('ascii')
+    stem, _, ext = name.rpartition('.') if '.' in name else (name, '', '')
+    clean = lambda s: ''.join(c if c in OK_SHORT else '_' for c in s.upper())
+    stem, ext = clean(stem), clean(ext)[:3]
+    for n in range(1, 1000):
+        tail = '~%d' % n
+        s = (stem[:8 - len(tail)] + tail).ljust(8) + ext.ljust(3)
+        if s not in used:
+            return s.encode('ascii')
+    raise SystemExit('mkdisk: too many like %s' % name)
+
+
+def long_entries(name, short):
+    check = 0
+    for b in short:
+        check = (((check & 1) << 7) + (check >> 1) + b) & 255
+    units = [ord(c) for c in name] + [0]
+    while len(units) % 13:
+        units.append(0xFFFF)
+    parts = [units[i:i + 13] for i in range(0, len(units), 13)]
+    out = []
+    for i in range(len(parts), 0, -1):
+        u = parts[i - 1]
+        order = i | (0x40 if i == len(parts) else 0)
+        out.append(struct.pack('<B5HBBB6HH2H', order, *u[:5], 0x0F, 0, check, *u[5:11], 0, *u[11:13]))
+    return out
+
+
+def entry(short, attr, cluster, size):
+    return struct.pack('<11sBBBHHHHHHHI', short, attr, 0, 0, 0, STAMP_DATE, STAMP_DATE, 0, 0, STAMP_DATE, cluster, size)
+
+
+class Disk:
+    def __init__(self):
+        self.fat = [0xFF0, 0xFFF] + [0] * CLUSTERS
+        self.data = bytearray(CLUSTERS * SECTOR)
+        self.next = 2
+
+    def put(self, b):
+        """the bytes in a chain of clusters: its first cluster, 0 for nothing"""
+        if not b:
+            return 0
+        n = (len(b) + SECTOR - 1) // SECTOR
+        if self.next + n > CLUSTERS + 2:
+            raise SystemExit('mkdisk: the files do not fit on a floppy')
+        first = self.next
+        for i in range(n):
+            self.fat[first + i] = first + i + 1 if i + 1 < n else 0xFFF
+        self.data[(first - 2) * SECTOR:(first - 2) * SECTOR + len(b)] = b
+        self.next += n
+        return first
+
+    def folder(self, path, parent, is_root=False):
+        names = sorted(os.listdir(path))
+        names = [n for n in names if not n.startswith('.')]
+        # the subfolder's cluster must be known for its entry: a folder's own table is sized first
+        used, sized = set(), []
+        for n in names:
+            s = short_name(n, used)
+            used.add(s.decode('ascii'))
+            sized.append((n, s, [] if is_short(n) else long_entries(n, s)))
+        count = sum(1 + len(x[2]) for x in sized) + (0 if is_root else 2)
+        if is_root:
+            if count > ROOT_ENTRIES:
+                raise SystemExit('mkdisk: too many files in the top folder')
+            me = 0
+        else:
+            size = max(1, (count * 32 + SECTOR - 1) // SECTOR) * SECTOR
+            me = self.put(bytes(size))
+        table = bytearray()
+        if not is_root:
+            table += entry(b'.          ', 0x10, me, 0) + entry(b'..         ', 0x10, parent, 0)
+        for n, s, longs in sized:
+            p = os.path.join(path, n)
+            if os.path.isdir(p):
+                c, sz, attr = self.folder(p, me), 0, 0x10
+            else:
+                c, sz, attr = self.put(open(p, 'rb').read()), os.path.getsize(p), 0x20
+            for e in longs:
+                table += e
+            table += entry(s, attr, c, sz)
+        if is_root:
+            return bytes(table)
+        self.data[(me - 2) * SECTOR:(me - 2) * SECTOR + len(table)] = table
+        return me
+
+    def image(self, root, label):
+        boot = bytearray(SECTOR)
+        boot[0:3] = b'\xEB\x3C\x90'
+        boot[3:11] = b'TAILON  '
+        boot[11:36] = struct.pack('<HBHBHHBHHHII', SECTOR, 1, RESERVED, FATS, ROOT_ENTRIES, SECTORS, 0xF0, FAT_SECTORS, PER_TRACK, HEADS, 0, 0)
+        name = label.upper().encode('ascii')[:11].ljust(11)
+        boot[36:62] = struct.pack('<BBBI11s8s', 0, 0, 0x29, 0x54414C4E, name, b'FAT12   ')
+        boot[62:62 + 30] = b'This disk does not start a PC.'
+        boot[510:512] = b'\x55\xAA'
+        fat = bytearray(FAT_SECTORS * SECTOR)
+        for i, v in enumerate(self.fat):
+            at = i * 3 // 2
+            if i & 1:
+                fat[at] |= (v << 4) & 0xF0
+                fat[at + 1] = (v >> 4) & 0xFF
+            else:
+                fat[at] = v & 0xFF
+                fat[at + 1] = (v >> 8) & 0x0F
+        vol = struct.pack('<11sBBBHHHHHHHI', name, 0x08, 0, 0, 0, STAMP_DATE, STAMP_DATE, 0, 0, STAMP_DATE, 0, 0)
+        table = bytearray(ROOT_ENTRIES * 32)
+        table[:32] = vol
+        table[32:32 + len(root)] = root
+        return bytes(boot) + bytes(fat) * FATS + bytes(table) + bytes(self.data)
+
+
+def read_disk(path):
+    """every file on an image, by our own reader: {relative path: bytes}, and the free bytes"""
+    d = open(path, 'rb').read()
+    if len(d) != SECTORS * SECTOR or d[54:59] != b'FAT12' or d[510:512] != b'\x55\xAA':
+        raise SystemExit('mkdisk: %s is not a 1.44 MB FAT12 image' % path)
+    fat = d[RESERVED * SECTOR:(RESERVED + FAT_SECTORS) * SECTOR]
+    if fat != d[(RESERVED + FAT_SECTORS) * SECTOR:ROOT_START * SECTOR]:
+        raise SystemExit('mkdisk: the two FATs differ')
+
+    def nxt(c):
+        v = struct.unpack_from('<H', fat, c * 3 // 2)[0]
+        return v >> 4 if c & 1 else v & 0xFFF
+
+    def chain(c):
+        out, seen = bytearray(), set()
+        while 2 <= c < CLUSTERS + 2:
+            if c in seen:
+                raise SystemExit('mkdisk: a cluster chain loops')
+            seen.add(c)
+            at = (DATA_START + c - 2) * SECTOR
+            out += d[at:at + SECTOR]
+            c = nxt(c)
+        return bytes(out)
+
+    def walk(table, prefix, files, depth=0):
+        if depth > 16:
+            raise SystemExit('mkdisk: folders nested too deep')
+        name = []
+        for i in range(0, len(table), 32):
+            e = table[i:i + 32]
+            if e[0] == 0:
+                break
+            if e[0] == 0xE5:
+                continue
+            if e[11] == 0x0F:
+                u = struct.unpack('<5H', e[1:11]) + struct.unpack('<6H', e[14:26]) + struct.unpack('<2H', e[28:32])
+                name = [''.join(chr(c) for c in u if c not in (0, 0xFFFF))] + name
+                continue
+            short = e[:11].decode('ascii', 'replace')
+            long_name, name = ''.join(name), []
+            if e[11] & 0x08 or short.startswith('.'):
+                continue
+            n = long_name or (short[:8].strip() + ('.' + short[8:].strip() if short[8:].strip() else ''))
+            c = struct.unpack_from('<H', e, 26)[0]
+            if e[11] & 0x10:
+                walk(chain(c), prefix + n + '/', files, depth + 1)
+            else:
+                files[prefix + n] = chain(c)[:struct.unpack_from('<I', e, 28)[0]]
+        return files
+
+    files = walk(d[ROOT_START * SECTOR:DATA_START * SECTOR], '', {})
+    free = sum(1 for c in range(2, CLUSTERS + 2) if nxt(c) == 0) * SECTOR
+    return files, free
+
+
+def check(img, folder):
+    files, free = read_disk(img)
+    want = {}
+    for r, ds, fs in os.walk(folder):
+        ds[:] = [x for x in ds if not x.startswith('.')]
+        for f in fs:
+            if not f.startswith('.'):
+                p = os.path.join(r, f)
+                want[os.path.relpath(p, folder).replace(os.sep, '/')] = open(p, 'rb').read()
+    bad = sorted(k for k in set(want) | set(files) if want.get(k) != files.get(k))
+    print('%s: %d files, %d bytes in them, %d bytes free%s' % (os.path.basename(img), len(files), sum(map(len, files.values())), free,
+                                                               '; DIFFERENT: ' + ', '.join(bad) if bad else ''))
+    return not bad
+
+
+def fuzz(img, n, seed):
+    """damaged copies of an image: the reader must answer each with its files or a refusal, never an exception"""
+    import random
+    import tempfile
+    good = bytearray(open(img, 'rb').read())
+    rng = random.Random(seed)
+    refused = read = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, 'f.img')
+        for _ in range(n):
+            d = bytearray(good)
+            # the tables are where damage matters: the boot sector, the FATs, the root folder, then anywhere
+            top = rng.choice((SECTOR, ROOT_START * SECTOR, DATA_START * SECTOR, len(d)))
+            for _ in range(rng.choice((1, 4, 32, 256))):
+                d[rng.randrange(top)] = rng.randrange(256)
+            if rng.random() < 0.05:
+                d = d[:rng.randrange(len(d))]
+            with open(path, 'wb') as f:
+                f.write(d)
+            try:
+                read_disk(path)
+                read += 1
+            except SystemExit:
+                refused += 1
+    print('fuzz: %d damaged images, %d read, %d refused, no exception' % (n, read, refused))
+
+
+def main():
+    a = sys.argv[1:]
+    if a[:1] == ['--fuzz'] and len(a) in (3, 4):
+        fuzz(a[1], int(a[2]), int(a[3]) if len(a) == 4 else 1)
+        return 0
+    if a[:1] == ['--check'] and len(a) == 3:
+        return 0 if check(a[1], a[2]) else 1
+    label = 'TAILONLOCK'
+    if '--label' in a:
+        i = a.index('--label')
+        label = a[i + 1]
+        del a[i:i + 2]
+    if len(a) != 2:
+        sys.exit(__doc__)
+    disk = Disk()
+    root = disk.folder(a[0], 0, True)
+    with open(a[1], 'wb') as f:
+        f.write(disk.image(root, label))
+    return 0 if check(a[1], a[0]) else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

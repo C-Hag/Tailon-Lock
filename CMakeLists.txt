@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 # macOS: run on macOS 11 and later, Intel and Apple silicon (set before project() so the compiler sees it)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Oldest macOS the game runs on")
-project(tailonlock VERSION 0.1.0 LANGUAGES C)
+project(tailonlock VERSION 0.2.0 LANGUAGES C)
 if(APPLE) # the macOS backend (plat_mac.m, gx_metal.m) is Objective-C on Apple's frameworks, with ARC
   enable_language(OBJC)
   set(CMAKE_OBJC_FLAGS "${CMAKE_OBJC_FLAGS} -fobjc-arc")
@@ -120,6 +120,7 @@ add_executable(tailonlock
   src/gpu.c
   src/raster.c
   src/render3d.c
+  src/viewfx.c
   src/stores.c
   src/surfaces.c
   src/hud.c
@@ -236,6 +237,12 @@ if(A4C_BUILD_TESTS)
   target_link_libraries(test_editor PRIVATE a4c_core)
   target_include_directories(test_editor PRIVATE src)
   add_test(NAME editor COMMAND test_editor)
+  # the floppy's start program (docs/FLOPPY.md): built here so that the checkers see it; tools/ff/mkdisk tests the disk
+  add_executable(floppy_loader tools/ff/loader.c src/ff/tlpk.c)
+  target_include_directories(floppy_loader PRIVATE src)
+  if(WIN32)
+    set_target_properties(floppy_loader PROPERTIES WIN32_EXECUTABLE ON) # no console window beside the game
+  endif()
   # the carrier commander's contact pick
   add_executable(test_command tests/test_command.c src/raster.c src/platform/plat_common.c)
   target_link_libraries(test_command PRIVATE a4c_core)

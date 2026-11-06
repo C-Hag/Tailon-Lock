@@ -65,6 +65,7 @@ typedef struct {
   float burstT;   /* gun bursts: on while positive, then a pause */
   float moveCool; /* the drone: time until its next post-stall move */
   float lowT;     /* the pull-up from the ground, held a moment once it starts */
+  float holdT; /* s held on the brakes for the strip */
   /* what it knows of the enemy: the contact it last saw on radar or by eye (index + 1, 0 none), where it
    * was and how it moved then, how long ago, and the time to the next look round */
   int   seen;

@@ -69,3 +69,32 @@ The programs grew by 20-25 KB with the tanker, the missiles in bays, the live pi
 Linux x86_64 was measured on an x86-64 Linux computer (gcc 14.3, -Os, gc-sections; 475,935 without gc-sections); the Linux arm64 VM gives 446,752.
 All three fit with close to half a megabyte to spare; tools/ff/qcheck on the packed assets gives the same stills,
 the same audit digest and the same sound.
+
+## On the 0.2.0 head
+
+Measured with tools/ff/mkdisk (gcc 14.3 on Linux, MinGW gcc 15.1 for Windows, -Os, -ffunction-sections, --gc-sections,
+stripped). The macOS column was not measured on this head.
+
+| | Linux x86_64 | Windows x64 (MinGW gcc) |
+|---|---|---|
+| start program | 19,440 | 45,568 |
+| game, packed | 481,764 | 539,150 |
+| assets, packed | 504,817 | 504,817 |
+| **on the disk** | **1,006,021** | **1,089,535** |
+| **free on the disk** | **437,760** | **353,792** |
+
+## The disk (tools/ff/mkdisk, tools/ff/loader.c)
+
+`tools/ff/mkdisk FOLDER OUT.img` makes a 1,474,560-byte FAT12 image of a folder with our own code, and the same files give
+the same bytes on every system; `--check OUT.img FOLDER` reads an image back and compares every file. `tools/ff/loader.c`
+is the disk's start program: it unpacks `game.tlpk` from its own folder to a temporary one, plays it with the disk's
+`assets/` and removes the copy. So a disk holds the loader (`tailonlock`, or `TailonLock.exe` on Windows), `game.tlpk`
+(the one-CPU, -Os, stripped program through `tlpk c -f auto`) and `assets/` (the forge's output). tools/ff/forge needs
+tools/ff/inventory's list first: `tools/ff/inventory --no-program --build DIR`.
+
+The Windows program for the disk: llvm-mingw's clang with `-Os -ffunction-sections -fdata-sections -Wl,--gc-sections`, or
+MinGW gcc with `-ffunction-sections` only. MinGW gcc with `-fdata-sections` puts the game's big zero-filled buffers (32 MB of
+them, in the test and figure code among others) into the file: the program came out at 34 MB and tlpk ran for over 10 minutes.
+
+The game does not run in place: it needs a writable temporary folder to unpack into. The sizes above count only the
+unpacker's code; on a disk the loader is a whole program, about 16 KB on Windows and 35 KB on macOS.

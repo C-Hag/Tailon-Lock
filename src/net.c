@@ -1209,8 +1209,10 @@ static bool play_packet(Game *g, Buf *p, int n, const Addr *from) {
   if (!N.via_relay && N.have_peer && !same(from, &N.peer)) return true;
   int type = p->b[4];
   /* in a match only sealed packets count; anything else is dropped */
-  if (!sealed_type(type) || !unseal_session(p, n)) {
-    N.rx_refused++;
+  bool typed = sealed_type(type);
+  if (!typed || !unseal_session(p, n)) {
+    if (N.rx_refused++ < 8) /* why, for the first few: a storm of them must not flood the log */
+      plat_log("net: refused a packet of %d bytes, type %d: %s", n, type, typed ? "its seal did not open" : "not a sealed type");
     return true;
   }
   N.rx_ok++;

@@ -75,7 +75,7 @@ MODERN. F1 pauses and F2 quits to the menu.
 
 | Key | What it does |
 |---|---|
-| Tab | cockpit or chase view |
+| Tab | cockpit, chase or flyby view |
 | Esc or F1 (pad: Start) | pause |
 | M | sound on or off (MODERN controls) |
 | F11 or Alt+Enter | full screen on or off |
@@ -264,10 +264,10 @@ a GPU with 2 GB of memory.
 
 The whole game on one 1.44 MB floppy (1,474,560 bytes). Sizes in bytes:
 
-| | macOS arm64 | Linux x86_64 | Windows |
+| | Linux x86_64 (gcc) | Windows x64 (MinGW gcc) | macOS arm64 |
 |---|---|---|---|
-| program, packed | 426,424 | 472,825 | 499,174 |
-| data, packed (Full Burn included) | 494,533 | 494,533 | 494,533 |
-| unpacker | 3,708 | 3,993 | 3,993 |
-| **total** | **924,665** | **971,351** | **997,700** |
-| **free** | **549,895** | **503,209** | **476,860** |
+| start program | 19,440 | 45,568 | 34,832 (before the final intro) |
+| game, packed | 481,764 | 539,150 | 423,369 (before the final intro) |
+| assets, packed | 504,817 | 504,817 | 504,817 |
+| **total** | **1,006,021** | **1,089,535** | to be measured |
+| **free on the disk** | **437,760** | **353,792** | to be measured |

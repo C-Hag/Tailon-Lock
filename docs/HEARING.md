@@ -25,6 +25,9 @@ about it.
   10.
 - **A children's mode**, HEARING ADULT or CHILD. CHILD caps the volume at 5,
   6 dB under the default, matching the 5 dB lower children's dose.
+- **The opening film's kills** duck the music by 4 dB for half a second so the
+  explosion is heard. It only lowers the music, before VOLUME, the CHILD cap and
+  the limiter, and nothing outside the film uses it.
 - **Breaks.** After every hour of sound, the menu and the pause screen ask
   you to rest your ears for a few minutes.
 - **Even levels.** Every theme is mastered to -20 LUFS, the main theme

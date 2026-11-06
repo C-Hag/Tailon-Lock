@@ -47,6 +47,7 @@ def without_meshes(rel, adir, files, tmp):
 
 
 def build_tools():
+    os.makedirs(FF, exist_ok=True)
     S = lambda *p: os.path.join(ROOT, *p)
     for exe, srcs in ((TLPK, [S('tools', 'ff', 'tlpk.c'), S('src', 'ff', 'tlpk.c')]),
                       (TLH, [S('tools', 'ff', 'tlh.c'), S('src', 'ff', 'tlh.c')]),
@@ -58,7 +59,10 @@ def build_tools():
 
 
 def floppy_set():
-    inv = json.load(open(os.path.join(FF, 'inventory.json')))
+    path = os.path.join(FF, 'inventory.json')
+    if not os.path.exists(path):
+        sys.exit('forge: no %s; run tools/ff/inventory --no-program --build DIR first' % path)
+    inv = json.load(open(path))
     out = []
     for f in inv['files']:
         r = f['file']

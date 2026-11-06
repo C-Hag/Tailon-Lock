@@ -1525,7 +1525,7 @@ typedef struct {
   int   fired[2][3];   /* --fired: missiles fired by the jet under test and by the others: heat, radar, air-to-ground */
   int   loads[16][4];  /* --fired: the CPU loadouts seen (heat, radar, ground, how many jets) */
   int   nloads;
-  int   shots, msl, flares, locks, glocs, stalls, kills, deaths, crashes, shotdown, collisions, takeoffs, refuels, stunts[4];
+  int   shots, msl, flares, locks, glocs, stalls, kills, deaths, crashes, crashes_late, shotdown, collisions, takeoffs, refuels, stunts[4];
   float minutes;
   /* match length: matches past 10 and 30 minutes (30: sudden death); the trips home of the jet under test, timed
    * in their parts: out to the touchdown (or the pass that filled it), the roll-out and the service on the
@@ -1743,7 +1743,7 @@ static void sortie(int jet, int k, Tally *t, uint32_t seed) {
         prevGround = p->onGround;
         if (prevAlive[i] && !p->alive) {
           t->deaths++;
-          if (p->deathMsg && !strcmp(p->deathMsg, "CRASHED")) t->crashes++;
+          if (p->deathMsg && !strcmp(p->deathMsg, "CRASHED")) t->crashes++, t->crashes_late += g->time >= TANKER_STAYS;
           else if (p->deathMsg && !strcmp(p->deathMsg, "SHOT DOWN")) t->shotdown++;
           else if (p->deathMsg && strstr(p->deathMsg, "COLLISION")) t->collisions++;
         }
@@ -1965,10 +1965,10 @@ static void sorties_part(int n, const char *only) {
     uint64_t t0 = plat_ms();
     for (int k = first_sortie; k < first_sortie + n; k++) sortie(jet, k, &t, seed_base + (uint32_t)(jet * 7919 + k * 104729));
     printf("%-6s %-9s %d matches (%d over, %d timeouts) in %.0f game minutes (%.1f s): won %d, lost %d, drawn %d; "
-           "%d kills, %d deaths (%d shot down, %d crashed, %d collisions); %d rounds, %d missiles, %d decoys, %d locks, "
+           "%d kills, %d deaths (%d shot down, %d crashed, %d of them after sudden death, %d collisions); %d rounds, %d missiles, %d decoys, %d locks, "
            "%d take-offs, %d refuels, %d G-LOCs, %d stalls; cobras %d, flips %d, J-turns %d; %d faults\n",
            JETS[jet].id, JETS[jet].name, t.sorties, t.done, t.timeouts, t.minutes, (plat_ms() - t0) / 1000.0, t.wins, t.losses, t.draws,
-           t.kills, t.deaths, t.shotdown, t.crashes, t.collisions, t.shots, t.msl, t.flares, t.locks, t.takeoffs, t.refuels, t.glocs,
+           t.kills, t.deaths, t.shotdown, t.crashes, t.crashes_late, t.collisions, t.shots, t.msl, t.flares, t.locks, t.takeoffs, t.refuels, t.glocs,
            t.stalls, t.stunts[1], t.stunts[2], t.stunts[3], t.faults);
     for (int f = 0; f < t.nfault; f++) printf("    fault: %s\n", t.fault[f]);
     print_length(&t, JETS[jet].id);
@@ -2002,6 +2002,7 @@ static void sorties_part(int n, const char *only) {
     jnum("deaths", t.deaths);
     jnum("shotdown", t.shotdown);
     jnum("crashes", t.crashes);
+    jnum("crashes_after_sudden_death", t.crashes_late);
     jnum("collisions", t.collisions);
     jnum("shots", t.shots);
     jnum("missiles", t.msl);

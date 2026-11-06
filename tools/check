@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """tools/check - the local code checker: the gate every brick of docs/BUILD_PLAN.md passes.
-Original code for this project.
+Original code for this project. A Linux gate: on macOS only --only 5 (cleanroom) is meaningful, because the other
+stages expect gcc, Linux libraries and LeakSanitizer.
 
 usage: tools/check [--quick] [--baseline] [--new-sound] [--serial] [--only N[,N...]]
   --quick     stages 1-4 only
@@ -122,7 +123,7 @@ BUILDS = {
 SHOTS = {  # name: arguments; each a fixed number of ticks with the retro (software) renderer
     'menu': ['--frames', '200', '--cmd', 'k', '--seed', '1'],
     'cockpit': ['--play', '1p', '--frames', '600', '--seed', '1'],
-    'titlecard': ['--play', 'intro', '--frames', '3735'],
+    'titlecard': ['--play', 'intro', '--frames', '4654'],
     'hangar': ['--frames', '200', '--cmd', 'kh', '--seed', '1'],
 }
 MODES = ['1p', '2p', 'coop', 'defend', 'defend1', 'drone', 'demo']

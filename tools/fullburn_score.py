@@ -33,6 +33,14 @@ PH = LOOP_A / 48000 - 32 * BAR        # where bar 1 starts in the master
 LENGTH = 198.957                      # the master's length, with the last chord's ring
 EARLY = 0.04                          # the loop is taken this much early: the drummer plays the downbeat a touch ahead
 INTRO_LEAD, INTRO_BODY, INTRO_FADE = 0.5, (2547470 - 16000) / 32000, 2.5
+# The film's cut plays the opening's build longer, for the longer launch (version 9 of the film): bars 1-4, then the
+# arpeggios of bars 3-4 twice more before the kicks come in, then bars 5-6 three times before the band hit on bar 7,
+# then the song on from bar 7 as before. Each part is cut a sixteenth's ghost (60 ms) before its bar line, so the
+# drummer's early downbeats stay with their bar. INTRO_SHIFT is how far the film's cut runs behind the song after
+# the repeats: the menu's Full Burn takes over that much earlier in the song than the film's own clock.
+INTRO_CUT = [(1, 5), (3, 5), (3, 5), (5, 7), (5, 7), (5, 7), (7, None)]
+CUT_EARLY = 0.06
+INTRO_SHIFT = sum(b - a for a, b in INTRO_CUT if b) * BAR - (INTRO_CUT[-1][0] - 1) * BAR
 
 # MIDI track name (its first word) -> instrument, by part; None: handled on its own
 PARTS = {'02': 'bass', '03': 'sidLead', '04': 'fbArp', '05': 'fbSidPad', '07': 'fbGtrL', '08': 'fbGtrR',
@@ -154,19 +162,30 @@ def main():
           dict(key='fullburn', length=LENGTH, loop=r4(LOOP_A / 48000 - EARLY), loop_end=r4(LOOP_B / 48000 - EARLY),
                events=events, notes=notes))
     n2, e2 = [], []
-    for n in notes:
-        g = fade(n[0])
-        if n[0] < INTRO_BODY and g > 0.02:
-            n2.append([r4(n[0] + INTRO_LEAD), n[1], n[2], r4(min(n[3], INTRO_BODY - n[0])), r4(n[4] * g) if g < 1 else n[4]])
-    for e in events:
-        g = fade(e[0])
-        if e[0] < INTRO_BODY and g > 0.02:
-            e = list(e)
-            e[0] = r4(e[0] + INTRO_LEAD)
-            e[2] = r4(e[2] * g) if g < 1 else e[2]
-            e2.append(e)
+    out = 0.0                                               # where the part starts in the film's cut (song seconds)
+    for k, (a, b) in enumerate(INTRO_CUT):
+        s0 = 0.0 if a == 1 else PH + (a - 1) * BAR - CUT_EARLY
+        s1 = INTRO_BODY if b is None else PH + (b - 1) * BAR - CUT_EARLY
+        dt = out - s0                                       # song time to the film's cut, in this part
+        for n in notes:
+            g = fade(n[0])
+            if s0 <= n[0] < s1 and n[0] < INTRO_BODY and g > 0.02:
+                n2.append([r4(n[0] + dt + INTRO_LEAD), n[1], n[2], r4(min(n[3], s1 - n[0])), r4(n[4] * g) if g < 1 else n[4]])
+        for e in events:
+            g = fade(e[0])
+            if s0 <= e[0] < s1 and e[0] < INTRO_BODY and g > 0.02:
+                e = list(e)
+                if e[1] == 'jet' and k == 0:                # the jet under the opening builds over the whole longer build
+                    e[3] = r4(e[3] + INTRO_SHIFT)
+                e[0] = r4(e[0] + dt + INTRO_LEAD)
+                e[2] = r4(e[2] * g) if g < 1 else e[2]
+                e2.append(e)
+        out += s1 - s0
+    n2.sort(key=lambda n: (n[0], n[1], n[2]))
+    e2.sort(key=lambda e: (e[0], str(e[3])))
     write(os.path.join(OUT, 'fullburn-intro.json'),
-          dict(key='fullburn-intro', length=r4(INTRO_LEAD + INTRO_BODY + 3), loop=0, once=1, events=e2, notes=n2))
+          dict(key='fullburn-intro', length=r4(INTRO_LEAD + INTRO_BODY + INTRO_SHIFT + 3), loop=0, once=1, events=e2, notes=n2))
+    print('film cut: %.4f s longer than the song (%d repeated bars)' % (INTRO_SHIFT, round(INTRO_SHIFT / BAR)))
 
 
 if __name__ == '__main__':

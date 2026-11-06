@@ -1,0 +1,13 @@
+TAILON LOCK AUDIT CERTIFICATE
+kind: system
+system: windows
+commit: 27ebf044b7a8b62571daf1a9d45258a0d902633f
+date: 2026-11-06 06:27
+
+block 1 clean: PASS | clean tree | seal fac023dd56a2d3c199556757ecbeefaaf4390a24bb78256d2ba1145b06de29e1
+block 2 build: PASS | TailonLock.exe imports bcrypt.dll, gdi32.dll, kernel32.dll, msvcrt.dll, ole32.dll, user32.dll, ws2_32.dll | seal 30ebdb9fe45feb0555047d5334f64d7d8d01fbbcc5f680bc6d6014de4756b9af
+block 3 offline: PASS | 28 offline matches in the VM ended | seal fd40ae62bf2ada46c42fd59114a1833597dba2863f528bc9dc84d1f7318ddc9f
+block 4 network: PASS | 20 network matches with the VM, 20 agree | seal cb7caed27528635b451e4a2d65d666fa5d982fbe1a7cb8d45e59e9916e25dfb8
+block 5 behaviour: PASS | digest ede876e2fb7c2de1 as on every system | seal f7f351c8c2b311b2cae87abe5386193eb497ba6a2c09a097fe4d0d67e9b87feb
+
+seal: f7f351c8c2b311b2cae87abe5386193eb497ba6a2c09a097fe4d0d67e9b87feb

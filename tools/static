@@ -23,7 +23,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SUPP = os.path.join(ROOT, 'tools', 'static.supp')
-SOURCES = ['src', 'tools/livepilot', 'tools/p5bench']
+SOURCES = ['src', 'tools/livepilot', 'tools/p5bench', 'tools/ff/loader.c']
 CPPCHECK_SETS = {
     'macos': ['--library=posix', '-D__APPLE__', '-D__MACH__'],
     'linux': ['--library=posix', '-D__linux__', '-D_GNU_SOURCE'],
@@ -169,7 +169,8 @@ def code_only(text):
 def run_banned():
     found = []
     for top in SAFE_SOURCES:
-        for d, _, fs in os.walk(os.path.join(ROOT, top)):
+        here = os.path.join(ROOT, top)
+        for d, _, fs in ([(os.path.dirname(here), [], [os.path.basename(here)])] if os.path.isfile(here) else os.walk(here)):
             for f in fs:
                 if not f.endswith(('.c', '.h', '.m')):
                     continue

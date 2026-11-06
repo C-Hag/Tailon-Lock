@@ -4,12 +4,13 @@
  * and nodes (our own writer's files read back exactly; transforms, strips and
  * fans, colours from plain materials), and files it must refuse. Original
  * code for this project, written from the Khronos glTF 2.0 specification. */
+#include <errno.h>
+#include <time.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "core/glb.h"
 #include "core/json.h"
@@ -300,8 +301,18 @@ static void test_accessors_refused(void) {
 
 /* a mesh's canonical dump, as a string (free it) */
 static char *dump_of(const Mesh *m) {
-  FILE *f = tmpfile();
-  if (!f) return NULL;
+  /* a named file in the temp folder: tmpfile() writes to the drive's root on Windows, which a normal user may not */
+  static int count;
+  const char *dir = getenv("TEMP");
+  if (!dir) dir = getenv("TMPDIR");
+  if (!dir) dir = "/tmp";
+  char path[1024];
+  snprintf(path, sizeof path, "%s/a4c-test-glb-%d-%d.txt", dir, (int)time(NULL) & 0xffff, count++);
+  FILE *f = fopen(path, "w+b");
+  if (!f) {
+    fprintf(stderr, "dump_of: cannot make %s: %s\n", path, strerror(errno));
+    return NULL;
+  }
   mesh_dump(m, f);
   long n = ftell(f);
   rewind(f);
@@ -310,6 +321,7 @@ static char *dump_of(const Mesh *m) {
     s[fread(s, 1, (size_t)n, f)] = 0;
   }
   fclose(f);
+  remove(path);
   return s;
 }
 

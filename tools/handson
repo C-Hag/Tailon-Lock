@@ -5,7 +5,7 @@ pilots' own checklist (docs/AI_PILOT_CHECKLIST.md sections 1-7, items 21-27) fro
 pilots and the cheater. Original code for this project;
 Python 3.8+ standard library only.
 
-usage: tools/handson [--build DIR] [--report FILE] [--only N[,N...]] [--cert]
+usage: tools/handson [--build DIR] [--report FILE] [--only N[,N...]] [--cert] [--commit SHA] [--time-scale N]
 
 Each item drives a real copy of the game (offscreen video, so it runs without a screen): keys pressed and held
 (--key), clicks (--click), window events (--event: focus, hide, show, a 2 s hitch, quit), and it reads what
@@ -13,16 +13,22 @@ happened from the game's own log (A4C_STATE=1 logs every screen, sound and windo
 jet ended up; --watch the instrument and picture checks; A4C_MIX_DUMP the sound mix). Every item ends PASS, FAIL
 or SKIP with its evidence; the report is Markdown (--report, default build/handson/report.md). Exits 1 if an
 item failed. --cert also writes certs/<commit>-hands-on-<system>.md, a box ticked only on PASS (or n/a) with its
-evidence and hash, for tools/certify release.
+evidence and hash, for tools/certify release. The commit comes from git, or from --commit where there is no git.
+
+The time limits on game runs only catch a hang: a first short run measures this computer and multiplies them
+(--time-scale N sets the factor instead), and the report and the list say so when the factor is not 1. On Windows,
+item 1 opens a real window, so it needs a logged-in desktop; on a screen too small for a 1280x720 window it skips,
+saying so.
 
 The network items (13-15) run two copies here on UDP 27960 and 27961 (the LAN port and its beacons), so they skip
 while another copy is hosting.
 
 The settings each run uses are a copy in build/handson/cfg, never the player's own."""
+import csv
+import io
 import os
 import re
 import shutil
-import signal
 import struct
 import subprocess
 import sys
@@ -33,6 +39,7 @@ OUT = os.path.join(ROOT, 'build', 'handson')
 CFG = os.path.join(OUT, 'cfg')
 EXE = None
 BUILD = None
+TIME_SCALE = 1
 
 # the main menu's buttons in a 1280x720 window (ui.c lays them out)
 BUTTON = {'start': (640, 430), 'hangar': (491, 460), 'settings': (640, 460), 'network': (788, 460),
@@ -55,10 +62,33 @@ def env(**more):
     return e
 
 
+def limit(seconds):
+    """A time limit, in seconds, for this computer's speed."""
+    return seconds * TIME_SCALE
+
+
+def measure_time_scale():
+    """How much to stretch the time limits. The intro is the slowest thing the items run: 300 frames of it in 6 s
+    leaves a 3040-frame run (item 5) twice the time it needs of its 120 s."""
+    fresh_cfg()
+    t0 = time.monotonic()
+    run(['--play', 'intro', '--frames', '300'], timeout=600)
+    return max(1, min(30, int((time.monotonic() - t0) / 6) + 1))
+
+
+def running_pids():
+    """The ids of the running copies of the game."""
+    if sys.platform == 'win32':
+        out = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq ' + os.path.basename(EXE), '/FO', 'CSV', '/NH'],
+                             capture_output=True, text=True).stdout
+        return [r[1] for r in csv.reader(io.StringIO(out)) if len(r) > 1]
+    return subprocess.run(['pgrep', '-f', EXE], capture_output=True, text=True).stdout.split()
+
+
 def run(args, timeout=120, **more):
     """Runs the game; returns (exit code, log text)."""
     try:
-        p = subprocess.run([EXE] + args, env=env(**more), capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run([EXE] + args, env=env(**more), capture_output=True, text=True, timeout=limit(timeout))
         return p.returncode, p.stdout + p.stderr
     except subprocess.TimeoutExpired as e:
         return 'timeout', (e.stdout or b'').decode(errors='replace') if isinstance(e.stdout, bytes) else (e.stdout or '')
@@ -84,16 +114,26 @@ def planes(log):
     return out
 
 
+def cut_to_fit(state):
+    """A real window smaller than the game's 1280x720: the screen is too small to show it whole."""
+    m = re.fullmatch(r'window (\d+)x(\d+)', state)
+    return bool(m and state != 'window 1280x720' and int(m.group(1)) <= 1280 and int(m.group(2)) <= 720)
+
+
 # ---- the items -------------------------------------------------------------------------------------------------
 def item1():
     """Window: the right size, fullscreen by F11 and by Alt+Enter, and back."""
     fresh_cfg()
+    # Windows fullscreens only a real window (plat_fullscreen_toggle: no window, nothing to do)
+    real = sys.platform == 'win32'
     code, log = run(['--frames', '400', '--key', '20:esc', '--key', '60:f11', '--key', '120:f11', '--key', '180:alt+enter',
-                     '--key', '240:alt+enter'])
+                     '--key', '240:alt+enter'], **({'A4C_VIDEO': 'real'} if real else {}))
     sizes = [w for w, _ in states(log) if w.startswith('window ')]
-    ok = len(sizes) >= 5 and sizes[0] == 'window 1280x720' and sizes[1] != sizes[0] and sizes[2] == sizes[0] \
-        and sizes[3] != sizes[0] and sizes[4] == sizes[0]
-    return ok, 'window sizes in turn: ' + ', '.join(s[7:] for s in sizes)
+    turns = len(sizes) >= 5 and sizes[1] != sizes[0] and sizes[2] == sizes[0] and sizes[3] != sizes[0] and sizes[4] == sizes[0]
+    seen = '%swindow sizes in turn: ' % ('a real window; ' if real else '') + ', '.join(s[7:] for s in sizes)
+    if real and turns and cut_to_fit(sizes[0]):
+        return None, 'screen too small for this check: ' + seen
+    return turns and sizes[0] == 'window 1280x720', seen
 
 
 def item2():
@@ -217,10 +257,10 @@ def item8():
         t0 = time.time()
         p = subprocess.Popen([EXE] + args, env=env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         try:
-            p.wait(timeout=60)
+            p.wait(timeout=limit(60))
         except subprocess.TimeoutExpired:
             p.kill()
-        left = subprocess.run(['pgrep', '-f', EXE], capture_output=True, text=True).stdout.split()
+        left = running_pids()
         clean = p.returncode == 0 and str(p.pid) not in left
         ok = ok and clean
         out.append('%s: exit code %s in %.1f s%s' % (how, p.returncode, time.time() - t0, '' if clean else ', STILL RUNNING'))
@@ -251,7 +291,7 @@ def item16():
     p = subprocess.Popen([EXE, '--play', '1p', '--frames', '100000'], env=env(), stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL)
     time.sleep(4)
-    p.send_signal(signal.SIGKILL)
+    p.kill()  # no chance to clean up, on every system
     p.wait()
     log = run(['--frames', '30'])[1]
     off = first(log, 'sound off')
@@ -314,7 +354,7 @@ def match_args(pt, seed, games, lives=1):
 
 
 def finish(procs, timeout):
-    end = time.monotonic() + timeout
+    end = time.monotonic() + limit(timeout)
     for p in procs:
         try:
             p.wait(timeout=max(1, end - time.monotonic()))
@@ -337,6 +377,11 @@ def item_dir(n):
     return d
 
 
+def no_address(line):
+    """The list goes in a public release: this computer's network address stays out of it (the logs keep it)."""
+    return re.sub(r'\b\d{1,3}(\.\d{1,3}){3}(:\d+)?', '<LAN address>', line)
+
+
 def item13():
     """LAN: the host's game shows up in the other copy's list, which joins it with the code; a match, then a rematch,
     and both copies agree on both."""
@@ -354,7 +399,7 @@ def item13():
     rows, probs = pt.compare(hlog, glog, 2, host.returncode, guest.returncode)
     ok = bool(listed) and not probs and len(rows) == 2
     return ok, 'the guest\'s list showed "%s"; joined with code %s; %d matches (the second a rematch) agreed%s' % (
-        listed.group(1) if listed else 'nothing', code, len(rows), '; ' + '; '.join(probs) if probs else '')
+        no_address(listed.group(1)) if listed else 'nothing', code, len(rows), '; ' + '; '.join(probs) if probs else '')
 
 
 def item14():
@@ -431,7 +476,7 @@ def btpad(only):
     d = item_dir(9 if '1' in only.split(',') else 11)
     rep = os.path.join(d, 'btpad.md')
     p = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'btpad'), '--build', BUILD, '--only', only, '--report', rep],
-                       capture_output=True, text=True, timeout=1800)
+                       capture_output=True, text=True, timeout=limit(1800))
     with open(os.path.join(d, 'btpad.log'), 'w') as f:
         f.write(p.stdout + p.stderr)
     rows = re.findall(r'^\s*(\d+) (.+?)\s+(PASS|FAIL)\s+(.*)$', p.stdout, re.M)
@@ -479,12 +524,12 @@ def ai_round():
     procs = [subprocess.Popen([EXE, '--audit', '--part', 'sorties', '--sorties', '112', '--only', j, '--out', lg],
                               env=env(A4C_AUDIT_DEATHS=1), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
              for j, lg in zip(jets, logs)]
-    codes = [q.wait(timeout=3600) for q in procs]
+    codes = [q.wait(timeout=limit(3600)) for q in procs]
     ROUND['audit'] = ''.join(open(lg, encoding='utf-8', errors='replace').read() for lg in logs if os.path.exists(lg))
     ROUND['audit_code'] = max(codes)
     for name, args in (('pilots', ['--matches', '200', '--seed', '9']), ('cheat', ['--pilot', 'cheat', '--matches', '90', '--seed', '9'])):
         rep = os.path.join(OUT, name + '.md')
-        q = subprocess.run([EXE, '--test-pilots', '--report', rep] + args, env=env(), capture_output=True, text=True, timeout=1800)
+        q = subprocess.run([EXE, '--test-pilots', '--report', rep] + args, env=env(), capture_output=True, text=True, timeout=limit(1800))
         ROUND[name] = open(rep).read() if os.path.exists(rep) else ''
         ROUND[name + '_log'] = q.stdout + q.stderr
     d = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'certify'), 'digest'] + logs, capture_output=True, text=True)
@@ -515,20 +560,23 @@ def ai1():
 
 
 def ai2():
-    """Flying: at most one crash into the ground in 50 matches; no physics fault."""
+    """Flying: at most one crash into the ground in 50 matches, before sudden death; no physics fault. After sudden death
+    (TANKER_STAYS, 30 minutes) nobody can refuel, by the rules, so jets run dry: those are reported on their own and do
+    not count against the goal (the owner, 2026-11-05)."""
     r = ai_round()
     n = max(1, matches(r['audit']))
-    crashes = deaths(r['audit'], 'CRASHED')
+    every = deaths(r['audit'], 'CRASHED')
+    crashes = [l for l in every if int(re.search(r'death t=(\d+)', l).group(1)) < 1800]
     faults = sum(int(f) for f in re.findall(r'(\d+) faults', r['audit']))
-    return len(crashes) * 50 <= n and faults == 0, '%d crashes in %d audit matches (1 in %.0f); %d physics faults%s' % (
-        len(crashes), n, n / max(1, len(crashes)), faults, '; first crash: ' + crashes[0][:160] if crashes else '')
+    return len(crashes) * 50 <= n and faults == 0, '%d crashes before sudden death in %d audit matches (1 in %.0f, goal 1 in 50); %d after it, not counted; %d physics faults%s' % (
+        len(crashes), n, n / max(1, len(crashes)), len(every) - len(crashes), faults, '; first crash: ' + crashes[0][:160] if crashes else '')
 
 
 def ai3():
     """Fuel, landing and rearming: home in time, lands, refuels and rearms, no flameout."""
     r = ai_round()
     # dry before sudden death (TANKER_STAYS, 30 minutes): after it nobody refuels anywhere, by the rules
-    dry_all = [l for l in deaths(r['audit'], 'CRASHED') if re.search(r'fuel 0 ', l)]  # crashed for want of fuel
+    dry_all = [l for l in deaths(r['audit'], 'CRASHED') if re.search(r', fuel 0 leg', l)]  # crashed for want of fuel
     dry = [l for l in dry_all if int(re.search(r'death t=(\d+)', l).group(1)) < 1800]
     land, ref, rearm = (mission(r['pilots'], m) for m in ('Landing', 'Refuel at base', 'Rearm'))
     cpu_land = [x for x in land[2].split(';') if 'CPU' in x]
@@ -564,15 +612,15 @@ def match_length(log):
 
 
 def ai5():
-    """Matches: every match ends, every mode with every jet; a match lasts 7.25 minutes at most on average (the owner,
-    2026-11-04: "Yes 7.25", with the runway rule; it was 7.0, and 6.5 before) and few reach the 30-minute sudden
+    """Matches: every match ends, every mode with every jet; a match lasts 7.30 minutes at most on average (the owner,
+    2026-11-06: "Raise the limit", for 0.2.0 at 7.267; it was 7.25, 7.0, and 6.5 before) and few reach the 30-minute sudden
     death."""
     r = ai_round()
     fails = re.findall(r'\[FAIL\] (matches.*)', r['audit'])
     timeouts = sum(int(t) for t in re.findall(r'(\d+) timeouts\)', r['audit']))
     n, mean, o10, o30 = match_length(r['audit'])
-    ok = not fails and timeouts == 0 and n > 0 and mean <= 7.25 and o30 <= 5
-    return ok, '%d audit matches, %d timeouts; length: mean %.1f min (target 7.25 at most), over 10 min %.0f %%, over 30 min %.0f %% (5 at most)%s' % (
+    ok = not fails and timeouts == 0 and n > 0 and mean <= 7.30 and o30 <= 5
+    return ok, '%d audit matches, %d timeouts; length: mean %.1f min (target 7.30 at most), over 10 min %.0f %%, over 30 min %.0f %% (5 at most)%s' % (
         matches(r['audit']), timeouts, mean, o10, o30, '; ' + fails[0] if fails else '')
 
 
@@ -611,7 +659,7 @@ ITEMS = [
     (17, 'Readable at 1280x800', item17),
     (28, 'Tanker call: key 4 once a match, the HUD\'s states', item28),
     # the AI pilots' checklist, docs/AI_PILOT_CHECKLIST.md sections 1-7
-    (21, 'AI: getting airborne', ai1),
+    (21, 'AI: take-offs and the first minute', ai1),
     (22, 'AI: flying (crashes, physics)', ai2),
     (23, 'AI: fuel, landing and rearming', ai3),
     (24, 'AI: fighting (win shares, the cheater\'s rule watch)', ai4),
@@ -635,19 +683,32 @@ def evidence_hash(n, evidence):
     return h.hexdigest()
 
 
-def write_cert(rows):
+def commit_of(given):
+    """The commit: git's answer, or --commit where there is no git. Both, and they must agree."""
+    try:
+        rc = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True)
+        have = rc.stdout.strip() if rc.returncode == 0 else ''
+    except OSError:
+        have = ''
+    if have and given and have != given:
+        sys.exit('handson: --commit %s, but git says this tree is %s' % (given, have))
+    full = have or given
+    if not re.fullmatch(r'[0-9a-f]{40}', full or ''):
+        sys.exit('handson: --cert needs the commit: no git here, so give --commit and the full 40-digit id')
+    return full
+
+
+def write_cert(rows, full):
     """certs/<commit>-hands-on-<system>.md: docs/TEST_GUIDE.md section 5, a box ticked only on PASS (or n/a, for what
     the game does not support yet) with its evidence line and hash; tools/certify release reads the boxes"""
     import platform
     sysname = {'Darwin': 'macos', 'Linux': 'linux', 'Windows': 'windows'}.get(platform.system(), platform.system().lower())
-    rc = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True)
-    full = rc.stdout.strip() or 'unknown'
     path = os.path.join(ROOT, 'certs', '%s-hands-on-%s.md' % (full[:12], sysname))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
         f.write('# Hands-on checks, %s, commit %s\n\nFlown by tools/handson (docs/TEST_GUIDE.md section 5), %s. A box is '
                 'ticked only on PASS, with its evidence and the sha256 of the evidence and its logs; n/a is a feature '
-                'the game does not have yet.\n\n' % (sysname, full, time.strftime('%Y-%m-%d %H:%M')))
+                'the game does not have yet.%s\n\n' % (sysname, full, time.strftime('%Y-%m-%d %H:%M'), scale_note()))
         for n, name, verdict, ev, digest in rows:
             if n > 17:
                 continue
@@ -656,12 +717,16 @@ def write_cert(rows):
     return path
 
 
+def scale_note():
+    return ' Time limits on game runs times %d, for this computer\'s speed.' % TIME_SCALE if TIME_SCALE != 1 else ''
+
+
 def main():
-    global EXE, BUILD
+    global EXE, BUILD, TIME_SCALE
     args = sys.argv[1:]
     BUILD = os.path.join(ROOT, 'build', 'linux-release')
     report = os.path.join(OUT, 'report.md')
-    only, cert = None, False
+    only, cert, given, scale = None, False, None, None
     i = 0
     while i < len(args):
         if args[i] == '--build':
@@ -675,12 +740,27 @@ def main():
             i += 1
         elif args[i] == '--cert':
             cert = True
+        elif args[i] == '--commit':
+            given = args[i + 1]
+            i += 1
+        elif args[i] == '--time-scale':
+            scale = int(args[i + 1])
+            if scale < 1:
+                sys.exit('handson: --time-scale is 1 or more')
+            i += 1
         i += 1
     EXE = os.path.join(BUILD, 'tailonlock')
     mac = os.path.join(BUILD, 'TailonLock.app', 'Contents', 'MacOS', 'TailonLock')  # the macOS build is an app
+    win = os.path.join(BUILD, 'TailonLock.exe')
     if not os.path.isfile(EXE) and os.path.isfile(mac):
         EXE = mac
+    elif sys.platform == 'win32' and os.path.isfile(win):
+        EXE = win
+    full = commit_of(given) if cert else None  # before the run, not after an hour of it
     os.makedirs(OUT, exist_ok=True)
+    TIME_SCALE = scale or measure_time_scale()
+    if TIME_SCALE != 1:
+        print('time limits times %d, for this computer\'s speed' % TIME_SCALE, flush=True)
     rows, failed = [], 0
     for n, name, fn in ITEMS:
         if only and n not in only:
@@ -692,13 +772,13 @@ def main():
         print('[%2d] %-4s %s (%.0f s)\n     %s' % (n, verdict, name, time.time() - t0, evidence), flush=True)
         rows.append((n, name, verdict, evidence, evidence_hash(n, evidence)))
     with open(report, 'w') as f:
-        f.write('# Hands-on checklist, flown by the test pilots\n\n%s, build %s\n\n| # | Item | Result | Evidence |\n'
-                '|---|---|---|---|\n' % (time.strftime('%Y-%m-%d %H:%M'), os.path.relpath(BUILD, ROOT)))
+        f.write('# Hands-on checklist, flown by the test pilots\n\n%s, build %s.%s\n\n| # | Item | Result | Evidence |\n'
+                '|---|---|---|---|\n' % (time.strftime('%Y-%m-%d %H:%M'), os.path.relpath(BUILD, ROOT), scale_note()))
         for n, name, verdict, ev, _ in rows:
             f.write('| %d | %s | %s | %s |\n' % (n, name, verdict, ev.replace('|', '/')))
     print('report: ' + os.path.relpath(report, ROOT))
     if cert:
-        print('certificate: ' + os.path.relpath(write_cert(rows), ROOT))
+        print('certificate: ' + os.path.relpath(write_cert(rows, full), ROOT))
     return 1 if failed else 0
 
 

@@ -16,6 +16,8 @@ void sfx_volume(int level);
 /* Seconds of sound played since the start (sound on), for the hearing break reminder. */
 double sfx_listened(void);
 /* Holds the mixer still while the main thread changes what it plays. */
+/* The music's level in the mix, 0..1, eased without a click; only ever lowers it. The film's kills use it; 1 restores it. */
+void sfx_duck_music(float gain);
 void sfx_lock(void);
 void sfx_unlock(void);
 /* Plays everything g->sounds holds and empties it. */
