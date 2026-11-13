@@ -20,8 +20,10 @@ struct VSOut {
 };
 
 VSOut vs_main(VSIn i, uint id : SV_VertexID) {
-  const float2 C[6] = { float2(-1, -1), float2(1, -1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(-1, 1) };
-  float2 c = C[id % 6];
+  // the quad's corner from the vertex number, two triangles (-1,-1) (1,-1) (1,1) and (-1,-1) (1,1) (-1,1), worked
+  // out rather than looked up in a table
+  uint k = id % 6;
+  float2 c = float2(k == 1 || k == 2 || k == 4 ? 1 : -1, k == 2 || k == 4 || k == 5 ? 1 : -1);
   float z = max(dot(i.posSize.xyz - VV.camPos.xyz, VV.camFwd.xyz), 0.5);
   float r = max(i.posSize.w, i.par.y * 0.5 * z / VV.camFwd.w);
   float3 w = i.posSize.xyz + (VV.camRight.xyz * c.x + VV.camUp.xyz * c.y) * r;
@@ -46,7 +48,7 @@ float4 fs_main(VSOut i) : SV_Target0 {
     float3 n = normalize(v.camRight.xyz * i.uv.x + v.camUp.xyz * i.uv.y - v.camFwd.xyz * sqrt(1 - r2));
     float lit = 0.72 + 0.4 * saturate(dot(n, normalize(v.sunDir.xyz)));
     float rim = vnoise(i.uv * 3 + i.par.z * 17) * 0.35;
-    a *= smoothstep(1.0, 0.55 - rim * 0.3, r2 + rim * 0.35);
+    a *= 1 - smoothstep(0.55 - rim * 0.3, 1.0, r2 + rim * 0.35); // edges in rising order: smoothstep is undefined for edge0 >= edge1
     c = apply_fog(v, c * lit, i.wp);
     return float4(c * a, a);
   }

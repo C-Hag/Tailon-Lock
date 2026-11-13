@@ -145,7 +145,7 @@ static void say(Pilot *P, const Game *g, const char *s) {
   P->saidT = g->time;
 }
 
-A4C_PRINTF(4, 5) static void mission(const Game *g, int m, bool ok, const char *fmt, ...) {
+TL_PRINTF(4, 5) static void mission(const Game *g, int m, bool ok, const char *fmt, ...) {
   Mission *M = &S.ms[m];
   if (ok) {
     M->pass++;

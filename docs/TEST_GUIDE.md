@@ -72,15 +72,15 @@ skipped them when it does not.
 They build only with clang's libFuzzer (Apple's clang has none; an LLVM release does):
 
 ```
-cmake -S . -B build/libfuzzer -DA4C_LIBFUZZER=ON -DCMAKE_C_COMPILER=/path/to/llvm/bin/clang
+cmake -S . -B build/libfuzzer -DTL_LIBFUZZER=ON -DCMAKE_C_COMPILER=/path/to/llvm/bin/clang
 cmake --build build/libfuzzer --target libfuzzers
 mkdir -p /tmp/lf-net && build/libfuzzer/lf_net -max_total_time=1800 -rss_limit_mb=2048 /tmp/lf-net tests/corpus/net
 ```
 
 The first folder takes the new inputs it finds (keep it out of the tree); a crash is saved as `crash-*` in the
 current folder and replays with `build/libfuzzer/lf_net crash-...`. Each target writes its files only in a temp
-folder of its own and points `A4C_CONFIG_DIR` there, so a run never touches the player's settings. A fix for a
-crash goes in with the input added as `tests/corpus/<name>/regress-<what>`. `A4C_LF_SEEDS=DIR build/libfuzzer/lf_net`
+folder of its own and points `TL_CONFIG_DIR` there, so a run never touches the player's settings. A fix for a
+crash goes in with the input added as `tests/corpus/<name>/regress-<what>`. `TL_LF_SEEDS=DIR build/libfuzzer/lf_net`
 writes the network seeds again (after a change to the packets).
 
 ## 2. Offline matches (every system)
@@ -97,7 +97,7 @@ folder; keep it with the commit's test notes.
 `tools/playtest local --games 40 --per-pair 4` plays host and guest pairs on the same computer:
 
 - `address`: joining by address (the LAN and internet-address path)
-- `relay`: both through `a4c_relay` (the internet path without port forwarding)
+- `relay`: both through `tl_relay` (the internet path without port forwarding)
 - `bad-address`, `bad-relay`: the same behind our bad-internet proxy (40-120 ms delay with jitter, 3 % loss, 1 %
   doubled packets, reordering)
 
@@ -122,17 +122,17 @@ Each pair plays at least 20 matches with `tools/playtest side host|guest` on the
 The relay run stands in for the internet. A real internet test (relay on a public server, one side on a phone
 hotspot) is done before a release when such a server is available.
 
-On Windows the game has no console: the VM side runs `TailonLock.exe` with `A4C_PLANES=1`, `A4C_TEST_CODE=NNNNNN`,
-`A4C_LOG=C:\path\guest.log` and the same arguments `playtest side` prints, then the log is copied back for `compare`.
+On Windows the game has no console: the VM side runs `TailonLock.exe` with `TL_PLANES=1`, `TL_TEST_CODE=NNNNNN`,
+`TL_LOG=C:\path\guest.log` and the same arguments `playtest side` prints, then the log is copied back for `compare`.
 Windows asks once to let the game through the firewall, macOS too (and again after a rebuild of an unsigned app).
 
 The VM also runs the game's own audit, which `tools/certify windows` checks against the same reference as block 10
 on Linux and macOS (the simulation computes the same bits on every system, so the matches must come out the same):
 
 ```
-set A4C_VIDEO=dummy
-set A4C_AUDIO=dummy
-set A4C_AUDIT_DEATHS=1
+set TL_VIDEO=dummy
+set TL_AUDIO=dummy
+set TL_AUDIT_DEATHS=1
 TailonLock.exe --audit --part sorties --sorties 112 --out C:\path\audit.log
 ```
 

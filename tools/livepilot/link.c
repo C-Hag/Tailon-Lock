@@ -1,4 +1,4 @@
-/* link.c - runs the game under the live test player: its own settings folder, the A4C_EYES pipes, pictures in
+/* link.c - runs the game under the live test player: its own settings folder, the TL_EYES pipes, pictures in
  * and hands out. Original code for this project; POSIX. */
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
@@ -70,20 +70,20 @@ bool game_start(Game *G, const Run *R, const char *const *args, const char *sett
     char eyes[32], every[16];
     snprintf(eyes, sizeof eyes, "%d,%d", p2g[0], g2p[1]);
     snprintf(every, sizeof every, "%d", R->every > 0 ? R->every : 4);
-    setenv("A4C_EYES", eyes, 1);
-    setenv("A4C_EYES_EVERY", every, 1);
+    setenv("TL_EYES", eyes, 1);
+    setenv("TL_EYES_EVERY", every, 1);
     setenv("XDG_CONFIG_HOME", R->cfg, 1);
     char cfgdir[1100]; /* the settings folder itself on every system (macOS does not read XDG_CONFIG_HOME) */
     snprintf(cfgdir, sizeof cfgdir, "%s/tailonlock", R->cfg);
-    setenv("A4C_CONFIG_DIR", cfgdir, 1);
+    setenv("TL_CONFIG_DIR", cfgdir, 1);
     /* a game port of this run's own, the same for its host and guest, so a game or another test hosting on this
-     * computer keeps UDP 27960 (an A4C_NET_PORT given is kept) */
+     * computer keeps UDP 27960 (an TL_NET_PORT given is kept) */
     char port[8];
     snprintf(port, sizeof port, "%d", 30000 + (int)(getppid() % 20000));
-    setenv("A4C_NET_PORT", port, 0);
-    setenv("A4C_STATE", "1", 1);
-    if (!getenv("LP_DISPLAY")) setenv("A4C_VIDEO", "offscreen", 1);
-    setenv("A4C_AUDIO", "dummy", 1);
+    setenv("TL_NET_PORT", port, 0);
+    setenv("TL_STATE", "1", 1);
+    if (!getenv("LP_DISPLAY")) setenv("TL_VIDEO", "offscreen", 1);
+    setenv("TL_AUDIO", "dummy", 1);
     int lf = open(G->log, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (lf >= 0) dup2(lf, 1), dup2(lf, 2), close(lf);
     signal(SIGPIPE, SIG_DFL);

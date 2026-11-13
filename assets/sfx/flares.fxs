@@ -1,5 +1,5 @@
 # flares: flare dispenser: four pops with rising blips, then a fading sizzle
-a4c-sfx 1
+tl-sfx 1
 play once 1.8
 volume f
 wave mutew

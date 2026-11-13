@@ -1,8 +1,8 @@
 /* intro.h - the opening cinematic: plays assets/intro/intro_script.json
  * (format: assets/intro/INTRO.md) on the clock of Steel Horizon, then holds
  * its last shot drifting behind the menu. */
-#ifndef A4C_INTRO_H
-#define A4C_INTRO_H
+#ifndef TL_INTRO_H
+#define TL_INTRO_H
 
 #include <stdbool.h>
 

@@ -1171,19 +1171,33 @@ void fig_raster(const FigMesh *m, int n, const FigCam *cam, const FigLight *ligh
       if (sy0 < 0) sy0 = 0;
       if (sx1 > bw) sx1 = bw;
       if (sy1 > bh) sy1 = bh;
-      for (int y = sy0; y < sy1; y++)
-        for (int x = sx0; x < sx1; x++) {
-          double px_ = x + 0.5, py_ = y + 0.5;
-          double w0 = ((X[1] - px_) * (Y[2] - py_) - (X[2] - px_) * (Y[1] - py_)) / area;
-          double w1 = ((X[2] - px_) * (Y[0] - py_) - (X[0] - px_) * (Y[2] - py_)) / area;
-          double w2 = 1 - w0 - w1;
+      /* along a row the weights change by a fixed step, so the part of the row inside the triangle is found at once,
+       * not by testing every sample in its box (long thin limbs have big boxes) */
+      const double dw0 = (Y[1] - Y[2]) / area, dw1 = (Y[2] - Y[0]) / area, dw2 = -dw0 - dw1;
+      for (int y = sy0; y < sy1; y++) {
+        double px_ = sx0 + 0.5, py_ = y + 0.5;
+        double r0 = ((X[1] - px_) * (Y[2] - py_) - (X[2] - px_) * (Y[1] - py_)) / area;
+        double r1 = ((X[2] - px_) * (Y[0] - py_) - (X[0] - px_) * (Y[2] - py_)) / area;
+        double r2 = 1 - r0 - r1, from = 0, to = sx1 - sx0;
+        const double W_[3] = { r0, r1, r2 }, D_[3] = { dw0, dw1, dw2 };
+        for (int e = 0; e < 3; e++) {
+          if (D_[e] > 0) from = fmax(from, -W_[e] / D_[e]);
+          else if (D_[e] < 0) to = fmin(to, W_[e] / -D_[e] + 1);
+          else if (W_[e] < 0) to = -1;
+        }
+        int i0 = (int)floor(from), i1 = (int)ceil(to);
+        if (i0 < 0) i0 = 0;
+        if (i1 > sx1 - sx0) i1 = sx1 - sx0;
+        size_t at = (size_t)y * bw + sx0 + i0;
+        for (int c_ = i0; c_ < i1; c_++, at++) {
+          double w0 = r0 + c_ * dw0, w1 = r1 + c_ * dw1, w2 = 1 - w0 - w1;
           if (w0 < 0 || w1 < 0 || w2 < 0) continue;
           float iz = (float)(w0 * IZ[0] + w1 * IZ[1] + w2 * IZ[2]);
-          size_t at = (size_t)y * bw + x;
           if (iz <= r_z[at]) continue;
           r_z[at] = iz;
           for (int j = 0; j < 3; j++) r_col[at * 3 + j] = (float)(w0 * col[0][j] + w1 * col[1][j] + w2 * col[2][j]);
         }
+      }
     }
   /* each pixel: the samples covered, averaged, laid over what is there by how many were covered */
   for (int y = y0; y < y1; y++)

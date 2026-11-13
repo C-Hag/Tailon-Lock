@@ -1,5 +1,5 @@
 # missile-launch: missile launch: ignition thump, whoosh sweeping down, rocket roar fading
-a4c-sfx 1
+tl-sfx 1
 play once 3.0
 volume f
 wave mutew

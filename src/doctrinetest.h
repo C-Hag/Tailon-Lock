@@ -1,6 +1,6 @@
 /* doctrinetest.h - measures behind the CPU pilots' doctrine (--doctrine-measure). */
-#ifndef A4C_DOCTRINETEST_H
-#define A4C_DOCTRINETEST_H
+#ifndef TL_DOCTRINETEST_H
+#define TL_DOCTRINETEST_H
 
 /* Prints what the simulation gives for the doctrine's questions, without
  * changing it: speed back after a post-stall move or a nose-high slow-down,

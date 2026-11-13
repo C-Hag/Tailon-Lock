@@ -12,7 +12,7 @@ static float sample(const Map *m, int i, int j) {
 
 float map_height(const Map *m, float x, float z) {
   float u = (x - m->origin_x) / m->spacing, v = (z - m->origin_z) / m->spacing;
-  if (u < 0 || v < 0 || u >= MAP_CELLS || v >= MAP_CELLS) return m->water_level;
+  if (!(u >= 0 && v >= 0 && u < MAP_CELLS && v < MAP_CELLS)) return m->water_level; /* off the map, or not a number */
   int i = (int)u, j = (int)v;
   float fu = u - i, fv = v - j;
   float a = sample(m, i, j), b = sample(m, i + 1, j), c = sample(m, i + 1, j + 1), d = sample(m, i, j + 1);

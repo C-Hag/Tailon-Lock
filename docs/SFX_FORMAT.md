@@ -1,14 +1,14 @@
 # The effect song format (.fxs)
 
 Every sound effect in the game is a tiny three-voice song for a SID-style chip, one row per PAL frame (50 a second).
-The songs are in `assets/sfx/NAME.fxs`. Both games play them with the same engine, `assets/sfx/sidfx.js` in the
-browser and `src/sidfx.c` in the C game. `tools/sfx_convert.py` writes them from the plain-text effect songs of our
+The songs are in `assets/sfx/NAME.fxs`. The browser edition (`web/`) plays them with `assets/sfx/sidfx.js`; the
+game itself makes its effects live in `src/sfx.c`. `tools/sfx_convert.py` writes them from the plain-text effect songs of our
 own SID toolchain. The format is plain text; `#` at the start of a line, or after a space, starts a comment.
 Numbers are hexadecimal unless they end in a dot (`12.` is twelve).
 
 ## Header
 
-    a4c-sfx 1             the format and its version
+    tl-sfx 1             the format and its version
     play loop 64          a loop of 64 frames, cut from the steady part after two passes
     play once 2.3         a one-shot, 2.3 seconds long
     volume f              the chip's main volume, 0-f

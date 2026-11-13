@@ -1,8 +1,8 @@
 /* cheat.h - the cheater (--pilot cheat): a test pilot that tries every
  * trick to get ahead, and the rule watch that holds every jet to the rules
  * each tick and reports what was broken (cheat.c says what it tries). */
-#ifndef A4C_CHEAT_H
-#define A4C_CHEAT_H
+#ifndef TL_CHEAT_H
+#define TL_CHEAT_H
 
 #include <stdio.h>
 

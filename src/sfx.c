@@ -2,8 +2,8 @@
  * 308-362) as a small voice pool mixed on the sound thread. A noise voice
  * is white noise through a swept two-pole low-pass; a tone voice is a square
  * or sine with an exponential pitch sweep; both decay exponentially to
- * 0.0008, like the Web Audio ramps. An engine drone is a sawtooth through a
- * 380 Hz low-pass. The streamed music (music.c) is added on top. The sum goes
+ * 0.0008, like the Web Audio ramps. An engine is a jet's sound built up in layers
+ * (engine_sample below). The streamed music (music.c) is added on top. The sum goes
  * through the master volume and a peak limiter, so a loud effect on a loud
  * bar is turned down smoothly instead of hard-clipped (clipping is harsh on
  * the ears). */
@@ -29,8 +29,17 @@ typedef struct {
   float t, dur, f0, f1, vol, phase, lp1, lp2;
 } Voice;
 
+/* A jet engine, as the acoustics of a real one have it: no pitch of its own to speak of, but the roar of the exhaust
+ * (broadband noise, brighter and louder with power), over the whine of the compressor (thin tones at the blade
+ * passing frequency, which climb with the engine's speed), and in afterburner a deep rumble with crackle on top.
+ * The engine's speed lags the throttle, so it spools. */
 typedef struct {
-  float freq, gain, tfreq, tgain, phase, lp;
+  float spool, tspool, ab, tab, speed, tspeed, gain, tgain; /* where it is, and where it is heading */
+  float ph[3];                     /* the whine's partials */
+  float roar[2][3];                /* the exhaust, per channel: two low-pass poles and the high-pass's state */
+  float hiss[2], wind[2][2];       /* the intake's and the airflow's high bands */
+  float rumble[3], turb, env, crack[2], thump;
+  float k_roar, k_whine, g_roar, g_whine, g_hiss, g_wind, g_rumble, g_crack, rate;   /* set once a chunk */
 } Engine;
 
 static bool stream; /* the sound device is open */
@@ -55,6 +64,80 @@ static float white(void) {
 
 #define MIX_CHUNK 512 /* frames mixed at a time: mus[] holds this many */
 
+static float one_pole(float hz) { return 1 - fm_expf(-6.2831853f * hz / RATE); }
+
+/* what changes slowly, once a chunk: the spool towards the throttle, and the levels and filters that follow it */
+static void engine_chunk(Engine *E, int n) {
+  float dt = (float)n / RATE;
+  E->spool += (E->tspool - E->spool) * fminf(1, dt / (E->tspool > E->spool ? 1.6f : 1.1f));
+  E->ab += (E->tab - E->ab) * fminf(1, dt / (E->tab > E->ab ? 0.35f : 0.5f));
+  E->speed += (E->tspeed - E->speed) * fminf(1, dt / 0.5f);
+  E->gain += (E->tgain - E->gain) * fminf(1, dt / 0.15f);
+  if (E->tab > 0.05f && E->ab < 0.05f) E->thump = 1; /* the burner catches: a thump */
+  E->thump *= fm_expf(-dt / 0.22f);
+  float s = E->spool, s2 = s * s, w = fminf(E->speed / 300, 1.5f);
+  float fc = 260 + 1150 * s + 500 * E->ab;
+  E->k_roar = one_pole(fc);
+  E->k_whine = (850 + 2150 * s) / RATE;
+  /* the noise through two poles loses level as its cut-off falls: the root of the cut-off puts it back */
+  E->g_roar = (0.20f + 0.30f * s + 0.30f * s2 + 0.75f * E->ab) * sqrtf(1400 / fc);
+  E->g_whine = 0.016f + 0.026f * s * (1 - 0.5f * E->ab);
+  E->g_hiss = 0.03f + 0.10f * s2;
+  E->g_wind = 0.16f * w * w;
+  E->g_rumble = (1.4f * E->ab + 2.0f * E->thump * E->tab) * (0.8f + 0.2f * s);
+  E->g_crack = 0.8f * E->ab;
+  E->rate = 34 * E->ab / RATE;
+}
+
+/* one frame of an engine into l, r */
+static void engine_sample(Engine *E, float *l, float *r) {
+  const float kl = 0.0052f /* 40 Hz */, kt = 0.0013f /* 10 Hz */, kh = 0.26f /* 2.4 kHz */, kr = 0.021f /* 160 Hz */;
+  float c = white();
+  E->turb += (white() - E->turb) * kt;
+  float wob = 1 + 6 * E->turb; /* the slow, uneven breathing of a real flame */
+  for (int ch = 0; ch < 2; ch++) {
+    float *q = E->roar[ch], x = 0.72f * c + 0.7f * white();
+    q[0] += (x - q[0]) * E->k_roar;
+    q[1] += (q[0] - q[1]) * E->k_roar;
+    q[2] += (q[1] - q[2]) * kl;
+    float y = (q[1] - q[2]) * E->g_roar * wob;
+    float n = white();
+    E->hiss[ch] += (n - E->hiss[ch]) * kh;
+    y += (n - E->hiss[ch]) * E->g_hiss;
+    float m = white(), *a = E->wind[ch];
+    a[0] += (m - a[0]) * 0.32f;
+    a[1] += (a[0] - a[1]) * 0.06f;
+    y += (a[0] - a[1]) * E->g_wind;
+    *(ch ? r : l) += y;
+  }
+  float tone = 0;
+  static const float PART[3] = { 1, 2.01f, 1.37f }, AMP[3] = { 0.6f, 0.26f, 0.14f };
+  for (int i = 0; i < 3; i++) {
+    E->ph[i] += E->k_whine * PART[i];
+    E->ph[i] -= floorf(E->ph[i]);
+    tone += AMP[i] * fm_sinf(E->ph[i] * 6.2831853f);
+  }
+  tone *= E->g_whine * (1 + 3 * E->turb);
+  float z = 0;
+  if (E->g_rumble > 1e-4f) {
+    E->rumble[0] += (white() - E->rumble[0]) * kr;
+    E->rumble[1] += (E->rumble[0] - E->rumble[1]) * kr;
+    E->rumble[2] += (E->rumble[1] - E->rumble[2]) * kl; /* no rumble below what a speaker can play */
+    z = (E->rumble[1] - E->rumble[2]) * E->g_rumble * 3.2f * wob;
+  }
+  if (E->g_crack > 1e-4f) {
+    /* a pop now and then: a few milliseconds of band-limited noise, each its own strength */
+    if ((white() + 1) * 0.5f < E->rate) E->env = 0.35f + 0.65f * fabsf(white());
+    E->env *= 0.9925f;
+    float b = white() * E->env;
+    E->crack[0] += (b - E->crack[0]) * 0.23f;
+    E->crack[1] += (E->crack[0] - E->crack[1]) * 0.04f;
+    z += (E->crack[0] - E->crack[1]) * E->g_crack * 2.6f;
+  }
+  *l += tone + z;
+  *r += tone + z;
+}
+
 /* n stereo frames, n at most MIX_CHUNK */
 static void mix_chunk(float *buf, int n) {
   float mus[MIX_CHUNK * 2];
@@ -62,6 +145,11 @@ static void mix_chunk(float *buf, int n) {
   memset(mus, 0, sizeof mus);
   if (enabled && music_on) music_render(mus, n);
   if (enabled) listened += (double)n / RATE;
+  bool eng[2];
+  for (int e = 0; e < 2; e++) {
+    engine_chunk(&engines[e], n);
+    eng[e] = engines[e].gain >= 1e-5f || engines[e].tgain > 0;
+  }
   for (int i = 0; i < n; i++) {
     float out = 0;
     for (int v = 0; v < MAX_VOICE; v++) {
@@ -95,24 +183,24 @@ static void mix_chunk(float *buf, int n) {
       V->t += dt;
       if (V->t >= V->dur) V->active = false;
     }
+    float el = 0, er = 0;
     for (int e = 0; e < 2; e++) {
-      Engine *E = &engines[e];
-      E->freq += (E->tfreq - E->freq) * (dt / 0.1f);
-      E->gain += (E->tgain - E->gain) * (dt / 0.15f);
-      if (E->gain < 1e-5f && E->tgain == 0) continue;
-      E->phase += E->freq * dt;
-      E->phase -= floorf(E->phase);
-      float saw = E->phase * 2 - 1;
-      E->lp += (saw - E->lp) * (1 - fm_expf(-6.2831853f * 380 / RATE));
-      out += E->lp * E->gain;
+      if (!eng[e]) continue;
+      float a = 0, b = 0;
+      engine_sample(&engines[e], &a, &b);
+      el += a * engines[e].gain;
+      er += b * engines[e].gain;
     }
-    out *= enabled ? MASTER : 0;
+    const float mast = enabled ? MASTER : 0;
+    out *= mast;
+    el = out + el * mast;
+    er = out + er * mast;
     if (duck != duck_to) {
       duck += (duck_to - duck) * DUCK_RATE;
       if (fabsf(duck_to - duck) < 1e-4f) duck = duck_to;
     }
     /* before the volume and the limiter, so VOLUME, the children's cap and the ceiling hold as ever; it only lowers */
-    float l = (out + mus[2 * i] * duck) * volume, r = (out + mus[2 * i + 1] * duck) * volume;
+    float l = (el + mus[2 * i] * duck) * volume, r = (er + mus[2 * i + 1] * duck) * volume;
     /* peak limiter: the gain drops at once to keep the louder channel under the ceiling and recovers slowly */
     float pk = fmaxf(fabsf(l), fabsf(r));
     lim_gain = 1 - (1 - lim_gain) * LIM_RELEASE;
@@ -134,7 +222,7 @@ static void mix(float *buf, int n, void *ud) {
   for (int at = 0; at < n; at += MIX_CHUNK) mix_chunk(buf + 2 * at, n - at < MIX_CHUNK ? n - at : MIX_CHUNK);
 }
 
-/* test hook: A4C_MIX_DUMP=file.raw with --frames writes the whole mix (effects and music, float stereo, 48 kHz)
+/* test hook: TL_MIX_DUMP=file.raw with --frames writes the whole mix (effects and music, float stereo, 48 kHz)
  * instead of playing it, one tick's worth per tick, so a film of the intro gets its sound in step */
 static FILE *mix_dump;
 
@@ -246,7 +334,7 @@ bool sfx_render_effects(const char *dir) {
 }
 
 bool sfx_init(void) {
-  const char *dump = getenv("A4C_MIX_DUMP");
+  const char *dump = getenv("TL_MIX_DUMP");
   if (dump) {
     mix_dump = fopen(dump, "wb");
     stream = mix_dump != NULL;
@@ -326,9 +414,11 @@ void sfx_engines(const Game *g, bool paused) {
     }
     const Plane *p = &g->planes[g->locals[e]];
     bool on = !paused && p->alive && p->fuel > 0;
-    E->tfreq = 48 + p->throttle * 62 + p->speed * 0.05f;
-    if (E->freq == 0) E->freq = E->tfreq;
-    E->tgain = on ? 0.05f / n + 0.015f : 0;
+    /* throttle 0.9 is full dry power, the rest the afterburner (game.c) */
+    E->tspool = fminf(p->throttle / 0.9f, 1);
+    E->tab = p->throttle > 0.9f ? fminf((p->throttle - 0.9f) / 0.1f, 1) : 0;
+    E->tspeed = p->speed;
+    E->tgain = on ? (n > 1 ? 0.3f : 0.42f) : 0;
   }
   plat_audio_unlock();
 }

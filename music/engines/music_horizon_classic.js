@@ -1,5 +1,5 @@
 // ---- horizon music start ----
-// "Steel Horizon": an original Ace4Combat pop-rock and cinematic anthem, about 2:40 at 120 BPM. It opens like Nose 2 Nose
+// "Steel Horizon": an original Tailon Lock pop-rock and cinematic anthem, about 2:40 at 120 BPM. It opens like Nose 2 Nose
 // (Pop) with a new tune: sea waves and a D minor bugle march grow under a jet that passes as the band enters. Then a
 // brass, bells and choir fanfare, a galloping guitar riff, a verse that starts sparse, a rising pre-chorus, a big
 // IV–I–V–vi chorus led by the OB-X8 synth, a twin-lead "dogfight" in harmony, a calm-sea bridge with sonar pings,

@@ -1,5 +1,5 @@
 # radar-search: radar search: soft triangle sweep blips, four per 2.2 s (loop)
-a4c-sfx 1
+tl-sfx 1
 play loop 112
 volume f
 wave mutew

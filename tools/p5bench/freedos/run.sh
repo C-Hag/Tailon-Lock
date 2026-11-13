@@ -13,7 +13,7 @@ cp "$R/build/p5dos/p5bench.exe" "$OUT/w/stage/BENCH/P5BENCH.EXE"
 cp "$CWS" "$OUT/w/stage/BENCH/CWSDPMI.EXE"
 for d in jets maps intro figure; do cp -r "$R/assets/$d" "$OUT/w/stage/BENCH/assets/"; done
 cp "$R/tools/p5bench/freedos/fdauto.bat" "$R/tools/p5bench/freedos/bochsrc.txt" "$OUT/w/"
-podman run --rm -v "$OUT/w:/w:Z" a4c-dos:1 sh -c '
+podman run --rm -v "$OUT/w:/w:Z" tl-dos:1 sh -c '
   printf "drive c: file=\"/w/bench.img\" offset=32256\nmtools_skip_check=1\n" > /tmp/m; export MTOOLSRC=/tmp/m
   mcopy -o /w/fdauto.bat c:/FDAUTO.BAT && mcopy -s -o /w/stage/BENCH c:/
   printf "c\n" | bochs -q -f /w/bochsrc.txt > /w/bochs_out.txt 2>&1 || true

@@ -1,148 +1,39 @@
-# Tailon Lock opening cinematic: shot script format, version 11
+# Tailon Lock opening cinematic: shot script format
 
 The intro that plays before the main menu is data. `intro_script.json` holds every camera move, every jet and missile
-path, the flares, the events, the text cards and the screen effects, all baked to world space. An engine only has to
-interpolate keys and draw; nothing is choreographed in engine code. The browser game plays it today
-(the browser game (`web/index.html`), the `IntroCore` and `Intro` modules between `---- intro core start ----` and `---- intro end ----`);
-the C port can load the same file.
+path, the flares, the events, the text cards and the screen effects, all baked to world space. The game only has to
+interpolate keys and draw; nothing is choreographed in engine code. `src/build_script.js` writes the file.
 
-Version 2 (2026-10-24) reshoots it like an aviation film. It has 24 shots cut on the beat, with long lenses on the deck at sunrise
-and the deck crew, including the shooter's launch signal. Cameras are bolted to the jets: cockpit with head-up display, wing, rail and tail.
-A hovering helicopter camera gives a speed pass. Heat haze, wing vapour from the g load, vapour cones, a warm grade and film grain finish the look.
-Everything new is additive: a version 1 player still plays it with keyed cameras and no crew.
+The film runs 81.75 s at 60 ticks a second, to the project's own song (`heartbeat-intro`). Its shots:
 
-Version 3 (2026-10-24) slows the cut down and tells a story. Version 2 was "TikTok fast". It now has 16 shots
-over 41 s instead of 24 over 36 s, joined by dissolves and whip pans as well as hard cuts, in three acts:
+- `fleet` (0.00 - 9.16 s): A wide flyby of CVN-90 Stormhaven at dawn: in from high off the stern, closing down her port side toward the bow, the whole ship, the sea and the horizon in the frame.
+- `sunrise` (9.16 - 12.86 s): Dawn on the deck through a long lens: both alert jets against the low sun in heat haze, a slow push and arc.
+- `radar` (12.86 - 16.72 s): The carrier's radar scope, filling the picture: the sweep finds two contacts closing from the north, and a slow push goes in as the operator hooks one.
+- `cic` (16.72 - 20.52 s): Inside the carrier's control room: the radar operator calls the contacts, the supervisor sounds the alert, the commander sends the alert fighters.
+- `takeoff` (20.52 - 24.32 s): One wide take of the launch from a helicopter off the carrier's port bow: the whole ship with both jets on the catapults at the alarm, off the bow on the band hit, the victory roll and the climb into the dawn.
+- `deck` (24.32 - 25.27 s): One take on the flight deck: up the deck from the shooter, through a long lens in the steam as he gives his run-up and launch signals; as his hand comes down, the catapult take.
+- `catapult` (25.27 - 28.60 s): One take on the catapults: at Viper 2's nozzle as the burners light, Viper 1 going, the shooter black against the sky, then after Viper 2 down the deck, off the bow in slow motion and level with it, the sun over it.
+- `takeoff2` (28.60 - 30.70 s): One wide take of the launch from a helicopter off the carrier's port bow: the whole ship with both jets on the catapults at the alarm, off the bow on the band hit, the victory roll and the climb into the dawn.
+- `drone` (30.70 - 33.32 s): A camera drone above and ahead of the pair as they leave the bow, wide, leading the climb: looking back at the noses with the carrier behind them, the victory roll, and both accelerating up toward the lens.
+- `ride` (33.32 - 38.12 s): Riding low beside the pair, looking across them into the sun and the water: Viper 1 and the Gladan side by side, vapour cones and the ba-boom.
+- `cockpit` (38.12 - 44.40 s): In Viper 1's cockpit: two contacts on the scope and in the head-up display's brackets, then the KS-55 and the drone in the windscreen, growing from dots until they fill it as they pass.
+- `merge` (44.40 - 46.46 s): From outside, a very long lens high on the line of the merge: the Vipers coming on, the KS-55 and the drone going away, stacked by the lens; they cross with vapour cones and all four break.
+- `fight1` (46.46 - 54.12 s): Into the sun through a long lens, level behind Viper 1 with Viper 2 on its wing: fox two, the flares fan out against the sun in slow motion and take the missile. The fight turns into the sun, the second missile, and the KS-55 goes up against it in slow motion, shards and smoke.
+- `fight2` (54.12 - 61.78 s): A slow half circle round the fight, low: the drone fires at Viper 2, flares and a hard break; the two cross against the sun in a flat scissors, wingtip trails, until Viper 2 is on the guns.
+- `pursuit` (61.78 - 67.53 s): Over the Gladan's shoulder: the drone runs for the sunrise, weaving; Viper 1 with them.
+- `lock` (67.53 - 73.14 s): In Viper 2's cockpit, the sun through the canopy: Viper 1 ahead in the windscreen, the drone beyond it running for the sunrise, jinking; the lock closes and Viper 2 fires.
+- `finale` (73.14 - 81.75 s): Behind the Gladan into the sun: Viper 2 (the Gladan) hits the drone on bar 13, dives a little and breaks away to the right with Viper 1 on its wing, and the fire and smoke drift together into TAILON LOCK, a cloud in the dawn sky, which the camera holds as it thins away.
 
-1. **Dawn and launch** (0 – 18 s): the sun rises behind the carrier, the deck wakes up, the klaxon goes, both Vipers
-   launch and run low over the sea.
-2. **The dogfight** (18 – 27.4 s): the merge, missiles against flares, Viper 2 defending, guns, and splash one on the riff.
-3. **The last kill** (27.4 s – end): Viper 2 chases the last bandit into the sunrise, locks, fires, and the hit lands
-   on bar 13. Its fire and smoke drift together into a cloud that spells **TAILON LOCK** in the dawn sky, with THE GREAT NOSE2NOSE ENGAGEMENT under it.
-
-Version 4 (2026-10-24, the C port) cuts it to about 55 s with longer shots and real fighter manoeuvres, on a new
-music cue: Steel Horizon's film cut in C minor (`horizon-intro`, `tools/write_synthwave.py` horizon_film), the band hit
-on bar 7 of the C64 frame clock (11.99 s). The low run lasts two bars longer and the merge is on bar 6 after the hit;
-every dogfight phase is two bars, so the turns are flown at real rates (about 25 degrees a second): Viper 1 fires,
-is decoyed, and flies a high yo-yo to stay behind the turning bandit; Viper 2 breaks hard into the bandit's shot;
-the two fall into a flat scissors, the bandit a beat late on each reversal, and Viper 2 gets the guns; Viper 1
-comes down in a low yo-yo for the splash; the last bandit is chased in lag pursuit and killed on bar 19. The deck
-and shooter shots are one crane move, the gun camera gives way to an outside view of the scissors, and after the
-smoke spells TAILON LOCK it holds, then dissolves back into drifting smoke (`dissolve` on the `smoketitle` effect)
-before the menu. The browser game still plays version 3.
-
-Version 5 (2026-10-27, the C port) holds each take longer and lets the camera follow the jets. the brief asked for
-longer takes, camera angles that follow the movement, wider framing, slower pacing between takes with quicker cuts, a
-more detailed cockpit, and an enemy of one jet plus one drone. The music, the flight paths and the cue times are
-unchanged. The 14 shots become 11, joined by hard cuts and two short dissolves (0.6 s and 0.3 s):
-
-- `deck` is one take from 5.5 s to the band hit: the dolly, the crane to the shooter, and a pan onto Viper 1 as the
-  catapult fires and it roars past. `launch` is gone.
-- `chase` (band hit to 17.96 s) replaces `offbow` and `topdown`: a camera jet starts behind Viper 1 and swings out and
-  forward round the pair until it looks back at both NF-24s over the sea.
-- `foxtwo` (23.94 to 27.35 s) replaces `railcam` and `teleflare`: on Viper 1's wing as the missile leaves, then falling
-  back while the frame opens onto the bandit's flares.
-- `lock` (37.59 to 43.42 s) replaces `pursuit` and the short lock shot: one take in Viper 2's cockpit.
-- The chase cameras use `smooth()` in the builder, an operator's lag and lead on the jets they follow, and a level
-  frame along the jet's track, so the horizon stays put while the jet rolls.
-- The second bandit is the DR-7 Vesper drone (`model: "dr7"`, the game's `MESH_DRONE`, one centre-line nozzle, about
-  12 m long). The radar inset shows 2 contacts, and the cards and radio calls name the KS-55 and the drone.
-
-Version 7 (2026-10-27) is cut to the main theme, Full Burn, instead of Steel Horizon's film cut: first "Arp sound DMX3", re-scored on 2026-10-28 to "Arp sound DMX10" (the same bars and timing, so every cue holds).
-`music.track` is `fullburn-intro`, a recording (`assets/music/fullburn-intro.wav`, credits in `fullburn-intro.txt`).
-It starts with half a second of silence and runs bars 1 - 40 of the song. The game plays it once (`music.c` plays a
-theme from `assets/music/<key>.wav` when one exists), and the menu theme takes over when it ends. A bar is 96 / 50.125
-= 1.9152 s. The full beat comes in on bar 7, at 11.99 s, which stays the band hit. `bar(n)` is n bars after it.
-On 2026-10-30 the launch and the skim pass were reflown: both Vipers rotate nose-up off the bow (the attitude now carries the angle of attack, `fly()`'s `aoa`) and keep climbing instead of diving back at the sea; they come through the barrier side by side, each with its own vapour cone and boom; and the skim camera runs between them on an 18 mm so neither is cut off. `tools/frame_check.js` now checks a jet's nose, tail and wing tips, not only its centre, unless the camera rides within 60 m of it.
-On 2026-10-31 the band-hit chase became `launch` (one beat before the hit to 18.69 s): a camera plane comes up behind the carrier, high off her starboard quarter, with the whole ship in the frame as both Vipers go off the bow, then flies on past her and closes in behind the pair in that front three-quarter view through the victory roll, the clearing turn and the climb. The `deck` take now ends at 11.51 s. Each sonic boom is a classic "ba-boom": the C port's `SND_NWAVE` voice (src/sfx.c) and the browser's `sonicBoom()` play the N-wave's two shocks 0.21 s apart, and the wingman's boom lands 0.04 s after the leader's (19.54 s): side by side, the pair is one heavy ba-boom.
-On 2026-10-31, from the storyboard (`tools/storyboard`), the launch cuts away as Viper 1 leaves the bow (`launch` 11.51 - 12.6) to `drone` (12.6 - 17.4, 16 mm): a camera drone that starts 45 degrees above and ahead of the take-off point and leads the climb, looking back at the noses through the victory roll. The pair now climb hard off the bow (up to 20 degrees, accelerating), Viper 2 alongside by the roll, and are about 320 m up at the boom; the low skim pass is gone. `boom` (17.4 - 24.44, 24 mm) is a camera plane off their right wing, slower than them: they pass it on the ba-boom and pull away climbing to the merge at 480 m. `fly()`'s coordinated floor now also holds across the path, so easing the nose over in a steep, accelerating climb no longer rolls a jet over.
-Version 8 (2026-11-05) reshoots the film in a low, long-lens camera language: the same music, sync points, grade, control room, finale length, kills and cards, 11 shots in three acts, every take of the 3D film 5 to 8 s on the film clock (control room 3.8 s, finale 8.9 s). The sun stays where it was (azimuth 80, elevation 3.3), so the backlit shots look east from the carrier's port side.
-Act 1: `sunrise` (the close-in on the carrier, as before version 8), `cic`, `catapult` (abeam Viper 2's nozzle as the burners light, then on the deck inboard of the edge, so the hull never shows: the shooter black against the sky, after Viper 2 down the deck, level with it off the bow in slow motion; the film's one low angle from behind), `overpass` (low on the sea ahead of the bow, over the camera through the victory roll, which then rises to hang straight above the pair for the ba-boom). Act 2: `cockpit` (Viper 1: the bandits on the scope and in the head-up display first, then in the windscreen), `merge` (from outside, a very long lens high on the line of the merge: all four jets, the crossing, the break), `fight1` (a long lens into the sun, the fight flown toward it: flares and splash one in slow motion), `fight2` (a slow half circle round the scissors). Act 3: `pursuit` (a long lens from ahead), `lock`, `finale` (a long lens high behind both Vipers, to the side of the sun, following the wreck down to its splash). Viper 2 is a JA 46 Gladan, spotted ahead of Viper 1 on the deck (fires at 10.95 s, same time off the bow) so the two do not overlap, and the cut into the cockpit shot is where the bandits' path starts.
-Version 9 (2026-11-05) lengthens act 1 to 81.8 s, from our own carrier take-off camera study: two new 4-bar takes before the launch, so nothing after it changes. `fleet` (0 - 7.66) opens the film on a far, backlit panorama: the carrier 2.5 km off against the sunrise on a 120 - 150 mm lens, the location cards over it, then a dissolve into `sunrise`. `deck` (16.66 - 24.32) is one crane move on Viper 1 on its catapult after the control room: up the nose past the cockpit, out to the jet in profile as the launch steam rolls aft under it, and down to the shooter's run-up signal against the sun (50 / 60 / 40 / 35 mm). `build_script.js` makes the room with `insertTime(P, D)`: every time at or after P moves by D (keys, windows, shots, cards, effects, emitters, warp, cues), a window that ends less than 1 s past P keeps its end, steam that starts less than 1.5 s before P moves whole, and the ship and the parked and pre-launch keys move back along her course so the geography after the launch is the same as version 8's. The score follows with `music.song_shift` = 15.32 s (8 bars): the film cut of Full Burn plays bars 1-4, 3-4 twice, 5-6 three times, then 7 on (`tools/fullburn_score.py`, `INTRO_CUT`), so the band hit is at 27.31 s and every sync point after it keeps its bar. The menu's Full Burn picks up at the film clock minus `song_shift`.
-Version 10 (2026-11-05) reworks act 1 and the cuts from review notes on version 9, the length and the score unchanged. `sunrise` (7.66 - 12.86) no longer flies in behind the carrier: a camera helicopter just off her bow, low, looks back down the deck at the two alert jets on the bow catapults, noses to the lens, closing and sinking on a 55 - 75 mm lens. `deck` (the crane move on Viper 1) now comes before the control room, so `catapult` follows the commander's order straight after it. In `overpass` the camera climbs after the pair to fly below them and out to the side, looking about 45 degrees up at both noses as the vapour cones form on the ba-boom (it no longer hangs overhead). `cockpit` holds the approach until the bandits pass (0.15 s before the merge cue) and cuts on the pass to `merge`, the break from outside. In the finale Viper 2 (the JA 46 Gladan) makes the kill, eases its nose down 8 degrees, and breaks away to the right in a climbing turn with Viper 1 on its wing; nobody follows the wreck down, and the camera holds on the smoke title instead of tilting down to the splash.
-Version 11 (2026-11-05) follows the owner's own edit of the earlier films, in its order, at the same 82 s and score. `fleet` (0 - 7.66) is now the 0.1.0 flyby at dawn, slowed to the longer opening: in from high off the stern, down her port side. `sunrise` (7.66 - 12.86) is the first new cut's dawn: a 135 mm lens a metre over the deck from off her port side, both alert jets against the low sun. Then `deck`, `cic` and `catapult` as in version 10. The overpass gives way to two takes: `drone` (13.7 - 18.0 story time), the 0.1.0 camera drone leading the climb, looking back down at the noses; and `ride` (18.0 - 22.8), a camera jet low beside the pair looking across them into the sun and the water through the boom. `cockpit` starts at 22.8 and cuts on the pass to `merge`; the dogfight (`fight1`, `fight2`) is unchanged. `pursuit` is the 0.1.0 camera over the Gladan's shoulder; `finale` comes in close behind the Gladan, 150 m back, for the kill and its break away, and holds on the smoke title. The sea haze of the overhead take is gone with it. After a frame-by-frame review: the `merge` camera moved 300 m west, off the line of the airfield's runway that showed under the jets through the 500 mm lens; the `finale` camera sits 30 m below the Gladan, so the kill plays against the bright sky; and the subtitle under the smoke title is warm white with a shadow (it was deep violet, lost on the grey sea).
-
-The framing rule: every jet of the film, parked ones too, counts in every shot for the whole shot. `tools/frame_check.js --strict` takes the 8 corners of each jet's bounding box and fails if any corner is outside 92 % of the letterbox at any sample, or if a jet has no path there, with no grace. The only ways out are written in the script per shot and listed in the check's output: `absent` `[{id, reason, from?, to?}]` says a jet is not in this shot and why, and it must then not show; `closeup` names one jet that may run past the frame edge with its centre staying in the frame (`catapult`: Viper 2).
+The framing rule: every jet of the film, parked ones too, counts in every shot for the whole shot. `tools/frame_check.js --strict` takes the 8 corners of each jet's bounding box and fails if any corner is outside 92 % of the letterbox at any sample, or if a jet has no path there, with no grace. Jets seen through a long lens in the background may be listed per shot as `partial` (their centre stays in the frame). The only ways out are written in the script per shot and listed in the check's output: `absent` `[{id, reason, from?, to?}]` says a jet is not in this shot and why, and it must then not show; `closeup` names one jet that may run past the frame edge with its centre staying in the frame (`catapult`: Viper 2).
 Who is where: the bandits come in at the cut into the merge and stay in its frame to its end. Viper 2 flies on Viper 1's wing through the first fight, the drone having no path there. Viper 1 flies top cover over the second fight, on Viper 2's right through the pursuit, and ahead of it in the windscreen through the lock (from that cockpit Viper 2 itself is not drawn). In the finale both Vipers are behind the drone at the hit, then go down after the wreck and circle where it hits the sea.
 The `seahaze` effect (`amount`) is a haze just beyond the jets when the camera looks steeply down from height, over the sea's blotches; it is in the film's own code, not the game's sea.
 The title holds sharp until 1.25 s before the wreck's splash, then vaporizes; while it reads, the camera keeps the wreck and the Vipers low in the picture, under the letters.
-New in the format, all additive: `warp`, a list of `[film clock, story time]` pairs: the music and the sync points run on the film clock, everything in this file on story time, and outside the list the two are the same. The builder eases the rate down and up and makes up the time by easing a little faster (at most 1.4 times), with no jumps, and it fails if any sync point is off. A shot's `shade` (0..1) dims the jets, and turns the crew black, when they are against the sun. The `glow` effect (`amount`) is the sun in the lens: soft layers over the sky's hard disc, a bloom, a veil and two faint ghosts, under the grade; the grade's numbers do not change, and the grain keeps to the film clock in slow motion. At an `explode` of size 2 or more (a kill) the game ducks the music by 4 dB for half a second (`sfx_duck_music`, eased with a 40 ms time constant, before the master volume and the limiter); it is restored at once if the film is skipped, and nothing else in the game uses it. The browser player ignores `warp`, `shade`, `glow` and the duck, and has no Gladan mesh: its copy of the script (`web/index.html`) gives Viper 2 the NF-24, and it plays the same shots at normal speed.
-The story follows the song's sections. In the intro, the sunrise and the deck. In the riff (bar 2 - 10), the chase, a
-skim pass with a camera low over the water, and the cockpit through the climb and the merge (bar 9). In the verse
-(10 - 18), the two fights, 7.7 s each. In the pre-chorus (18 - 26), the pursuit (bar 18 - 21), the lock and the last
-kill (bar 24.25). The smoke forms TAILON LOCK as the chorus comes in on bar 26 (61.8 s), and the menu opens at 69.2 s.
-After it forms, the title vaporizes over 3.5 s (`dissolve` ends at the wreck's `splash`). The drone's wreck dives
-into the sea 7.6 s after the hit (`kill` with `fall`), and the finale camera tilts down after it, so the title is gone
-as the wreck splashes in, at 65.9 s. The menu opens at 66.4 s. There are 10 shots, every take from 5.3 to 7.7 s. The low run now climbs to 480 m from bar 4.5, because the longer run
-reached the islands. The builder checks every jet against the terrain grid, and it clears the clouds along the drone's
-run.
-
-Version 6 (2026-10-27) cuts like a film: the brief asked for takes of 5 to 8 seconds, "a real intro, not a TikTok
-one". There are 8 shots, and every take before the finale runs 5.4 to 6.8 s: `sunrise` (5.5), `deck` (6.5), `chase` to
-18.3 s (6.3), `cockpit` from the low run through the merge (5.6), `fight1` (6.8), `fight2` (6.8), `lock` (5.9), then
-`finale`. The two dogfights are flown as continuous fights now, so a camera can stay on one for a whole take without a
-jet jumping. In `fight1`, Viper 1 comes out of its pull-up after the KS-55 (`onward` with `pursue`). The first missile
-is decoyed, Viper 1 stays in the bandit's turns, and the second missile is splash one at 29.55 s. In `fight2`, the drone
-flies Viper 2's own track shifted in time, starting 1.9 s behind it (it fires) and ending 1.1 s ahead of it. It slides
-outside the break as it overshoots, so Viper 2 ends up behind it for the guns. The drone's run for the sunrise and the
-last kill on bar 19 are unchanged. The skim pass is cut.
-
-Framing (2026-10-29): every shot lists its `subjects`, actor ids or `[id, from, to]`. The builder's `frameSubjects`
-keeps them inside the letterboxed 2.35:1 frame (74 % of its half-width and half-height): it moves the aim just enough,
-and widens the lens when they do not fit, both eased over about a second. A ship counts by its bow and stern, so the
-whole ship stays in. `tools/frame_check.js --strict` checks every shot, and the checker runs it in stage 3. The flyby
-is now wide: water, the whole carrier and the horizon stay in the frame from a kilometre out until we pass the bow.
-On the control room's scope the two contacts close from the rim toward the ship over the shot, each sweep leaving an
-echo of where they were.
-The people in the control room have bodies from a small figure engine (`figure()` in the browser game, the same in
-`src/cic.c`). It is a skeleton with adult proportions from published body measurements, in head heights: shoulders
-1.75 across, upper arm 1.45, forearm 1.16, hand 0.83, the neck's base 1.25 below the crown. Each person is posed by
-joint angles (trunk lean; shoulder flex and spread, elbow, wrist and finger curl for each arm). It is drawn as shaded,
-tapered limbs under the uniform: the shoulder's cap, the upper arm and forearm muscles, creases at the elbow, the
-cuff, and a hand with thumb, palm and curling fingers. The operator leans in with both hands at the keyboard. The
-supervisor holds the clipboard against his chest. The commander rests his forearm on the armrest and raises his hand
-as he gives the order.
-
-The opening (2026-10-29, the same in the browser game and the C port) starts with a fast flyby: in from high off
-the carrier's stern, down her port side, turning to hold the whole ship as we pass the bow (`sunrise`, 0 - 5.2 s).
-Then a 0.5 s dissolve into the carrier's control room (`cic`, 5.2 - 9.0 s, `scene: "cic"`): a take that opens tight
-on the two hostile blips on the radar scope and pulls back to the radar operator, the supervisor and the commander.
-The three speak in turn in the lower bar (`dialog` cards): "BOGEYS! TWO CONTACTS, BEARING 3-5-0, CLOSING FAST.",
-"ALERT, ALERT! WE HAVE INBOUND.", "SEND THE BIRDS.". The `deck` take comes in at 9.0 s with a 0.3 s dissolve, with
-the alarm vignette (9 - 10 s) and a shake (9.6 - 10 s). The radar inset and the alert cards are gone, and the
-location cards end at 5.1 s. Sonic booms (`boom`) sound at 19.5 s and 29.0 s (`vol` 0.7). All the film's sound
-effects play at 45% of their level, under the music.
-
-New in version 5: `hud.panel` (true) draws the game's own cockpit in that shot instead of the simple one. That is the
-match HUD (`hud_draw`: heading tape, gunsight, G meter, brackets with ranges on both enemies, a wingman tag, ENEMY JETS,
-the lock diamond and status lines) and the jet's instrument panel (`hud_panel`, the NF-24's dials, VDI and HSD). The
-engine fills a stand-in match with the script's live jets, giving each its speed and its g from the path. The panel
-takes the place of the lower letterbox bar, and the callsign and radio lines move to the upper bar. A canopy bow with
-mirrors, the side rails, the HUD combiner glass and the glare shield frame the view. `hud.lock [t0, t1]` closes the
-lock diamond over that window and shows LOCK from t1. Where one path of a jet ends as its next starts, at the same
-time, `sample` now takes the later path, so a shot cut on that time sees the jet where its new path starts.
-
-New in version 3: shot transitions (`in`), the `smoketitle` effect, the `subtitle` card, and cues `last_kill` and
-`title_formed`. The colour grade is the same as version 2; keep it exactly. A version 2 player plays a version 3 script
-with hard cuts and no title, so add the `smoketitle` before shipping.
-
-| File | What it is |
-|---|---|
-| `intro_script.json` | The shot script (this document). |
-| `intro_assets.json` | What the scene needs from the rest of the project, collected by `src/build_assets.py`: the NF-24 mesh and far LOD, the CVN-90 mesh and catapults, Twin Isles terrain at 400 m, its dawn light, the cumulus puffs of its "scattered" weather. |
-| `src/build_script.js` | The authoring tool. Waypoints, missile guidance, camera moves and cue times live here; it writes `intro_script.json`. Edit this, not the JSON. |
-| `src/intro_core.js` | Engine-neutral helpers shared by the builder and the game: key sampling, angles to axes, flare paths, ship motion. Port these first. |
-| `src/intro.js` | The browser player (rendering, particles, sounds, skip handling). |
-| `src/build_intro.py` | Patches the intro into the browser game (`web/index.html`), and puts in the current Steel Horizon and Pop modules (`src/music_horizon.js`, `src/music_pop.js`, copied from `music/engines/` in the repo). Re-appliable on a file that already has the intro; anchors on exact strings. |
-| `tools/render_frames.js`, `tools/flow_test.js` | Playwright checks: still frames of chosen times, and the boot, skip, menu and game flow. |
-
-Rebuild: `node src/build_script.js intro_script.json`, `python3 src/build_assets.py <ace4combat dir> intro_assets.json`,
-then `python3 src/build_intro.py <game.html> . [out.html]`.
+The format also has `warp`, a list of `[film clock, story time]` pairs: the music and the sync points run on the film clock, everything in this file on story time, and outside the list the two are the same. The builder eases the rate down and up and makes up the time by easing a little faster (at most 1.4 times), with no jumps, and it fails if any sync point is off. A shot's `shade` (0..1) dims the jets, and turns the crew black, when they are against the sun. The `glow` effect (`amount`) is the sun in the lens: soft layers over the sky's hard disc, a bloom, a veil and two faint ghosts, under the grade; the grade's numbers do not change, and the grain keeps to the film clock in slow motion. At an `explode` of size 2 or more (a kill) the game ducks the music by 4 dB for half a second (`sfx_duck_music`, eased with a 40 ms time constant, before the master volume and the limiter); it is restored at once if the film is skipped, and nothing else in the game uses it. The browser player ignores `warp`, `shade`, `glow` and the duck, and has no Gladan mesh: its copy of the script (`web/index.html`) gives Viper 2 the NF-24, and it plays the same shots at normal speed.
 
 ## Clock, music and the timeline
 
-Time is seconds from the first sample of the music cue, `music.module` = `HorizonMusic` (Steel Horizon,
-the heavy C64-style mix from the music work). Drive the picture from the audio clock, not the frame counter, so a slow frame never puts picture and music
+Time is seconds from the first sample of the film's song (`heartbeat-intro`, a recording); the cues below are the
+beat grid the film is cut to. Drive the picture from the audio clock, not the frame counter, so a slow frame never puts picture and music
 out of step. Without audio, run on the wall clock.
 
 `music.cues`: jet build-up at 120 BPM (bar lines at 8, 10, 12 s), the jet pass and band hit at `band_hit` = 12.05 s,
@@ -169,7 +60,7 @@ starts at `band_hit + n * bar`. The shots cut on those bars and half bars.
 | 33.10 – … | finale | 40 mm | cut | Behind Viper 2 into the sun: the hit on bar 13 (`last_kill` 34.24), the Vipers split, the camera glides to a stop. The fire and smoke form **TAILON LOCK** from 34.59 to `title_formed` 37.54, with the subtitle "THE GREAT NOSE2NOSE ENGAGEMENT" under it. |
 | 41.06 | | | | `menu_at` (bar 17): the menu opens over the last shot, which keeps drifting and billowing. |
 
-Music cue times are unchanged from version 2 (build-up 8, 10, 12 s; hit 12.05; bar 1.70667 s), so any score written
+Music cue times (build-up 8, 10, 12 s; hit 12.05; bar 1.70667 s), so any score written
 to them still lines up. The intro is just longer, so the score needs bars 14 to 17 to carry the title.
 
 ## Shots
@@ -187,12 +78,12 @@ a full-frame sensor (24 mm tall) it was chosen as, and `rig` says what kind of c
 - `vibe {a, f}`: camera jitter with amplitude `a` times the fov (in degrees) at about `f` Hz: slow drift for a
   long lens held by hand or on a boat, fast buzz for a camera bolted to an airframe.
 - `scene`: the shot is not of the 3D world but a scene the engine draws itself. `"cic"` is the carrier's control
-  room (in the browser game `drawCIC`, in the C port `src/cic.c`), drawn in code from the shot's `t0` and `t1`. The
+  room (`src/cic.c`), drawn in code from the shot's `t0` and `t1`. The
   room is a 3D mesh made in code (`assets/figure/figure.js` `room`, `src/room.c`): a refit-era gun ship's combat
   centre on our fictional carrier, lit by its own lamps, each screen's content mapped onto its face. Its
   `cam` keys only hold a still pose for engines that need one. A dissolve to or from it fades the drawn room over the
   3D picture.
-- `in {type, dur, dir?}` (version 3): how the shot starts.
+- `in {type, dur, dir?}`: how the shot starts.
   - `dissolve`: over `[t0, t0 + dur]` draw the previous shot, then this one over it, with this one's opacity
     eased (smoothstep) from 0 to 1. The previous shot keeps moving: every shot's `cam` keys run 1.2 s past its `t1`
     (where its actors still exist), so sample the previous shot at t, not at its last key.
@@ -211,8 +102,8 @@ Styles: `location` (lower third, large, underline grows), `sub` (under it), `ale
 `alert-sub`, `callsign` (left, in the lower letterbox bar), `radio` (centred, in quotes, in the lower bar), `dialog`
 (a line spoken on screen: `speaker` in amber, then the text in white, centred as one line on the whole text in the
 lower bar), `title`
-(the game title, huge, slams in from 1.9× over 0.22 s with a glint; version 3 uses the `smoketitle` effect instead),
-`subtitle` (version 3: small, centred just under the smoke title at 42% of the height plus 0.115 × min(width, 1.6 × height),
+(the game title, huge, slams in from 1.9× over 0.22 s with a glint),
+`subtitle` (small, centred just under the smoke title at 42% of the height plus 0.115 × min(width, 1.6 × height),
 fading in over 1.2 s), `press` ("PRESS ANY KEY"). Cards fade out over
 their last 0.5 s.
 
@@ -225,7 +116,7 @@ also draw it behind every lit afterburner), `fade` (`from`→`to` alpha of `colo
 `period`), `radar` (scope inset, `contacts` blips at `bearing`), `shake` (camera jitter of a few tenths of a degree
 fading over the window, scaled by `amount`).
 
-`smoketitle` (version 3) `{t0, t1, text, pos, form [f0, f1], seed}`: the last kill's fire and smoke turn into a cloud
+`smoketitle` `{t0, t1, text, pos, form [f0, f1], seed}`: the last kill's fire and smoke turn into a cloud
 that spells `text`. Draw it inside the picture, under the grade and letterbox, so the film look applies to it.
 
 1. Layout, once per screen size: rasterize `text` in the game font, bold, centred at 42% of the screen height, at
@@ -249,13 +140,13 @@ that spells `text`. Draw it inside the picture, under the grade and letterbox, s
 
 ## Environment
 
-`env.sun` (version 2) overrides the map's dawn sun direction: it is lowered to 3.3 degrees so the sun sits right
+`env.sun` overrides the map's dawn sun direction: it is lowered to 3.3 degrees so the sun sits right
 behind the carrier's island in the 400 mm opening shot. Light everything with it.
 
 `env.map` / `time_of_day` / `weather` name the map preset the scene uses (Twin Isles, dawn, scattered). The data an
 engine needs from them is in `intro_assets.json`; the browser draws sky and sea from the dawn colours, puff clouds per
 the maps format, and Twin Isles land at 400 m. `env.extra_clouds` adds a cumulus on the climb path, in the maps
-format (`x, z, base, top, puffs [dx, dy, dz, r]`). `env.clear_clouds` (version 3) lists `[x, z, r]` circles of
+format (`x, z, base, top, puffs [dx, dy, dz, r]`). `env.clear_clouds` lists `[x, z, r]` circles of
 open sky: leave out every map cloud whose centre is inside one, so the last chase does not fly through a towering cumulus. The camera flies through it: a puff contains the camera when the
 distance to its centre is under its radius; fade the picture toward the cloud colour by how deep inside it is.
 

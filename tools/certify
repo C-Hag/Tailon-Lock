@@ -17,15 +17,15 @@ certificate is a chain: change or drop one line and every seal above it no longe
       (a failed or --quick run writes a draft in build/certs/ instead)
   tools/certify windows --exe build/windows-mingw/TailonLock.exe --vm-logs DIR
       the Windows stack, on Linux: the cross-build here, then the logs of the matches played in the Windows VM
-      (DIR holds solo-*.log, the pairs' host/guest logs, made with the A4C_LOG hook, and audit*.log, the VM's
-      `--audit --part sorties --sorties 112` with A4C_AUDIT_DEATHS=1; see docs/TEST_GUIDE.md)
+      (DIR holds solo-*.log, the pairs' host/guest logs, made with the TL_LOG hook, and audit*.log, the VM's
+      `--audit --part sorties --sorties 112` with TL_AUDIT_DEATHS=1; see docs/TEST_GUIDE.md)
   tools/certify cross --name linux-macos HOST.log GUEST.log [...]
       a cross-machine block: pairs of host and guest logs, every pair must agree on every match
   tools/certify release CERT [CERT ...] --hands-on LINUX.md MACOS.md WINDOWS.md
       the release certificate: one certificate per system and the cross-machine ones, all on the same commit and
       every chain intact, and the hands-on checklist (docs/TEST_GUIDE.md section 5, copied once per system into
       certs/<commit>-hands-on-<system>.md) with every box ticked
-  tools/certify plat [--fuzz S] [--sound S] [--sdl-exe PATH] [--skip-certify]
+  tools/certify plat [--fuzz S] [--sound S] [--skip-certify]
       the platform layer's brick ladder on this computer (Linux, macOS), P0 to P7; each brick runs only when every
       brick under it has passed and is sealed like a block: writes certs/<commit>-plat-<system>.cert
   tools/certify plat-windows --vm-logs DIR [--exe build/windows-mingw/TailonLock.exe]
@@ -162,7 +162,7 @@ def b_build(log):
     parts = []
     for p in (rel, dbg):
         d = os.path.join(ROOT, 'build', 'cert-' + p)
-        rc, out = sh(['cmake', '--preset', p, '-B', d, '-DA4C_WERROR=ON'], log=log + '-%s-configure.log' % p)
+        rc, out = sh(['cmake', '--preset', p, '-B', d, '-DTL_WERROR=ON'], log=log + '-%s-configure.log' % p)
         if rc != 0:
             return False, '%s: configure failed' % p
         rc, out = sh(['cmake', '--build', d, '-j', str(os.cpu_count() or 4)], log=log + '-%s.log' % p)
@@ -244,7 +244,7 @@ def b_network(log):
 def b_sanitizer(log):
     d = os.path.join(ROOT, 'build', 'cert-asan')
     cc = 'clang'
-    rc, _ = sh(['cmake', '-S', ROOT, '-B', d, '-DCMAKE_BUILD_TYPE=Debug', '-DA4C_SANITIZE=ON', '-DCMAKE_C_COMPILER=' + cc] +
+    rc, _ = sh(['cmake', '-S', ROOT, '-B', d, '-DCMAKE_BUILD_TYPE=Debug', '-DTL_SANITIZE=ON', '-DCMAKE_C_COMPILER=' + cc] +
                (['-G', 'Ninja'] if shutil.which('ninja') else []), log=log + '-configure.log')
     if rc != 0:
         return False, 'ASan build: configure failed'
@@ -281,8 +281,8 @@ def b_behaviour(log):
     exe = game_exe()
     if not exe:
         return False, 'no game in ' + build_dir()
-    env = dict(os.environ, A4C_VIDEO='dummy', A4C_AUDIO='dummy',
-               A4C_CONFIG_DIR=tempfile.mkdtemp(prefix='certify-settings-'))  # never the player's own settings
+    env = dict(os.environ, TL_VIDEO='dummy', TL_AUDIO='dummy',
+               TL_CONFIG_DIR=tempfile.mkdtemp(prefix='certify-settings-'))  # never the player's own settings
     rc, out = sh([exe, '--audit', '--part', 'spec'], env=env, log=log + '-spec.log')
     fs = re.search(r'(\d+) failed checks?', out)
     if rc != 0:
@@ -295,7 +295,7 @@ def b_behaviour(log):
     nfeat = out.count('[PASS]')
     # the matches, one process per jet, side by side; with every death logged (where, how fast, how), so the
     # digest below follows each match tick by tick
-    env['A4C_AUDIT_DEATHS'] = '1'
+    env['TL_AUDIT_DEATHS'] = '1'
     procs = []
     for j in AUDIT_JETS:
         f = open(log + '-sorties-%s.game.log' % j, 'w')  # the game's own log lines, apart from the audit's
@@ -431,7 +431,7 @@ def windows(a):
     st.block(4, 'network', vm('network'))
 
     def behaviour(log):
-        """the VM's own audit (audit*.log: --audit --part sorties --sorties 112 --out audit.log with A4C_AUDIT_DEATHS=1,
+        """the VM's own audit (audit*.log: --audit --part sorties --sorties 112 --out audit.log with TL_AUDIT_DEATHS=1,
         all aircraft in one run or one per --only) must match the reference digest bit for bit"""
         logs = sorted(f for f in os.listdir(a.vm_logs) if f.startswith('audit') and f.endswith('.log'))
         if not logs:
@@ -561,7 +561,7 @@ def release(a):
 # P0 build     warnings as errors on every compiler of this system, the Clang static analyzer clean on src/platform, and
 #              tools/static (cppcheck, clang-tidy) with every finding fixed or justified in tools/static.supp
 # P1 core      plat_core's own tests and fuzzing (the WAV and keymap readers) under AddressSanitizer + UBSan;
-#              on Linux also under Valgrind memcheck; and, where a clang with libFuzzer is found (A4C_LIBFUZZER_CC
+#              on Linux also under Valgrind memcheck; and, where a clang with libFuzzer is found (TL_LIBFUZZER_CC
 #              or the clang on the PATH), every libFuzzer target (tests/lf_*.c) for PLAT_LF seconds over its corpus
 # P2 cycles    the real backend started and stopped 1000 times headless, 100 of them with the GPU: no leak; on Linux
 #              the whole game started and quit 20 times under memcheck
@@ -571,10 +571,10 @@ def release(a):
 #              music render's hash; on Linux helgrind and drd over 600 frames of the sound storm
 # P5 pads      the made-up pads (tools/btpad, 11 scenarios) under ASan; pads plugged in and out for real (uinput)
 # P6 gpu       --audit --part views --gpu with no failure, under the API's validation layer where the system has it;
-#              no leak; the frame time no worse than the SDL build's (--sdl-exe)
+#              no leak (the frame time is tools/check stage 9's)
 # P7 certify   the whole certificate (tools/certify run), whose block 10 holds the audit's digest
 PLAT_SRC = os.path.join(ROOT, 'src', 'platform')
-PLAT_ENV = {'A4C_VIDEO': 'offscreen', 'A4C_AUDIO': 'dummy'}
+PLAT_ENV = {'TL_VIDEO': 'offscreen', 'TL_AUDIO': 'dummy'}
 
 
 # a target that ran fewer inputs than this was stalled, not fuzzed (each one runs thousands a second when healthy)
@@ -582,10 +582,10 @@ LF_MIN_RUNS = 1000
 
 
 def lf_symbolizer(cc):
-    """llvm-symbolizer for the sanitizers' reports where one is found (A4C_LLVM_SYMBOLIZER, next to cc, then PATH),
+    """llvm-symbolizer for the sanitizers' reports where one is found (TL_LLVM_SYMBOLIZER, next to cc, then PATH),
     so a crash report on macOS does not wait on atos; without one, the runtime's own choice"""
     beside = os.path.join(os.path.dirname(cc), 'llvm-symbolizer')
-    path = os.environ.get('A4C_LLVM_SYMBOLIZER') or (beside if os.path.isfile(beside) else shutil.which('llvm-symbolizer'))
+    path = os.environ.get('TL_LLVM_SYMBOLIZER') or (beside if os.path.isfile(beside) else shutil.which('llvm-symbolizer'))
     if not path:
         return {}
     opt = 'external_symbolizer_path=' + path
@@ -606,7 +606,7 @@ def cfg_env(extra=None):
 def plat_build(name, args, log):
     d = os.path.join(ROOT, 'build', 'plat-' + name)
     gen = ['-G', 'Ninja'] if shutil.which('ninja') else []
-    rc, out = sh(['cmake', '-S', ROOT, '-B', d, '-DA4C_WERROR=ON'] + gen + args, log=log + '-%s-configure.log' % name)
+    rc, out = sh(['cmake', '-S', ROOT, '-B', d, '-DTL_WERROR=ON'] + gen + args, log=log + '-%s-configure.log' % name)
     if rc != 0:
         return None, '%s: configure failed' % name
     rc, out = sh(['cmake', '--build', d, '-j', str(os.cpu_count() or 4)], log=log + '-%s.log' % name)
@@ -617,7 +617,7 @@ def plat_build(name, args, log):
 
 
 def asan_dir(log):
-    d, err = plat_build('asan', ['-DCMAKE_BUILD_TYPE=Debug', '-DA4C_SANITIZE=ON', '-DCMAKE_C_COMPILER=clang'], log)
+    d, err = plat_build('asan', ['-DCMAKE_BUILD_TYPE=Debug', '-DTL_SANITIZE=ON', '-DCMAKE_C_COMPILER=clang'], log)
     return d, err
 
 
@@ -641,7 +641,7 @@ def p_build(log):
                 return False, err
             builds.append(name)
         if shutil.which('x86_64-w64-mingw32-gcc'):
-            d, err = plat_build('mingw', ['-DCMAKE_BUILD_TYPE=Release', '-DA4C_BUILD_TESTS=OFF',
+            d, err = plat_build('mingw', ['-DCMAKE_BUILD_TYPE=Release', '-DTL_BUILD_TESTS=OFF',
                                           '-DCMAKE_TOOLCHAIN_FILE=' + os.path.join(ROOT, 'cmake', 'mingw64.cmake')], log)
             if err:
                 return False, err
@@ -705,12 +705,12 @@ PLAT_LF = 60  # P1: seconds each libFuzzer target runs over its corpus
 
 
 def libfuzzer_cc():
-    """A4C_LIBFUZZER_CC, or the clang on the PATH, if it builds and links a libFuzzer target; else None"""
+    """TL_LIBFUZZER_CC, or the clang on the PATH, if it builds and links a libFuzzer target; else None"""
     sdk = []
     if system() == 'macos':
         rc, out = sh(['xcrun', '--show-sdk-path'])
         sdk = ['-isysroot', out.strip()] if rc == 0 else []
-    for cc in (os.environ.get('A4C_LIBFUZZER_CC'), shutil.which('clang')):
+    for cc in (os.environ.get('TL_LIBFUZZER_CC'), shutil.which('clang')):
         if not cc or not os.path.isfile(cc):
             continue
         d = tempfile.mkdtemp(prefix='lf-probe-')
@@ -728,8 +728,8 @@ def libfuzzer_cc():
 def libfuzz(cc, log):
     """(ok, text): the libFuzzer targets built with cc and each run PLAT_LF seconds; any crash fails"""
     d = os.path.join(ROOT, 'build', 'plat-libfuzzer')
-    rc, out = sh(['cmake', '-S', ROOT, '-B', d, '-DA4C_WERROR=ON', '-DCMAKE_BUILD_TYPE=Debug', '-DA4C_LIBFUZZER=ON',
-                  '-DA4C_BUILD_RELAY=OFF', '-DCMAKE_C_COMPILER=' + cc], log=log + '-libfuzzer-configure.log')
+    rc, out = sh(['cmake', '-S', ROOT, '-B', d, '-DTL_WERROR=ON', '-DCMAKE_BUILD_TYPE=Debug', '-DTL_LIBFUZZER=ON',
+                  '-DTL_BUILD_RELAY=OFF', '-DCMAKE_C_COMPILER=' + cc], log=log + '-libfuzzer-configure.log')
     if rc != 0:
         return False, 'libFuzzer targets: configure failed'
     rc, out = sh(['cmake', '--build', d, '--target', 'libfuzzers', '-j', str(os.cpu_count() or 4)],
@@ -739,7 +739,7 @@ def libfuzz(cc, log):
         return False, 'libFuzzer targets: %s' % (' | '.join(errs) or 'build failed')
     # the new inputs and any crash go in a folder of the run's own, never in tests/corpus (the tree stays clean)
     missing = [t for t in LF_TARGETS if not os.path.isfile(os.path.join(d, 'lf_' + t))]
-    if missing:  # a target in LF_TARGETS that the libfuzzers build did not make (CMakeLists' A4C_LF_ALL)
+    if missing:  # a target in LF_TARGETS that the libfuzzers build did not make (CMakeLists' TL_LF_ALL)
         return False, 'libFuzzer targets not built: ' + ', '.join('lf_' + t for t in missing)
     work = tempfile.mkdtemp(prefix='certify-lf-')
     jobs = max(1, min(len(LF_TARGETS), (os.cpu_count() or 2) // 2))
@@ -801,7 +801,7 @@ def p_core(log):
         text += '; memcheck clean on test_plat_core'
     cc = libfuzzer_cc()
     if not cc:
-        return True, text + '; libFuzzer targets skipped: no libFuzzer clang (set A4C_LIBFUZZER_CC)'
+        return True, text + '; libFuzzer targets skipped: no libFuzzer clang (set TL_LIBFUZZER_CC)'
     ok, res = libfuzz(cc, log)
     return ok, (text + '; ' + res) if ok else res
 
@@ -822,7 +822,7 @@ def p_cycles(log):
         game = os.path.join(ROOT, 'build', 'plat-gcc', 'tailonlock')
         for i in range(PLAT_VG_STARTS):
             ok, res = valgrind('memcheck start %d' % (i + 1), VG_MEMCHECK + [game, '--frames', '1'], log + '-memcheck-%02d.log' % i,
-                               env=cfg_env({'A4C_VIDEO': 'offscreen', 'A4C_AUDIO': 'dummy'}))
+                               env=cfg_env({'TL_VIDEO': 'offscreen', 'TL_AUDIO': 'dummy'}))
             if not ok:
                 return False, res
         text += '; the game started and quit %d times under memcheck: clean' % PLAT_VG_STARTS
@@ -841,8 +841,8 @@ def p_window(log):
                 tag = '%s-%s' % ('exact' if exact else 'retina', r)
                 shot = log + '-%s.bmp' % tag
                 # a real window, and the left Shift, Control, Option and Command keys pressed and let go through
-                # AppKit (A4C_TEST_MODKEY: a modifier comes as a FlagsChanged event, which once crashed the game)
-                env = cfg_env({'A4C_STATE': '1', 'A4C_AUDIO': 'dummy', 'A4C_VIDEO': '', 'A4C_TEST_MODKEY': '30'})
+                # AppKit (TL_TEST_MODKEY: a modifier comes as a FlagsChanged event, which once crashed the game)
+                env = cfg_env({'TL_STATE': '1', 'TL_AUDIO': 'dummy', 'TL_VIDEO': '', 'TL_TEST_MODKEY': '30'})
                 rc, out = sh([exe, '--renderer', r, '--frames', '900', '--cmd', 'k', '--key', '60:f11', '--key', '460:f11',
                               '--screenshot', shot] + (['--window', '1280x720'] if exact else []), env=env,
                              log=log + '-%s.log' % tag)
@@ -887,7 +887,7 @@ def p_window(log):
                 for r in ('retro', 'modern'):
                     tag = '%s-%s-x%s' % (ws, r, scale)
                     shot = log + '-%s.bmp' % tag
-                    env = cfg_env({'A4C_VIDEO': ws, 'WAYLAND_DISPLAY': sock, 'DISPLAY': xdisp or '', 'A4C_STATE': '1'})
+                    env = cfg_env({'TL_VIDEO': ws, 'WAYLAND_DISPLAY': sock, 'DISPLAY': xdisp or '', 'TL_STATE': '1'})
                     rc, out = sh([exe, '--renderer', r, '--frames', '300', '--cmd', 'k', '--key', '60:f11', '--key', '160:f11',
                                   '--screenshot', shot], env=env, log=log + '-%s.log' % tag)
                     sizes = re.findall(r'STATE window (\d+)x(\d+)', out)
@@ -911,7 +911,7 @@ def p_sound(log):
     flags = ['-DCMAKE_C_FLAGS=-fsanitize=thread', '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread']
     if system() == 'macos':
         flags.append('-DCMAKE_OBJC_FLAGS=-fsanitize=thread')
-    d, err = plat_build('tsan', ['-DCMAKE_BUILD_TYPE=RelWithDebInfo', '-DCMAKE_C_COMPILER=clang', '-DA4C_BUILD_TESTS=OFF']
+    d, err = plat_build('tsan', ['-DCMAKE_BUILD_TYPE=RelWithDebInfo', '-DCMAKE_C_COMPILER=clang', '-DTL_BUILD_TESTS=OFF']
                         + flags, log)
     if err:
         return False, 'TSan build: ' + err
@@ -932,7 +932,7 @@ def p_sound(log):
             ok, res = valgrind(tool, ['valgrind', '--tool=' + tool, '--error-exitcode=1', '--num-callers=30',
                                       '--suppressions=' + os.path.join(ROOT, 'tests', 'golden', 'valgrind-system.supp'), game,
                                       '--sound-storm', '--frames', '600'], log + '-%s.log' % tool,
-                               env=cfg_env({'A4C_VIDEO': 'offscreen', 'A4C_AUDIO': 'dummy'}))
+                               env=cfg_env({'TL_VIDEO': 'offscreen', 'TL_AUDIO': 'dummy'}))
             if not ok:
                 return False, res
         parts.append('helgrind and drd: no race in 600 frames of the sound storm')
@@ -940,7 +940,7 @@ def p_sound(log):
     game = os.path.join(rel, 'tailonlock') if system() == 'linux' else os.path.join(rel, 'TailonLock.app', 'Contents', 'MacOS', 'TailonLock')
     if system() == 'linux':  # the real ALSA path, into ALSA's null device (no sound out of the speakers)
         rc, out = sh([game, '--renderer', 'retro', '--play', 'demo', '--seconds', '60', '--frames', '100000000'],
-                     env=cfg_env({'A4C_AUDIO': '', 'A4C_ALSA_DEVICE': 'null'}), log=log + '-alsa.log')
+                     env=cfg_env({'TL_AUDIO': '', 'TL_ALSA_DEVICE': 'null'}), log=log + '-alsa.log')
         u = re.search(r'sound: (\d+) underruns', out)
         if rc != 0 or u or 'alsa:' in out:
             return False, 'ALSA: %s' % (u.group(0) if u else out.strip()[-160:])
@@ -949,7 +949,7 @@ def p_sound(log):
     want = next((l.split()[0] for l in open(os.path.join(ROOT, 'tests', 'golden', 'sound.sha256')).read().splitlines()
                  if 'tools/certify P4' in l), '?')
     wav = log + '-render.wav'
-    rc, out = sh([game, '--render-music', 'fullburn', wav], env=cfg_env({'A4C_MUSIC_S': '200'}), log=log + '-render.log')
+    rc, out = sh([game, '--render-music', 'fullburn', wav], env=cfg_env({'TL_MUSIC_S': '200'}), log=log + '-render.log')
     got = hashlib.sha256(open(wav, 'rb').read()).hexdigest() if os.path.exists(wav) else 'none'
     if got != want:
         return False, 'the music render %s, the reference %s' % (got[:16], want[:16])
@@ -989,7 +989,7 @@ def p_pads(log):
         # pad list read every frame, the game's pads table kept), under ASan; a real pad plugged in needs a person
         exe = os.path.join(d, 'TailonLock.app', 'Contents', 'MacOS', 'TailonLock')
         rc, out = sh([exe, '--renderer', 'retro', '--play', '1p', '--frames', '600'],
-                     env=cfg_env({'A4C_VIDEO': '', 'A4C_AUDIO': 'dummy', 'A4C_STATE': '1'}), log=log + '-gamecontroller.log')
+                     env=cfg_env({'TL_VIDEO': '', 'TL_AUDIO': 'dummy', 'TL_STATE': '1'}), log=log + '-gamecontroller.log')
         bad = [l for l in out.splitlines() if 'ERROR' in l or 'runtime error' in l][:2]
         if rc != 0 or bad:
             return False, 'GameController in a real window: exit %d %s' % (rc, ' | '.join(bad))
@@ -1008,7 +1008,7 @@ def p_gpu(log):
     sysn = system()
     rel = os.path.join(ROOT, 'build', 'plat-gcc' if sysn == 'linux' else 'plat-clang')
     game = os.path.join(rel, 'tailonlock') if sysn == 'linux' else os.path.join(rel, 'TailonLock.app', 'Contents', 'MacOS', 'TailonLock')
-    extra = {'A4C_VK_VALIDATE': '1'} if sysn == 'linux' else {'MTL_DEBUG_LAYER': '1', 'MTL_SHADER_VALIDATION': '1'}
+    extra = {'TL_VK_VALIDATE': '1'} if sysn == 'linux' else {'MTL_DEBUG_LAYER': '1', 'MTL_SHADER_VALIDATION': '1'}
     env = cfg_env(extra)
     rc, out = sh([game, '--audit', '--part', 'views', '--gpu', '--shots', os.path.dirname(log)], env=env, log=log + '-views.log')
     m = re.search(r'(\d+) failed checks?', out)
@@ -1020,25 +1020,7 @@ def p_gpu(log):
         return False, 'views on the GPU: %s of %d failed (%s) %s' % (m.group(1) if m else '?', nviews, layer,
                                                                     ' | '.join(fails + msgs[:2])[:300])
     parts = ['views on the GPU: 0 of %d failed, %s' % (nviews, layer)]
-    if PLAT_SDL and os.path.exists(PLAT_SDL):
-        perf = ['--renderer', 'modern', '--play', '1p', '--frames', '1500', '--seed', '1', '--cmd', 'g']
-        def ms(exe, e):
-            rc, out = sh([exe] + perf, env=e)
-            m = re.search(r'([0-9.]+) ms per frame drawn', out)
-            return float(m.group(1)) if m else None
-        if sysn == 'macos':  # SDL's offscreen driver makes no window on macOS (no EGL): both in a real window
-            sdl_env = cfg_env({'SDL_AUDIO_DRIVER': 'dummy', 'A4C_VIDEO': ''})
-            our_env = cfg_env({'A4C_VIDEO': '', 'A4C_AUDIO': 'dummy'})
-        else:
-            sdl_env = cfg_env({'SDL_VIDEO_DRIVER': 'offscreen', 'SDL_AUDIO_DRIVER': 'dummy'})
-            our_env = cfg_env()
-        ours = min(x for x in (ms(game, our_env) for _ in range(3)) if x is not None)
-        theirs = min(x for x in (ms(PLAT_SDL, sdl_env) for _ in range(3)) if x is not None)
-        if ours > theirs * 1.05 + 0.05:
-            return False, 'frame time %.3f ms against the SDL build\'s %.3f ms' % (ours, theirs)
-        parts.append('frame time %.3f ms, the SDL build %.3f ms' % (ours, theirs))
-    else:
-        parts.append('no SDL build given (--sdl-exe): the frame time is checked by tools/check stage 9')
+    parts.append('the frame time is checked by tools/check stage 9')
     return True, '; '.join(parts)
 
 
@@ -1061,18 +1043,16 @@ def plat_preflight(a):
     elif system() == 'linux':
         need += ['gcc', 'valgrind']
     missing = [t for t in need if not shutil.which(t)]
-    for env, name in (('A4C_CPPCHECK', 'cppcheck'), ('A4C_CLANG_TIDY', 'clang-tidy')):  # tools/static in P0
+    for env, name in (('TL_CPPCHECK', 'cppcheck'), ('TL_CLANG_TIDY', 'clang-tidy')):  # tools/static in P0
         t = os.environ.get(env) or shutil.which(name)
         if not t or not os.path.isfile(t):
             missing.append('%s (or %s)' % (name, env))
-    if a.sdl_exe and not os.path.isfile(a.sdl_exe):
-        missing.append('the SDL build given with --sdl-exe (%s)' % a.sdl_exe)
     return missing
 
 
 def plat(a):
-    global PLAT_FUZZ, PLAT_SOUND, PLAT_SDL, PLAT_SKIP_CERT
-    PLAT_FUZZ, PLAT_SOUND, PLAT_SDL, PLAT_SKIP_CERT = a.fuzz, a.sound, a.sdl_exe, a.skip_certify
+    global PLAT_FUZZ, PLAT_SOUND, PLAT_SKIP_CERT
+    PLAT_FUZZ, PLAT_SOUND, PLAT_SKIP_CERT = a.fuzz, a.sound, a.skip_certify
     missing = plat_preflight(a)
     if missing:
         print('certify: the ladder needs these and cannot find them, so nothing was run: ' + ', '.join(missing))
@@ -1159,12 +1139,11 @@ def main():
     rl.add_argument('--hands-on', required=True, nargs='+', help='one ticked checklist per system')
     v = sub.add_parser('verify')
     v.add_argument('cert')
-    d = sub.add_parser('digest', help='the digest of audit logs (--audit --part sorties, A4C_AUDIT_DEATHS=1) and the reference')
+    d = sub.add_parser('digest', help='the digest of audit logs (--audit --part sorties, TL_AUDIT_DEATHS=1) and the reference')
     d.add_argument('logs', nargs='+')
     pl = sub.add_parser('plat', help='the platform layer\'s brick ladder, P0-P7')
     pl.add_argument('--fuzz', type=int, default=60, help='seconds of fuzzing in P1')
     pl.add_argument('--sound', type=int, default=600, help='seconds of the sound thread under ThreadSanitizer in P4')
-    pl.add_argument('--sdl-exe', help='the SDL build of the same commit, for the frame time in P6')
     pl.add_argument('--skip-certify', action='store_true', help='stop before P7 (the ladder then ends unfinished)')
     pw = sub.add_parser('plat-windows')
     pw.add_argument('--vm-logs', required=True)

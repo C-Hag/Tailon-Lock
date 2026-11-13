@@ -1,6 +1,6 @@
 /* render3d.h - camera, near clip, sky and ground, grid, per-view draw (JS lines 3282-3445, 3662-3680). */
-#ifndef A4C_RENDER3D_H
-#define A4C_RENDER3D_H
+#ifndef TL_RENDER3D_H
+#define TL_RENDER3D_H
 
 #include <stdbool.h>
 
@@ -31,6 +31,7 @@ void r3d_begin(Framebuffer *fb, const Camera *cam, int vx, int vy, int vw, int s
                View *out);
 void r3d_mesh(Framebuffer *fb, const View *V, const Mesh *M, vec3 pos, vec3 r, vec3 u, vec3 f, float s, float dim);
 void r3d_dot(const View *V, vec3 w, float sizeW, uint32_t col, float a, float minPx);
+void r3d_film_look(bool on); /* the opening film's own sky and clouds, for the frames it draws */
 void r3d_ball(const View *V, vec3 w, float rad, uint32_t col, float a);
 void r3d_seg(Framebuffer *fb, const View *V, vec3 a, vec3 b, uint32_t col, float wWorld, float alpha, float minW);
 void r3d_end(Framebuffer *fb, const View *V, float time);

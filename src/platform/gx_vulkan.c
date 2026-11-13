@@ -628,10 +628,10 @@ bool gx_open(const void *native_window, int w, int h, bool vsync) {
       if ((has_x11 = has_ext(ie, nie, "VK_KHR_xlib_surface"))) exts[nexts++] = "VK_KHR_xlib_surface";
       if ((has_win = has_ext(ie, nie, "VK_KHR_win32_surface"))) exts[nexts++] = "VK_KHR_win32_surface";
     }
-    /* A4C_VK_VALIDATE=1: the Khronos validation layer, when the system has it (tests only) */
+    /* TL_VK_VALIDATE=1: the Khronos validation layer, when the system has it (tests only) */
     const char *layer = "VK_LAYER_KHRONOS_validation";
     uint32_t nlayers = 0;
-    if (getenv("A4C_VK_VALIDATE") && vkEnumerateInstanceLayerProperties) {
+    if (getenv("TL_VK_VALIDATE") && vkEnumerateInstanceLayerProperties) {
       VkLayerProperties lp[64];
       uint32_t nl = 64;
       vkEnumerateInstanceLayerProperties(&nl, lp);

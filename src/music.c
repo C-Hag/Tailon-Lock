@@ -27,6 +27,11 @@ const Theme THEMES[MUSIC_ALL] = {
   /* the main theme's film cut (played once; it starts half a second before the song, and the menu's Full Burn
    * carries on from it) */
   { "fullburn-intro", "FULL BURN (FILM)", 0.17f, 0.6f, 1.10f },
+  /* the film's song since 0.2.1, the project's own recording: the opening of "Analog Horizons" flowing,
+   * beat-matched, into the ending of "Heartbeat in E Minor" (both E minor, about 116 bpm), 82 s at -20 LUFS like the
+   * others, a recording; where it is missing (the floppy) the film keeps Full Burn (preferred to a cut
+   * with the songs' melodies in the middle, which did not fit the take-off) */
+  { "heartbeat-intro", "ANALOG HORIZONS / HEARTBEAT (FILM)", 0.17f, 0.6f, 1.10f },
 };
 
 #define LEVEL_SCALE 1.6f
@@ -134,9 +139,13 @@ void music_play(int theme) {
   if (theme == current) return;
   bool recorded = music_recorded(theme);
   Score *s = recorded ? NULL : music_score(theme);
+  /* after the opening film's own song the menu's theme comes in from silence (the mixer eases it up in about half a
+   * second), never at once over where the film's song left off */
+  size_t kl = current >= 0 ? strlen(THEMES[current].key) : 0;
+  bool after_film = kl > 6 && !strcmp(THEMES[current].key + kl - 6, "-intro");
   sfx_lock();
   current = theme;
-  gain = target;
+  gain = after_film ? 0 : target;
   stream = recorded ? rec[theme] : NULL;
   stream_n = recorded ? rec_n[theme] : 0;
   loop_a = recorded ? rec_a[theme] : 0;
@@ -184,12 +193,12 @@ void music_level(bool in_game) {
 }
 
 void music_render(float *out, int n) {
-  /* test hook: A4C_MUSIC_DUMP=file.raw writes the music as it is played (float stereo, 48 kHz) */
+  /* test hook: TL_MUSIC_DUMP=file.raw writes the music as it is played (float stereo, 48 kHz) */
   static FILE *dump;
   static bool dump_tried;
   if (!dump_tried) {
     dump_tried = true;
-    const char *p = getenv("A4C_MUSIC_DUMP");
+    const char *p = getenv("TL_MUSIC_DUMP");
     if (p) dump = fopen(p, "wb");
   }
   float *start = out;

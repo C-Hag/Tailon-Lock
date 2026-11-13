@@ -82,7 +82,7 @@ are the newest 30 and 24.
 
 The items a person checks by hand (docs/TEST_GUIDE.md section 5), done with the game's own test hooks instead of
 hands: `--key F:NAME[:N]` presses and holds a key, `--click` clicks, `--event F:WHAT` sends window events (focus,
-hide, show, a 2 s hitch, quit), `--window WxH` sets the window's size, and `A4C_STATE=1` logs every screen, sound
+hide, show, a 2 s hitch, quit), `--window WxH` sets the window's size, and `TL_STATE=1` logs every screen, sound
 and window change. Each item ends PASS, FAIL or SKIP with its evidence, in build/handson/report.md. Items that need
 pads, a HOTAS or the network ports run elsewhere (the SKIP line says where).
 
@@ -126,7 +126,7 @@ that sees and changes every packet but has no game code: old packets replayed, p
 made-up unsealed match packets, junk of every size, a third address sending both sides replays and junk; then a
 stranger guessing codes (the host stops after 10, kept by design) and the watch stream without its code. Each
 match must finish with both sides agreeing and the attacks refused in the logs. The host runs on UDP 28960
-(A4C_NET_PORT, a test hook that also stops the LAN beacons), off the ports real games and other test runs use.
+(TL_NET_PORT, a test hook that also stops the LAN beacons), off the ports real games and other test runs use.
 
 ## The CPU pilots' doctrine and its measures: `--doctrine-measure`
 

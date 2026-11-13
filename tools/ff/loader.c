@@ -1,5 +1,5 @@
 /* loader.c - the floppy's start program: unpacks game.tlpk from its own folder to a temporary folder, plays it with the
- * disk's assets (A4C_ASSETS), and removes the copy. Original code for this project. A tool, not game code: the game
+ * disk's assets (TL_ASSETS), and removes the copy. Original code for this project. A tool, not game code: the game
  * itself keeps its system calls in src/platform. */
 #if !defined(_WIN32) && !defined(__APPLE__)
 #define _DEFAULT_SOURCE /* mkdtemp, setenv and readlink, under -std=c11 */
@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
     fail("cannot write the unpacked game");
   } else {
 #ifdef _WIN32
-    SetEnvironmentVariableA("A4C_ASSETS", assets);
+    SetEnvironmentVariableA("TL_ASSETS", assets);
     char line[32768];
     size_t at = (size_t)snprintf(line, sizeof line, "\"%s\"", game);
     for (int i = 1; i < argc && at + strlen(argv[i]) + 4 < sizeof line; i++) at += (size_t)snprintf(line + at, sizeof line - at, " \"%s\"", argv[i]);
@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
       fail("cannot start the game");
     }
 #else
-    setenv("A4C_ASSETS", assets, 1);
+    setenv("TL_ASSETS", assets, 1);
     /* the game's own arguments, with its name first */
     char **args = (char **)calloc((size_t)argc + 1, sizeof *args);
     pid_t pid = args && chmod(game, 0700) == 0 ? fork() : -1;

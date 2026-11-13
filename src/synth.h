@@ -2,8 +2,8 @@
  * triangle and noise voices with ADSR, pulse-width sweeps, delayed vibrato
  * and a state-variable filter, driven by the scores in assets/music
  * (tools/extract_scores.js pulls them out of the Web Audio engines). */
-#ifndef A4C_SYNTH_H
-#define A4C_SYNTH_H
+#ifndef TL_SYNTH_H
+#define TL_SYNTH_H
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -1,7 +1,7 @@
 /* editor.h - the music editor: a piano roll over the SID synth's scores,
  * with live patch editing and the rewrite tools of compose.c. */
-#ifndef A4C_EDITOR_H
-#define A4C_EDITOR_H
+#ifndef TL_EDITOR_H
+#define TL_EDITOR_H
 
 #include <stdbool.h>
 

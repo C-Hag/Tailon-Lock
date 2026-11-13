@@ -9,7 +9,7 @@ Linux, macOS and Windows.
       drivers. The ways to meet:
         address      the guest joins the host by address (the LAN and internet-address path), one pair at a time
                      (the host's UDP port 27960 is fixed)
-        relay        both go through a relay (the internet path without port forwarding); a4c_relay runs here,
+        relay        both go through a relay (the internet path without port forwarding); tl_relay runs here,
                      up to 4 pairs at once (the relay lets one address host 4 games)
         bad-address  address, through a bad-internet proxy: 40-120 ms delay with jitter, 3 % loss, 1 % doubled,
                      some packets out of order
@@ -20,7 +20,7 @@ Linux, macOS and Windows.
   tools/playtest solo [--games 160] [--per-run 4] [--jobs 4] [--modes 1p,2p,coop,defend,defend1,drone,drone2]
       offline matches on this computer, CPU pilots in every seat (the players' jets too): every mode with every
       jet, a different map, time, weather and set of rules each run, as fast as the computer goes (one 60 Hz tick
-      a frame), with the physics check on (A4C_CHECK).
+      a frame), with the physics check on (TL_CHECK).
 
   tools/playtest side host|guest --code NNNNNN [--join ADDR | --relay ADDR] [--games 10] [--exe PATH]
                      [--log FILE] [--set key=value ...]
@@ -95,8 +95,8 @@ def find_exe(build):
 def game_env(home, log):
     """the environment of one game process: no window or sound card needed, its own settings folder"""
     e = dict(os.environ)
-    e.update(A4C_VIDEO='dummy', A4C_AUDIO='dummy', A4C_PLANES='1',
-             A4C_LOG=log, HOME=home, XDG_CONFIG_HOME=home, APPDATA=home, A4C_CONFIG_DIR=os.path.join(home, 'tailonlock'))
+    e.update(TL_VIDEO='dummy', TL_AUDIO='dummy', TL_PLANES='1',
+             TL_LOG=log, HOME=home, XDG_CONFIG_HOME=home, APPDATA=home, TL_CONFIG_DIR=os.path.join(home, 'tailonlock'))
     return e
 
 
@@ -340,11 +340,11 @@ def local(a):
     relay_port = a.relay_port
     if any(w.endswith('relay') for w in ways):
         rexe = None
-        for n in ('a4c_relay', 'a4c_relay.exe'):
+        for n in ('tl_relay', 'tl_relay.exe'):
             if os.path.isfile(os.path.join(bdir, n)):
                 rexe = os.path.join(bdir, n)
         if not rexe:
-            sys.exit('playtest: no a4c_relay next to the game (%s)' % bdir)
+            sys.exit('playtest: no tl_relay next to the game (%s)' % bdir)
         relay_proc = subprocess.Popen([rexe, str(relay_port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(0.5)
     print('playtest: %d matches in %d pairs (%s), game %s, logs in %s' % (npairs * a.per_pair, npairs, a.ways, exe, work),
@@ -433,7 +433,7 @@ def solo(a):
         os.makedirs(d, exist_ok=True)
         log = os.path.join(d, 'game.log')
         env = game_env(d, log)
-        env['A4C_CHECK'] = '1'
+        env['TL_CHECK'] = '1'
         args = [exe, '--play', mode, '--jet', jet, '--frames', str(a.per_run * MATCH_CAP_S * 60)]
         args += game_args(seed, rules, a.per_run, a.per_run * MATCH_CAP_S * 4)
         t0 = time.monotonic()
@@ -491,12 +491,12 @@ def side(a):
     home = tempfile.mkdtemp(prefix='playtest-%s-' % a.role)
     env = game_env(home, log)
     if a.window:
-        for k in ('A4C_VIDEO', 'A4C_AUDIO'):
+        for k in ('TL_VIDEO', 'TL_AUDIO'):
             env.pop(k, None)
     seed = a.seed
     args = game_args(seed, a.set or [], a.games, a.games * MATCH_CAP_S)
     if a.role == 'host':
-        env['A4C_TEST_CODE'] = a.code
+        env['TL_TEST_CODE'] = a.code
         cmd = [exe, '--host'] + ([a.relay] if a.relay else []) + args
     else:
         target = (a.relay + '/') if a.relay else a.join

@@ -13,8 +13,8 @@
  *
  * Every way needs the host's 6-digit game code: it becomes a secret key the
  * two computers share, and the match travels encrypted under it (net.c). */
-#ifndef A4C_NET_H
-#define A4C_NET_H
+#ifndef TL_NET_H
+#define TL_NET_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -86,7 +86,7 @@ bool        net_watch_join(const char *addr, const char *code);
 int         net_watch_poll(Game *g, float dt, char who[MAX_PLANES][16], char said[MAX_PLANES][40]);
 void        net_watch_apply(Game *g);
 
-#ifdef A4C_FUZZ
+#ifdef TL_FUZZ
 /* tests/lf_net.c: one fuzz input, a phase and the packets that arrive in it, with no socket (net.c); and seed k
  * from the game's own packet builders (0 when there are no more) */
 void        net_fuzz(Game *g, const uint8_t *data, size_t size);

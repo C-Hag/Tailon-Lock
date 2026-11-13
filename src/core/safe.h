@@ -1,8 +1,8 @@
 /* safe.h - the Safe C helpers (docs/SAFE_C.md): numbers read from text with every failure seen, a tokenizer that
  * keeps no hidden state, and size arithmetic that says when it overflows. C11 only, header only. Original code for
  * this project. */
-#ifndef A4C_SAFE_H
-#define A4C_SAFE_H
+#ifndef TL_SAFE_H
+#define TL_SAFE_H
 
 #include <errno.h>
 #include <limits.h>
@@ -56,11 +56,11 @@ static inline char *safe_token(char **cursor, const char *delims) {
 /* printf-style checking of a function's format string and its arguments (f: the format's place, a: the first
  * argument's, 0 for a va_list), and a switch case that falls through on purpose */
 #if defined(__GNUC__) || defined(__clang__)
-#define A4C_PRINTF(f, a) __attribute__((format(printf, f, a)))
-#define A4C_FALLTHROUGH __attribute__((fallthrough))
+#define TL_PRINTF(f, a) __attribute__((format(printf, f, a)))
+#define TL_FALLTHROUGH __attribute__((fallthrough))
 #else
-#define A4C_PRINTF(f, a)
-#define A4C_FALLTHROUGH ((void)0)
+#define TL_PRINTF(f, a)
+#define TL_FALLTHROUGH ((void)0)
 #endif
 
 /* a + b and a * b on sizes: false (and *out untouched) when the result would not fit */

@@ -10,7 +10,7 @@ usage: tools/static [--build DIR]... [--out DIR] [--jobs N] [--only cppcheck|cla
   --build DIR   a CMake build folder with compile_commands.json, for clang-tidy (more than one: each is checked;
                 a MinGW one is read with --target=x86_64-w64-mingw32). Default: build/macos-release or build/linux.
   --out DIR     where the raw findings go (default build/static): cppcheck-*.txt, clang-tidy-*.txt, open.txt
-The tools: cppcheck and clang-tidy from PATH, or A4C_CPPCHECK and A4C_CLANG_TIDY. A missing tool is a failure, not
+The tools: cppcheck and clang-tidy from PATH, or TL_CPPCHECK and TL_CLANG_TIDY. A missing tool is a failure, not
 a pass. Exit 0 only when every finding is fixed or justified."""
 import concurrent.futures
 import fnmatch
@@ -295,13 +295,13 @@ def main():
     rules = load_supp()
     found, missing = run_banned(), []  # the banned calls first: no tool needed, and no line in tools/static.supp can excuse one
     if only in (None, 'cppcheck'):
-        exe = tool('A4C_CPPCHECK', 'cppcheck')
+        exe = tool('TL_CPPCHECK', 'cppcheck')
         if exe:
             found += run_cppcheck(exe, out, jobs)
         else:
             missing.append('cppcheck')
     if only in (None, 'clang-tidy'):
-        exe = tool('A4C_CLANG_TIDY', 'clang-tidy')
+        exe = tool('TL_CLANG_TIDY', 'clang-tidy')
         if exe:
             found += run_tidy(exe, builds, out, jobs)
         else:

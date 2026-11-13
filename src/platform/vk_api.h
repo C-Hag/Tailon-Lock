@@ -3,8 +3,8 @@
  * structures and function types, with our own short header instead of the
  * SDK's. The system's loader (libvulkan.so.1, vulkan-1.dll) is opened at run
  * time, so building needs no Vulkan SDK. Original code for this project. */
-#ifndef A4C_VK_API_H
-#define A4C_VK_API_H
+#ifndef TL_VK_API_H
+#define TL_VK_API_H
 
 #include <stddef.h>
 #include <stdint.h>

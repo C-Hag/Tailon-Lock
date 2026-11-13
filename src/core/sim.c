@@ -1630,6 +1630,10 @@ void sim_update(Game *g, float dt) {
       /* out of targets: only a team that had some (a dogfight has none, and a map may give one team none) */
       lost[t] = jets[t] || (has_targets(g, t) && !targets_left(g, t));
     }
+    /* in a network match the host hears of its own jet's end at once and of the guest's a trip over the wire
+     * later: a side alone finished waits a second for news that the other went down with it (it was always the
+     * host that lost an even fight, CPU against CPU, on two computers alike) */
+    if (g->net && lost[0] != lost[1] && (g->verdictT += dt) < 1.0f) lost[0] = lost[1] = false;
     if (lost[0] || lost[1]) {
       g->over = true;
       g->overT = 3.2f;

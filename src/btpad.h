@@ -1,7 +1,7 @@
 /* btpad.h - the Bluetooth pad simulator (tests only): made-up wireless pads, played from a script
  * (--pad), sent through a radio model (--btpad) into the platform's virtual pads (plat_vpad_*). */
-#ifndef A4C_BTPAD_H
-#define A4C_BTPAD_H
+#ifndef TL_BTPAD_H
+#define TL_BTPAD_H
 
 #include <stdbool.h>
 

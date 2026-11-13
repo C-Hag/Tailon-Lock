@@ -37,7 +37,7 @@ uint64_t plat_counter_hz(void) {
 /* a high-resolution waitable timer to within a millisecond, then a short spin. One timer per thread: the main
  * thread paces frames with it and the sound thread (with no sound card) paces its samples, and with one shared
  * auto-reset timer each could re-arm the other's wait, so that one firing released one of them and the other then
- * waited for ever (a hung game after a few hundred frames in a window with A4C_AUDIO=dummy). The wait is also
+ * waited for ever (a hung game after a few hundred frames in a window with TL_AUDIO=dummy). The wait is also
  * bounded, so a lost firing costs a millisecond at most, not the game. */
 void plat_wait_until(uint64_t t) {
   static _Thread_local HANDLE timer;

@@ -1,6 +1,6 @@
 /* ai.h - CPU pilots with easy/normal/hard tables, DIFF and aiControl (JS lines 2890-2974). */
-#ifndef A4C_AI_H
-#define A4C_AI_H
+#ifndef TL_AI_H
+#define TL_AI_H
 
 #include "core/game.h"
 

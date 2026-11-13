@@ -9,8 +9,8 @@ usage: tools/handson [--build DIR] [--report FILE] [--only N[,N...]] [--cert] [-
 
 Each item drives a real copy of the game (offscreen video, so it runs without a screen): keys pressed and held
 (--key), clicks (--click), window events (--event: focus, hide, show, a 2 s hitch, quit), and it reads what
-happened from the game's own log (A4C_STATE=1 logs every screen, sound and window change; A4C_PLANES=1 where each
-jet ended up; --watch the instrument and picture checks; A4C_MIX_DUMP the sound mix). Every item ends PASS, FAIL
+happened from the game's own log (TL_STATE=1 logs every screen, sound and window change; TL_PLANES=1 where each
+jet ended up; --watch the instrument and picture checks; TL_MIX_DUMP the sound mix). Every item ends PASS, FAIL
 or SKIP with its evidence; the report is Markdown (--report, default build/handson/report.md). Exits 1 if an
 item failed. --cert also writes certs/<commit>-hands-on-<system>.md, a box ticked only on PASS (or n/a) with its
 evidence and hash, for tools/certify release. The commit comes from git, or from --commit where there is no git.
@@ -56,8 +56,8 @@ def fresh_cfg(extra=''):
 
 
 def env(**more):
-    e = dict(os.environ, XDG_CONFIG_HOME=CFG, A4C_CONFIG_DIR=os.path.join(CFG, 'tailonlock'), A4C_VIDEO='offscreen',
-             A4C_AUDIO='dummy', A4C_STATE='1')
+    e = dict(os.environ, XDG_CONFIG_HOME=CFG, TL_CONFIG_DIR=os.path.join(CFG, 'tailonlock'), TL_VIDEO='offscreen',
+             TL_AUDIO='dummy', TL_STATE='1')
     e.update({k: str(v) for k, v in more.items()})
     return e
 
@@ -107,7 +107,7 @@ def first(log, what):
 
 
 def planes(log):
-    """A4C_PLANES: name -> (x, y, z, speed) where each jet ended up."""
+    """TL_PLANES: name -> (x, y, z, speed) where each jet ended up."""
     out = {}
     for m in re.finditer(r'plane (.+?): alive \d+ taxi \d+ cat \d+ pos (\S+) (\S+) (\S+) speed (\S+)', log):
         out[m.group(1)] = tuple(float(v) for v in m.group(2, 3, 4, 5))
@@ -127,7 +127,7 @@ def item1():
     # Windows fullscreens only a real window (plat_fullscreen_toggle: no window, nothing to do)
     real = sys.platform == 'win32'
     code, log = run(['--frames', '400', '--key', '20:esc', '--key', '60:f11', '--key', '120:f11', '--key', '180:alt+enter',
-                     '--key', '240:alt+enter'], **({'A4C_VIDEO': 'real'} if real else {}))
+                     '--key', '240:alt+enter'], **({'TL_VIDEO': 'real'} if real else {}))
     sizes = [w for w, _ in states(log) if w.startswith('window ')]
     turns = len(sizes) >= 5 and sizes[1] != sizes[0] and sizes[2] == sizes[0] and sizes[3] != sizes[0] and sizes[4] == sizes[0]
     seen = '%swindow sizes in turn: ' % ('a real window; ' if real else '') + ', '.join(s[7:] for s in sizes)
@@ -161,9 +161,9 @@ def item3():
     fresh_cfg()
     out, fly = [], True
     for keys, who in ((('s', 'd'), 'PLAYER 1'), (('down', 'right'), 'PLAYER 2')):
-        base = planes(run(['--play', '2p', '--seed', '3', '--frames', '240'], A4C_PLANES=1)[1])
+        base = planes(run(['--play', '2p', '--seed', '3', '--frames', '240'], TL_PLANES=1)[1])
         for k in keys:
-            moved = planes(run(['--play', '2p', '--seed', '3', '--frames', '240', '--key', '30:%s:150' % k], A4C_PLANES=1)[1])
+            moved = planes(run(['--play', '2p', '--seed', '3', '--frames', '240', '--key', '30:%s:150' % k], TL_PLANES=1)[1])
             mine = sum(abs(moved[who][j] - base[who][j]) for j in range(3)) if who in moved and who in base else 0
             other = [n for n in base if n != who and n in moved]
             theirs = sum(abs(moved[other[0]][j] - base[other[0]][j]) for j in range(3)) if other else 0
@@ -198,7 +198,7 @@ def item4():
     fresh_cfg()
     raw = os.path.join(OUT, 'mix.raw')
     code, log = run(['--play', '1p', '--frames', '1500', '--key', '60:space:120', '--event', '700:focus-lost',
-                     '--event', '760:focus-gained', '--key', '800:esc'], A4C_MIX_DUMP=raw)
+                     '--event', '760:focus-gained', '--key', '800:esc'], TL_MIX_DUMP=raw)
     if not os.path.exists(raw):
         return False, 'no mix was written'
     peak, jump, silent = mix_stats(raw)
@@ -276,7 +276,7 @@ def item12():
     fresh_cfg()
     raw = os.path.join(OUT, 'mix12.raw')
     code, log = run(['--play', '1p', '--frames', '900', '--event', '200:hide', '--event', '230:stall', '--event', '260:show',
-                     '--key', '300:esc'], A4C_MIX_DUMP=raw)
+                     '--key', '300:esc'], TL_MIX_DUMP=raw)
     paused = first(log, 'pause')
     back = [f for w, f in states(log) if w == 'play' and f > 260]
     peak = mix_stats(raw)[0] if os.path.exists(raw) else 0
@@ -343,7 +343,7 @@ def side(pt, d, who, args, games):
     os.makedirs(home, exist_ok=True)
     log = os.path.join(d, who + '.log')
     e = pt.game_env(home, log)
-    e['A4C_STATE'] = '1'
+    e['TL_STATE'] = '1'
     out = open(os.path.join(d, who + '.out'), 'w')
     return subprocess.Popen([EXE] + args, env=e, stdout=out, stderr=subprocess.STDOUT, cwd=d), log
 
@@ -522,7 +522,7 @@ def ai_round():
     jets = ['af40', 'lf27', 'ecf90', 'ja46', 'sy26', 'vk33', 'ks55', 'nf24', 'dr7']
     logs = [os.path.join(OUT, 'audit-%s.log' % j) for j in jets]
     procs = [subprocess.Popen([EXE, '--audit', '--part', 'sorties', '--sorties', '112', '--only', j, '--out', lg],
-                              env=env(A4C_AUDIT_DEATHS=1), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                              env=env(TL_AUDIT_DEATHS=1), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
              for j, lg in zip(jets, logs)]
     codes = [q.wait(timeout=limit(3600)) for q in procs]
     ROUND['audit'] = ''.join(open(lg, encoding='utf-8', errors='replace').read() for lg in logs if os.path.exists(lg))
@@ -562,7 +562,7 @@ def ai1():
 def ai2():
     """Flying: at most one crash into the ground in 50 matches, before sudden death; no physics fault. After sudden death
     (TANKER_STAYS, 30 minutes) nobody can refuel, by the rules, so jets run dry: those are reported on their own and do
-    not count against the goal (the owner, 2026-11-05)."""
+    not count against the goal ."""
     r = ai_round()
     n = max(1, matches(r['audit']))
     every = deaths(r['audit'], 'CRASHED')
@@ -612,8 +612,7 @@ def match_length(log):
 
 
 def ai5():
-    """Matches: every match ends, every mode with every jet; a match lasts 7.30 minutes at most on average (the owner,
-    2026-11-06: "Raise the limit", for 0.2.0 at 7.267; it was 7.25, 7.0, and 6.5 before) and few reach the 30-minute sudden
+    """Matches: every match ends, every mode with every jet; a match lasts 7.30 minutes at most on average, and few reach the 30-minute sudden
     death."""
     r = ai_round()
     fails = re.findall(r'\[FAIL\] (matches.*)', r['audit'])

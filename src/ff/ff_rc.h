@@ -2,8 +2,8 @@
  * tlh_model.h): the carry-less range coder of the LZMA specification (Igor Pavlov, public domain) on 12-bit chances
  * of a 1, adaptive bits, and CRC-32. Each codec's model is written once for both sides: compiled with TLPK_ENCODER
  * a bit is given and written, without it the same bit is read back. Original code for this project. */
-#ifndef A4C_FF_RC_H
-#define A4C_FF_RC_H
+#ifndef TL_FF_RC_H
+#define TL_FF_RC_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -11,11 +11,26 @@
 #include <string.h>
 
 /* the unpacker the game carries is kept small: its coder's few hot calls stay calls (the packer inlines them) */
-#ifdef TLPK_ENCODER
+#if defined(TLPK_ENCODER)
 #define FF_SMALL
-#else
+#elif defined(__GNUC__) || defined(__clang__)
 #define FF_SMALL __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define FF_SMALL __declspec(noinline)
+#else
+#define FF_SMALL
 #endif
+
+/* the number of significant bits in v (0 for 0): portable C, the same on every compiler */
+static inline int ff_bits(uint32_t v) {
+  int n = 0;
+  if (v >> 16) v >>= 16, n += 16;
+  if (v >> 8) v >>= 8, n += 8;
+  if (v >> 4) v >>= 4, n += 4;
+  if (v >> 2) v >>= 2, n += 2;
+  if (v >> 1) v >>= 1, n += 1;
+  return n + (int)v;
+}
 
 /* ---- the range coder ---- */
 typedef struct {

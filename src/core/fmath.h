@@ -7,8 +7,8 @@
  * computes the same bits. The sim, the AI, the world and the sound (synth.c,
  * sfx.c: the music render is checked bit for bit) use these; the renderer and
  * the menus may keep the system's. */
-#ifndef A4C_FMATH_H
-#define A4C_FMATH_H
+#ifndef TL_FMATH_H
+#define TL_FMATH_H
 
 float fm_sinf(float x);
 float fm_cosf(float x);

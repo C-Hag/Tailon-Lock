@@ -1,8 +1,8 @@
 /* sim.h - flight, guns, missiles, flares, damage, tanker refuel (JS lines 2975-3280).
  * Human controls (ctl and throttle) are written by the input layer before
  * sim_update runs; CPU pilots are steered from inside it. */
-#ifndef A4C_SIM_H
-#define A4C_SIM_H
+#ifndef TL_SIM_H
+#define TL_SIM_H
 
 #include "core/game.h"
 

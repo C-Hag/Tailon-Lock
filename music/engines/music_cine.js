@@ -1,5 +1,5 @@
 // ---- cinematic music start ----
-// "Carrier Dawn (Cinematic)": original arrangement of the Ace4Combat theme. FM bell chords, 808-style drums,
+// "Carrier Dawn (Cinematic)": original arrangement of the Tailon Lock theme. FM bell chords, 808-style drums,
 // an overdriven sustained guitar lead, power-fifth bass and a big reverb. Keys: E minor, up to F# minor,
 // a tritone jump to C minor, and another tritone jump to an E major finale. Melody and progressions are original.
 const CineMusic = (() => {

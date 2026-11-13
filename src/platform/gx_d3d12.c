@@ -6,7 +6,7 @@
  * constant buffer views), shader-visible descriptor heaps and upload
  * staging. Every texture knows its state and is moved with a barrier when its
  * use changes; a multisampled target is resolved when its pass ends.
- * A4C_D3D_DEBUG=1 turns on the debug layer (when Windows' Graphics Tools are
+ * TL_D3D_DEBUG=1 turns on the debug layer (when Windows' Graphics Tools are
  * installed) and logs what it says. */
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
@@ -478,7 +478,7 @@ bool gx_open(const void *native_window, int w, int h, bool want_vsync) {
   HRESULT(WINAPI * create_device)(IUnknown *, D3D_FEATURE_LEVEL, REFIID, void **) = (void *)GetProcAddress(lib_d3d, "D3D12CreateDevice");
   HRESULT(WINAPI * get_debug)(REFIID, void **) = (void *)GetProcAddress(lib_d3d, "D3D12GetDebugInterface");
   if (!create_factory || !create_device) return fail("no D3D12CreateDevice", 0), gx_close(), false;
-  if (getenv("A4C_D3D_DEBUG") && get_debug) {
+  if (getenv("TL_D3D_DEBUG") && get_debug) {
     ID3D12Debug *dbg = NULL;
     if (SUCCEEDED(get_debug(&IID_ID3D12Debug, (void **)&dbg))) {
       ID3D12Debug_EnableDebugLayer(dbg);

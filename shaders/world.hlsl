@@ -82,25 +82,44 @@ float4 fs_main(VSOut i) : SV_Target0 {
   float3 amb = to_linear(v.ambCol.rgb) * v.ambCol.w;
   float sh = shadow_at(i.wp, N);
   float3 c;
-  if (i.col.a >= 0.5 && i.col.a < 0.9) {
+  if (i.col.a >= 0.5 && i.col.a < 0.9 && fTint.z <= 0.5) { // (on the ground the alpha is the land's share: only its middle is the coast)
     // glowing screens and lights: emitted, not lit
     c = to_linear(i.col.rgb) * 2.4;
   } else if (i.col.a < 0.5) {
     // water
     float dist = length(v.camPos.xyz - i.wp);
     float2 sl = wave_slope(i.wp.xz, v.camPos.w) * saturate(1.3 - dist / 7000);
+    // waves finer than a pixel cannot be drawn: they would only sparkle from frame to frame, through a long lens
+    // most of all. Calm the slope and spread the sun's highlight (same energy) by how much sea one pixel covers.
+    float seaPx = length(fwidth(i.wp.xz));
+    bool fineSea = v.misc.w > 1.5; // at ULTRA and in the film: a long swell, wide enough to draw, and a shore
+    bool filmSea = v.misc.w > 2.5; // the opening film's sea: seen from high up at dawn, it must not go flat and dark
+    sl /= 1 + seaPx * (filmSea ? 1.2 : 0.3);
+    if (fineSea) sl += wave_slope(i.wp.xz * 0.13, v.camPos.w * 0.45) * 0.55 / (1 + seaPx * 0.12);
     float3 Nw = normalize(float3(-sl.x, 1, -sl.y));
     // at grazing angles a wavy sea mirrors less than a calm one, and the sky above the haze: so the sea stays
     // the sea right up to the horizon instead of melting into the sky there
     float fres = 0.02 + 0.68 * pow(1 - saturate(dot(Nw, V)), 5);
+    if (filmSea) fres = max(fres, 0.2);
     float3 R = reflect(-V, Nw);
     R.y = max(abs(R.y), 0.12);
     float3 deep = to_linear(i.col.rgb) * (amb * 0.6 + sun * 0.25 * saturate(L.y));
+    if (filmSea) deep = float3(0.04, 0.12, 0.17) * (amb + sun * 0.55);
     c = lerp(deep, sky_color(v, R, false), saturate(fres));
     float3 H = normalize(L + V);
-    c += sun * pow(saturate(dot(Nw, H)), 600) * 12 * sh;
+    float glint = 600 / (1 + seaPx * seaPx * 30);
+    c += sun * pow(saturate(dot(Nw, H)), glint) * 12 * (glint / 600) * sh;
     // whitecaps where the chop crests
     float foam = smoothstep(0.78, 0.98, vnoise(i.wp.xz * 0.06 + v.camPos.w * 0.15) * vnoise(i.wp.xz * 0.23 - v.camPos.w * 0.1) * 2.0);
+    if (filmSea) c += sun * pow(saturate(dot(R, L)), 90.0) * 0.28 * sh; // the sun's broad path on the swell
+    if (fineSea && fTint.z > 0.5) {
+      // towards the coast: lighter water over the sand, and a broken line of surf where it meets the land
+      float shore = smoothstep(0.2, 0.5, i.col.a);
+      c = lerp(c, float3(0.05, 0.30, 0.33) * (amb + sun * 0.55), shore * 0.55);
+      float surf = smoothstep(0.46, 0.5, i.col.a) * smoothstep(0.35, 0.65, vnoise(i.wp.xz * 0.07 + v.camPos.w * 0.12));
+      c = lerp(c, (amb + sun * 0.55) * 0.85, surf * 0.35);
+    }
+    if (fineSea) foam *= 0.28 * saturate(1.2 - seaPx * 0.8); // whitecaps smaller than a pixel only speckle
     c = lerp(c, (amb + sun * 0.4) * 0.8, foam * 0.18 * saturate(1 - dist / 3000));
   } else {
     float3 albedo = to_linear(i.col.rgb) * fTint.x;
@@ -108,8 +127,26 @@ float4 fs_main(VSOut i) : SV_Target0 {
       // ground: two octaves of noise, rock on steep slopes
       float n1 = vnoise(i.wp.xz * 0.02), n2 = vnoise(i.wp.xz * 0.15), n3 = vnoise(i.wp.xz * 1.1);
       albedo *= 0.78 + 0.28 * n1 + 0.14 * n2 + 0.06 * n3;
-      float rock = smoothstep(0.82, 0.6, N.y);
+      float rock = 1 - smoothstep(0.6, 0.82, N.y);
       albedo = lerp(albedo, float3(0.16, 0.15, 0.14) * (0.8 + 0.4 * n2), rock * 0.7);
+      if (v.misc.w > 1.5) albedo = lerp(albedo, float3(0.52, 0.42, 0.24) * (0.85 + 0.25 * n2), 1 - smoothstep(0.5, 0.6, i.col.a)); // the beach
+    }
+    float wet = 1;
+    if (v.misc.w > 1.5 && fTint.y > 0) {
+      // ULTRA, a jet's skin up close: panel lines, frames across the fuselage and ribs along it, in the model's own metres,
+      // gone before a pixel gets too big to show them (no shimmer in the distance); weathering streaks with the airflow
+      float3 pw = fwidth(i.lp), nl = abs(normalize(cross(ddx(i.lp), ddy(i.lp))));
+      const float3 cell = float3(2.3, 0.9, 1.9);
+      // each row of panels starts at its own place, as real skin does, so the lines are no grid
+      float row = floor(i.lp.x / cell.x);
+      float3 at = i.lp + float3(0, 0, 0.71 * row);
+      float3 dist = (0.5 - abs(frac(at / cell) - 0.5)) * cell;
+      float3 line_ = (1 - smoothstep((float3)0.007, (float3)0.007 + pw * 1.3, dist)) * (1 - nl);
+      float show = saturate(1.5 - max(pw.x, max(pw.y, pw.z)) * 11);
+      float ln = max(line_.x, max(line_.y, line_.z)) * show;
+      float streak = vnoise(float2(i.lp.x * 6.5, i.lp.z * 0.55)), blotch = vnoise(i.lp.xz * 0.9 + i.lp.yy * 1.7);
+      albedo *= (1 - 0.24 * ln) * (0.9 + 0.13 * streak) * (0.93 + 0.14 * blotch);
+      wet = (0.65 + 0.7 * streak) * (1 - 0.7 * ln);
     }
     float diff = saturate(dot(N, L));
     float3 hemi = amb * (0.55 + 0.45 * N.y) + to_linear(v.fogCol.rgb) * 0.12 * (1 - N.y);
@@ -117,7 +154,7 @@ float4 fs_main(VSOut i) : SV_Target0 {
     if (fTint.y > 0) {
       float3 H = normalize(L + V);
       float fres = 0.04 + 0.96 * pow(1 - saturate(dot(N, V)), 5);
-      c += sun * pow(saturate(dot(N, H)), 48) * fTint.y * (0.25 + fres) * sh;
+      c += sun * pow(saturate(dot(N, H)), 48) * fTint.y * wet * (0.25 + fres) * sh;
       // a hint of sky in glossy paint
       c += sky_color(v, reflect(-V, N), false) * fres * fTint.y * 0.25;
     }

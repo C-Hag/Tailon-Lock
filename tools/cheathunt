@@ -41,7 +41,7 @@ def fresh_cfg(cfg=CFG):
 
 def video_env():
     """a window with no screen (the platform layer's offscreen window, on every system)"""
-    return {'A4C_VIDEO': 'offscreen'}
+    return {'TL_VIDEO': 'offscreen'}
 
 
 def storm(exe, seed):
@@ -64,8 +64,8 @@ def storm(exe, seed):
         args += ['--click', '%d:%d:%d' % (r.randint(1, frames - 10), r.randint(0, 1279), r.randint(0, 719))]
     cfg = os.path.join(CFG, 'storm-%d' % seed)  # each storm its own settings, so storms can run side by side
     fresh_cfg(cfg)
-    env = dict(os.environ, XDG_CONFIG_HOME=cfg, A4C_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), A4C_AUDIO='dummy',
-               A4C_STATE='1', A4C_CHECK='1', **video_env())
+    env = dict(os.environ, XDG_CONFIG_HOME=cfg, TL_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), TL_AUDIO='dummy',
+               TL_STATE='1', TL_CHECK='1', **video_env())
     cmd = 'tools/cheathunt storm: tailonlock ' + ' '.join(args)
     t0 = time.time()
     try:
@@ -134,7 +134,7 @@ def main():
     tp = os.path.join(OUT, 'cockpit.md')
     findings = []
     if cockpit:  # one computer of a shared round runs it
-        env = dict(os.environ, XDG_CONFIG_HOME=CFG, A4C_CONFIG_DIR=os.path.join(CFG, 'tailonlock'))
+        env = dict(os.environ, XDG_CONFIG_HOME=CFG, TL_CONFIG_DIR=os.path.join(CFG, 'tailonlock'))
         fresh_cfg()
         p = subprocess.run([exe, '--test-pilots', '--pilot', 'cheat', '--matches', '90', '--seed', str(seed0), '--report', tp],
                            env=env, capture_output=True, text=True, timeout=900)

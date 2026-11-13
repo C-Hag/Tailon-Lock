@@ -1,8 +1,8 @@
 /* watch.h - the test viewer (--watch): CPU pilots fly a match while you
  * watch any jet from its cockpit, behind it, around it or on the map, with
  * the cockpit's gauges held against the jet's real motion in the world. */
-#ifndef A4C_WATCH_H
-#define A4C_WATCH_H
+#ifndef TL_WATCH_H
+#define TL_WATCH_H
 
 #include <stdbool.h>
 

@@ -1,5 +1,5 @@
 # missile-warning: missile warning: urgent two-tone beeps, 6 per second (loop)
-a4c-sfx 1
+tl-sfx 1
 play loop 64
 volume f
 wave mutew

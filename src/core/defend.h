@@ -2,8 +2,8 @@
  * the carrier from its control room (turret orders, manning a turret,
  * launching a fighter), against waves of strike jets with anti-ship
  * missiles. The Defense state lives in Game (game.h). */
-#ifndef A4C_DEFEND_H
-#define A4C_DEFEND_H
+#ifndef TL_DEFEND_H
+#define TL_DEFEND_H
 
 #include "core/game.h"
 

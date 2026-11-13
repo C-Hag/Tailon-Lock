@@ -1,8 +1,7 @@
 # Music
 
-The Ace4Combat soundtrack: rendered tracks and the Web Audio engines that
-made them, copied from the browser game. There is more music work to come, so
-this folder is the home for it.
+The Tailon Lock soundtrack: rendered tracks and the Web Audio engines that
+made them (the browser edition in `web/` plays them too).
 
 - `fullburn/`: the main theme, Full Burn "Arp sound DMX10": the mix, the MIDI
   and the song data (see `fullburn/README.md`).
@@ -12,7 +11,7 @@ this folder is the home for it.
 All music is original: no melodies, recordings or samples from other works are used. Real-world tunes were
 style references only; keep it that way.
 
-## How the C port uses it
+## How the game uses it
 
 The game plays every theme live on its own SID-style synthesizer
 (`src/synth.c`): pulse waves with width sweeps, saw, triangle and clocked
@@ -22,11 +21,11 @@ each engine headless through its `renderAll()` against a stub AudioContext
 and writes `assets/music/<key>.json`, a list of timed notes per instrument
 plus the drum and effect hits. Re-run it after changing an engine.
 
-The rendered mp3s in `tracks/` are no longer shipped with the game. Since the
-ear check (`../docs/ear/`) they are the game synth's own renders
+The rendered mp3s in `tracks/` are not part of the game. They are the game
+synth's own renders
 (`tailonlock --render-music KEY out.wav`), one pass at -20 LUFS, so they sound
 as the game plays; the JS engines' louder renders, some with piercing high
-tones, were replaced. The older versions kept for reference are at -20 LUFS
+tones, were replaced. The versions kept for reference are at -20 LUFS
 too, with a cut at 2.3 and 2.9 kHz where their lead's top notes pierced.
 
 ## Tracks
@@ -65,8 +64,8 @@ them can be made again from its engine):
 way Ghost Squadron is, keeping its own melody, chords and key: the C64
 frame clock and voice roles, a rock 'n' roll band with synthwave colour, a jet
 intro, sections that lead into each other and answers in the melody's gaps.
-The earlier scores it reads are in `../tools/music_sources/`. The opening film keeps its own cut of Steel Horizon
-(`assets/music/horizon-intro.json`), which its cues are timed to.
+The scores it reads are in `../tools/music_sources/`. The opening film plays its own song, a recording
+(`assets/music/heartbeat-intro.wav`).
 
 Kept for reference, not used in the game:
 
@@ -74,9 +73,9 @@ Kept for reference, not used in the game:
 
 ## C64 style (Steel Horizon and Pop)
 
-Steel Horizon and Pop now play with a classic C64 groove and sound, designed after the
+Steel Horizon and Pop play with a classic C64 groove and sound, designed after the
 classic C64 sound. Melodies are ours and no samples are used. The jet build-up keeps
-its timing, with a blues-rock opening under it in place of the old minor-key march. After the jet passes:
+its timing, with a blues-rock opening under it. After the jet passes:
 
 - tempo locked to the 50 Hz frame clock, sixteenths of 5, 5 and 6 frames (about 140 BPM);
 - the C64 beat, kick on 1 and the "and" of 2, one snare on 3, with SID-style drums layered under the kit;
@@ -84,8 +83,8 @@ its timing, with a blues-rock opening under it in place of the old minor-key mar
 - one-bar breaks where only the bass walks into the next section.
 
 The engines default to the heavier mix (`music.heavy = true`). Set it to `false` for the full chiptune mix with the
-chirping off-beat ostinato. Steps now carry their own length (`steps[i].dur`), so a player has to advance by that instead
-of a fixed `STEP`. The previous versions are kept as `engines/music_horizon_classic.js` and `engines/music_pop_classic.js`.
+chirping off-beat ostinato. Steps carry their own length (`steps[i].dur`), so a player has to advance by that instead
+of a fixed `STEP`. The straight versions are `engines/music_horizon_classic.js` and `engines/music_pop_classic.js`.
 
 ## The ear check
 
@@ -102,7 +101,6 @@ calibrated at start against the standard reference sounds; `ear_check
 player and checks each one (one pass, round its loop through the player, and
 Full Burn's whole song too), plus any recordings in `assets/music` with their
 loop seams. The report and a one-line-a-song table go to `build/ear/`.
-The last full scan is kept in `../docs/ear/` (report.txt and summary.tsv).
 A loop seam is judged by its click and by the level step it adds over the
 song's own lead-in to the loop point; digital silence at the end of a file
 (a one-shot rendered longer than it plays) is left out of the averages; a

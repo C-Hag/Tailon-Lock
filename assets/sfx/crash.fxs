@@ -1,5 +1,5 @@
 # crash: crash into the ground or sea: heavy boom, metal ring-mod clangs, debris rumble
-a4c-sfx 1
+tl-sfx 1
 play once 6.5
 volume f
 wave mutew

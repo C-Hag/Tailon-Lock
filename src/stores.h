@@ -2,8 +2,8 @@
  * models, their exhaust and smoke trails, and every jet's stations (wingtip
  * rails, wing pylons, belly stations, internal bays) loaded from the jet's
  * stores. All of it is the picture's alone: the sim never reads it. */
-#ifndef A4C_STORES_H
-#define A4C_STORES_H
+#ifndef TL_STORES_H
+#define TL_STORES_H
 
 #include "render3d.h"
 
@@ -27,5 +27,7 @@ void stores_exhaust(const View *V, const Game *g, const Plane *p);
 extern void (*stores_station_hook)(const Plane *p, vec3 at, int cls, bool loaded, bool shown);
 extern void (*stores_nozzle_hook)(const Plane *p, vec3 at, float throttle, float ab);
 extern void (*stores_gear_hook)(const Plane *p, int leg, vec3 wheel, float down);
+
+void stores_set_hi(int jet); /* draw the jet's detailed model at ULTRA */
 
 #endif

@@ -210,7 +210,7 @@ for a new code.
 
 ### The relay server
 
-The relay is a small server program, `a4c_relay`, built with the game
+The relay is a small server program, `tl_relay`, built with the game
 (not on Windows). Run it on a computer with UDP port 27970 open. It only
 passes on encrypted packets. It does see the game code, so use a relay you
 trust.
@@ -253,7 +253,7 @@ your ears for a few minutes.
 | System | 64-bit Windows 10 or 11, Linux, or macOS 11 or later |
 | CPU | any dual-core; x86-64 (Windows, Linux) or arm64 / x86_64 (macOS) |
 | Memory | 1 GB |
-| Disk | 20 MB |
+| Disk | 60 MB |
 | Graphics | a GPU for the MODERN renderer; without one, RETRO runs on the CPU |
 | Network play | 64 kbit/s each way |
 
@@ -262,12 +262,5 @@ a GPU with 2 GB of memory.
 
 ## The floppy edition
 
-The whole game on one 1.44 MB floppy (1,474,560 bytes). Sizes in bytes:
-
-| | Linux x86_64 (gcc) | Windows x64 (MinGW gcc) | macOS arm64 |
-|---|---|---|---|
-| start program | 19,440 | 45,568 | 34,832 (before the final intro) |
-| game, packed | 481,764 | 539,150 | 423,369 (before the final intro) |
-| assets, packed | 504,817 | 504,817 | 504,817 |
-| **total** | **1,006,021** | **1,089,535** | to be measured |
-| **free on the disk** | **437,760** | **353,792** | to be measured |
+The whole game on one 1.44 MB floppy (1,474,560 bytes). The recorded music does not fit on a disk, so there
+the opening film plays without its song. The sizes are in docs/FLOPPY.md.

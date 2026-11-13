@@ -45,11 +45,11 @@
  *                     enter, up, down, left, right, f1-f12, lshift, rshift, comma, period, alt+enter; repeatable
  *                     (hands-on tests)
  *   --event F:WHAT    at frame F: quit, focus-lost, focus-gained, hide, show, stall (a 2 s frame); repeatable
- *   A4C_STATE=1       log the screen, sound and window changes (hands-on tests)
+ *   TL_STATE=1       log the screen, sound and window changes (hands-on tests)
  *   --click F:X:Y     at frame F, move the mouse to window (X, Y) and click (menu tests;
  *                     R:F:X:Y the right button, W:F:X:Y the wheel up); repeatable
- *   A4C_EYES=R,W      with --frames: the live test player's link (eyes.h, tools/livepilot)
- *   A4C_FPS_CAP=N     with A4C_PLANES (tests only): at most N frames a second, as on a slow computer (network tests)
+ *   TL_EYES=R,W      with --frames: the live test player's link (eyes.h, tools/livepilot)
+ *   TL_FPS_CAP=N     with TL_PLANES (tests only): at most N frames a second, as on a slow computer (network tests)
  */
 #include <math.h>
 #include <stdio.h>
@@ -81,14 +81,15 @@
 #include "render3d.h"
 #include "viewfx.h"
 #include "sfx.h"
+#include "hud.h"
 #include "synth.h"
 #include "ui.h"
 #include "testpilot.h"
 #include "watch.h"
 #include "core/safe.h"
 
-#ifndef A4C_VERSION
-#define A4C_VERSION "dev"
+#ifndef TL_VERSION
+#define TL_VERSION "dev"
 #endif
 
 #define TICK_HZ   60
@@ -296,6 +297,9 @@ static void play_intro(App *app) {
  * shot, which keeps drifting. */
 static void intro_to_menu(App *app) {
   intro_skip();
+  /* the film's own song (a recording of its own) ends with the film: skipped, it does not play on under the menu and
+   * swell there; the menu's theme takes over at its own level. (The film's cut of Full Burn still hands over in place.) */
+  if (music_current() == music_theme_index("heartbeat-intro")) app->intro_keep = false;
   app->menu_t = app->uitime;
   app->state = ST_MENU;
   input_settle();
@@ -306,9 +310,9 @@ static FILE  *report; /* --watch --report: what the test pilots found */
 static int    test_games, games_done; /* --games N: matches to play back to back (offline or network), and played */
 static double rematch_t;              /* host: when the next of them starts */
 
-/* Test log (A4C_PLANES=1): how a match stands when it ends. */
+/* Test log (TL_PLANES=1): how a match stands when it ends. */
 static void log_match(const Game *g, const char *why) {
-  if (!getenv("A4C_PLANES")) return;
+  if (!getenv("TL_PLANES")) return;
   plat_log("%s at %.0f: winner %d, %s", why, g->time, g->winner, g->over ? g->reason : "");
   for (int i = 0; i < g->nplanes; i++)
     plat_log("  %s kills %d targets %d lives %d score %d stores %d,%d,%d", g->planes[i].name, g->planes[i].kills,
@@ -430,7 +434,7 @@ static void app_update(App *app, float dt) {
 
 static uint64_t render_ticks; /* time spent drawing the game, for --frames */
 
-/* A4C_CHECK=1 with --frames: every tick, look for broken physics and log
+/* TL_CHECK=1 with --frames: every tick, look for broken physics and log
  * the first time each jet shows each kind of fault. */
 static int physics_faults;
 static void physics_check(const Game *g) {
@@ -538,6 +542,7 @@ static void music_update(App *app) {
 
 static void ui_action(App *app, Screen screen, Nav nav) {
   UiAction a = ui_nav(screen, &app->settings, nav);
+  for (int k = 0; k < 2; k++) hud_show_sight(k, app->settings.sight[k]);
   switch (a) {
   case UI_START:
     if (!net_playing()) start_game(app);
@@ -734,17 +739,17 @@ static void save_screenshot(App *app, const char *path) {
   else plat_log("saved %s", path);
 }
 
-/* Renders a theme offline into a 16-bit stereo WAV: a score one pass (A4C_MUSIC_FULL=1: the whole song, past
- * its loop), or A4C_MUSIC_LOOP seconds through the player as the game plays it, round its loop. */
+/* Renders a theme offline into a 16-bit stereo WAV: a score one pass (TL_MUSIC_FULL=1: the whole song, past
+ * its loop), or TL_MUSIC_LOOP seconds through the player as the game plays it, round its loop. */
 static int render_music(const char *key, const char *path) {
   if (!plat_init(0, NULL, NULL, NULL)) return 1;
   assets_init();
   int th_i = music_theme_index(key);
-  const char *through = getenv("A4C_MUSIC_LOOP");
+  const char *through = getenv("TL_MUSIC_LOOP");
   if (!strcmp(THEMES[th_i].key, key) && (music_recorded(th_i) || through)) {
-    /* a recording, or a score through the player (A4C_MUSIC_S or A4C_MUSIC_LOOP seconds, default 330: the loop
+    /* a recording, or a score through the player (TL_MUSIC_S or TL_MUSIC_LOOP seconds, default 330: the loop
      * comes round) */
-    const char *env = through ? through : getenv("A4C_MUSIC_S");
+    const char *env = through ? through : getenv("TL_MUSIC_S");
     double secs = env ? safe_num(env, 0) : 330;
     music_play(th_i);
     music_level(false);
@@ -788,7 +793,7 @@ static int render_music(const char *key, const char *path) {
     plat_log("no score for %s", key);
     return 1;
   }
-  if (getenv("A4C_MUSIC_FULL") && sc->tail > 0) sc->end = sc->tail;
+  if (getenv("TL_MUSIC_FULL") && sc->tail > 0) sc->end = sc->tail;
   synth_start(sc);
   enum { CHUNK = 4800 };
   static float buf[CHUNK * 2];
@@ -875,7 +880,7 @@ static int compose_test(const char *key, const char *path) {
 
 static App app; /* the Game struct is large; keep it off the stack */
 /* what the command line asked the loop for */
-static bool        checking;          /* A4C_CHECK: look for broken physics every tick */
+static bool        checking;          /* TL_CHECK: look for broken physics every tick */
 static long        every, max_frames = -1;
 static const char *shot, *clicks[16];
 static int         nclicks;
@@ -884,7 +889,7 @@ static double      seconds;
 static uint64_t freq, loop_t0, step, prev, acc;
 static long     frames;
 static int      ok;
-static int      fps_cap; /* A4C_FPS_CAP with A4C_PLANES: a slow computer's frame rate, for the network tests */
+static int      fps_cap; /* TL_FPS_CAP with TL_PLANES: a slow computer's frame rate, for the network tests */
 
 /* test hook: the --click events for one frame, handed out before that frame's update */
 static int         win_w = 1280, win_h = 720; /* --window WxH: the window's size at the start */
@@ -1064,9 +1069,9 @@ static bool loop_init(int argc, char **argv, int *exit_code) {
     }
   app.scale = 0; /* auto */
   eyes_init();
-  checking = getenv("A4C_CHECK") != NULL;
-  every = getenv("A4C_EVERY") ? strtol(getenv("A4C_EVERY"), NULL, 10) : 0;
-  if (getenv("A4C_PLANES") && getenv("A4C_FPS_CAP")) fps_cap = (int)safe_int(getenv("A4C_FPS_CAP"), 0, 0, 1000);
+  checking = getenv("TL_CHECK") != NULL;
+  every = getenv("TL_EVERY") ? strtol(getenv("TL_EVERY"), NULL, 10) : 0;
+  if (getenv("TL_PLANES") && getenv("TL_FPS_CAP")) fps_cap = (int)safe_int(getenv("TL_FPS_CAP"), 0, 0, 1000);
   const char *play = NULL;
   int watch_view = -1, watch_follow = -1;
   const char *spectate = NULL;
@@ -1165,14 +1170,14 @@ static bool loop_init(int argc, char **argv, int *exit_code) {
     } else if (!strcmp(argv[i], "--test-pattern")) {
       app.test_pattern = true;
     } else if (!strcmp(argv[i], "--version")) {
-      printf(GAME_ID " %s\n", A4C_VERSION);
+      printf(GAME_ID " %s\n", TL_VERSION);
       *exit_code = 0;
       return false;
     }
   }
 
   *exit_code = 1;
-  if (!plat_init(PLAT_VIDEO | PLAT_AUDIO | PLAT_PADS, GAME_TITLE, A4C_VERSION, GAME_APP_ID)) {
+  if (!plat_init(PLAT_VIDEO | PLAT_AUDIO | PLAT_PADS, GAME_TITLE, TL_VERSION, GAME_APP_ID)) {
     plat_log("platform start-up: %s", plat_error());
     return false;
   }
@@ -1188,6 +1193,7 @@ static bool loop_init(int argc, char **argv, int *exit_code) {
     else if (!strcmp(argv[i], "--audit")) return *exit_code = audit(argc - i - 1, argv + i + 1), false;
     else if (!strcmp(argv[i], "--test-pilots")) return *exit_code = tp_batch(argc - i - 1, argv + i + 1), false;
   config_load(&app.settings);
+  for (int k = 0; k < 2; k++) hud_show_sight(k, app.settings.sight[k]);
   if (renderer) app.settings.modern = !strcmp(renderer, "modern");
   if (gfx >= 0) app.settings.gfx = gfx;
   if (!plat_window_open(GAME_TITLE ": " GAME_SUBTITLE_TEXT, win_w, win_h)) {
@@ -1198,7 +1204,7 @@ static bool loop_init(int argc, char **argv, int *exit_code) {
   if (app.settings.modern) gpu_init(plat_native_window(), app.settings.gfx);
   /* the picture now (the software one makes its renderer here), so the log can name what draws it */
   ok = app_fit_framebuffer(&app);
-  plat_log(GAME_ID " %s, video %s, renderer %s", A4C_VERSION, plat_video_driver(), gpu_active() ? gpu_driver() : plat_renderer_name());
+  plat_log(GAME_ID " %s, video %s, renderer %s", TL_VERSION, plat_video_driver(), gpu_active() ? gpu_driver() : plat_renderer_name());
 
   if (map) app.settings.map = assets_map_find(map);
   if (classic) app.settings.classic = true;
@@ -1364,11 +1370,11 @@ static void loop_event(const PlatEvent *ev) {
   }
 }
 
-/* A4C_STATE=1: every change a hands-on test looks for, as it happens. */
+/* TL_STATE=1: every change a hands-on test looks for, as it happens. */
 static void log_state(void) {
   static int state = -1, sound = -1, ww = -1, wh = -1;
   static bool on, known;
-  if (!known) on = getenv("A4C_STATE") != NULL, known = true;
+  if (!known) on = getenv("TL_STATE") != NULL, known = true;
   if (!on) return;
   static const char *const NAMES[] = { "intro", "menu", "play", "pause", "over", "editor" };
   int w, h;
@@ -1473,6 +1479,19 @@ static bool loop_frame(void) {
     if (checking) physics_check(&app.game);
     sfx_dump_tick(48000 / TICK_HZ);
   } else {
+    { /* test hooks (network tests, with TL_PLANES): TL_SLOW=MS frames that long, TL_STALL=S one stall at the
+       * first frame of a match: a Pentium 120 as host, on any computer */
+      static int slow = -1, stall = -1;
+      if (slow < 0) {
+        const char *a = getenv("TL_PLANES") ? getenv("TL_SLOW") : NULL, *b = getenv("TL_PLANES") ? getenv("TL_STALL") : NULL;
+        slow = a ? (int)safe_int(a, 0, 0, 10000) : 0, stall = b ? (int)safe_int(b, 0, 0, 600) : 0;
+      }
+      if (slow > 0) plat_wait_until(plat_counter() + plat_counter_hz() * (uint64_t)slow / 1000);
+      if (stall > 0 && app.state == ST_PLAY) {
+        plat_wait_until(plat_counter() + plat_counter_hz() * (uint64_t)stall);
+        stall = 0;
+      }
+    }
     uint64_t now = plat_counter();
     acc += now - prev;
     prev = now;
@@ -1501,7 +1520,7 @@ static bool loop_frame(void) {
   if (typing != plat_text_input_on()) plat_text_input(typing);
   if (seconds > 0 && plat_ms() > (uint64_t)(seconds * 1000)) app.running = false;
   if (shot && every <= 0 && gpu_active() && ((max_frames >= 0 && frames + 1 >= max_frames) || !app.running)) gpu_screenshot(shot);
-  /* A4C_EVERY=n with --frames: also save every nth frame, the --screenshot name with the frame number in it
+  /* TL_EVERY=n with --frames: also save every nth frame, the --screenshot name with the frame number in it
    * (a %ld in the name), to make a film of the intro */
   char every_path[512] = "";
   if (shot && every > 0 && max_frames >= 0 && frames % every == 0) {
@@ -1547,7 +1566,7 @@ static int loop_quit(void) {
     tp_summary(report);
     fclose(report);
   }
-  if (timed && getenv("A4C_PLANES")) /* test: where everyone ended up */
+  if (timed && getenv("TL_PLANES")) /* test: where everyone ended up */
     for (int i = 0; i < app.game.nplanes; i++) {
       const Plane *p = &app.game.planes[i];
       plat_log("plane %s: alive %d taxi %d cat %d pos %.0f %.0f %.0f speed %.0f ap %d score %d kills %d lives %d hp %.0f "
@@ -1556,7 +1575,7 @@ static int loop_quit(void) {
               p->lives, p->health, p->load[0], p->load[1], p->load[2], p->missiles, p->radar, p->ground, p->remote ? " (remote)" : "");
     }
   if (max_frames >= 0 && checking) plat_log("physics faults: %d", physics_faults);
-  if (timed && getenv("A4C_PLANES"))
+  if (timed && getenv("TL_PLANES"))
     plat_log("game: time %.0f over %d winner %d reason %s", app.game.time, app.game.over, app.game.winner, app.game.reason);
   if (seconds > 0 && max_frames < 0) /* test: the frame rate over the run, uncapped where the driver allows */
     plat_log("ran %ld frames in %.1f s: %.0f fps, %.2f ms per frame drawn", frames, plat_ms() / 1000.0,

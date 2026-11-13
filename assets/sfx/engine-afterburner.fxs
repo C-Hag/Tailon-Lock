@@ -1,5 +1,5 @@
 # engine-afterburner: afterburner roar: crackling noise, open filter, throbbing low pulse
-a4c-sfx 1
+tl-sfx 1
 play loop 192
 volume f
 wave mutew

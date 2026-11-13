@@ -643,3 +643,31 @@ void fb_test_pattern(Framebuffer *fb, uint32_t tick) {
   int bx = (int)(tick % (uint32_t)fb->w);
   fb_rect(fb, bx, top - 8, 8, 16, 0xFFFF00FF);
 }
+
+/* fb_scale_up: the blended row once for each row of dst, then along it, whole pixels at a time. Weights in 256ths. */
+static uint32_t lerp_px(uint32_t a, uint32_t b, uint32_t w) {
+  uint32_t v = 256 - w;
+  return (((a & 0xFF00FFu) * v + (b & 0xFF00FFu) * w) >> 8 & 0xFF00FFu) | (((a & 0xFF00u) * v + (b & 0xFF00u) * w) >> 8 & 0xFF00u);
+}
+void fb_scale_up(Framebuffer *dst, const Framebuffer *src, int k) {
+  if (k < 1 || src->w <= 0 || src->h <= 0 || !src->px || !dst->px) return;
+  uint32_t *row = malloc(sizeof(uint32_t) * (size_t)src->w);
+  if (!row) return;
+  for (int y = 0; y < dst->h; y++) {
+    int fy = (y * 2 + 1) * 128 / k - 128, y0 = fy < 0 ? 0 : fy >> 8, wy = fy < 0 ? 0 : fy & 255;
+    int y1 = y0 + 1 < src->h ? y0 + 1 : src->h - 1;
+    if (y0 >= src->h) y0 = y1 = src->h - 1;
+    if (y0 < 0 || y1 < 0) continue;
+    const uint32_t *r0 = src->px + (size_t)y0 * src->w, *r1 = src->px + (size_t)y1 * src->w;
+    for (int x = 0; x < src->w; x++) row[x] = lerp_px(r0[x], r1[x], (uint32_t)wy);
+    uint32_t *o = dst->px + (size_t)y * dst->w;
+    for (int x = 0; x < dst->w; x++) {
+      int fx = (x * 2 + 1) * 128 / k - 128, x0 = fx < 0 ? 0 : fx >> 8, wx = fx < 0 ? 0 : fx & 255;
+      int x1 = x0 + 1 < src->w ? x0 + 1 : src->w - 1;
+      if (x0 >= src->w) x0 = x1 = src->w - 1;
+      if (x0 < 0 || x1 < 0) continue; /* never: fx is clamped at 0 above (said for the analyzer) */
+      o[x] = lerp_px(row[x0], row[x1], (uint32_t)wx) | 0xFF000000u;
+    }
+  }
+  free(row);
+}

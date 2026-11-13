@@ -1,5 +1,5 @@
 # cannon-loop: cannon fire: noise crack with a pulse thump, 12.5 rounds/s (loop)
-a4c-sfx 1
+tl-sfx 1
 play loop 16
 volume f
 wave mutew

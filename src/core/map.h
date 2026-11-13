@@ -3,8 +3,8 @@
  * targets, spawns, the tanker orbit, time-of-day presets, weather with puff
  * clouds, and night lights. The loader (assets.c) fills a Map; the game and
  * renderer only read it. */
-#ifndef A4C_MAP_H
-#define A4C_MAP_H
+#ifndef TL_MAP_H
+#define TL_MAP_H
 
 #include <stdbool.h>
 #include <stdint.h>

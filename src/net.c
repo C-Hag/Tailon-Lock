@@ -53,8 +53,8 @@ static sock_t udp_open(int port, bool broadcast, bool shared) {
   if (broadcast) setsockopt(s, SOL_SOCKET, SO_BROADCAST, (const char *)&one, sizeof one);
   Addr a = { 0 };
   a.sin_family = AF_INET;
-  /* test hook: A4C_PLANES with A4C_NET_LOOPBACK=1 listens on this computer only (two copies of the game on one) */
-  a.sin_addr.s_addr = htonl(getenv("A4C_PLANES") && getenv("A4C_NET_LOOPBACK") ? INADDR_LOOPBACK : INADDR_ANY);
+  /* test hook: TL_PLANES with TL_NET_LOOPBACK=1 listens on this computer only (two copies of the game on one) */
+  a.sin_addr.s_addr = htonl(getenv("TL_PLANES") && getenv("TL_NET_LOOPBACK") ? INADDR_LOOPBACK : INADDR_ANY);
   a.sin_port = htons((uint16_t)port);
   if (bind(s, (struct sockaddr *)&a, sizeof a) != 0) {
     closesock(s);
@@ -104,7 +104,7 @@ static void addr_text(const Addr *a, char *buf, size_t n) {
 }
 
 /* ---- packets ------------------------------------------------------------------ */
-/* Every packet starts "A4C", a version and a type. Numbers are written in
+/* Every packet starts "TL", a version and a type. Numbers are written in
  * little-endian byte order; floats as their IEEE bits.
  *
  * Security: the host shows a 6-digit game code and the guest types it. The
@@ -215,6 +215,7 @@ static struct {
   bool     registered; /* the relay has our code */
   NetMatch match;
   float    since_rx, beacon_t, send_t, hello_t, wait_t;
+  int      play_rx; /* packets in since this match began (the slow start's grace, net_poll) */
   /* the guest's half of the handshake */
   uint8_t  secret[32], nonce[16], y[32];
   bool     challenged;
@@ -247,7 +248,7 @@ static struct {
   float    held_s;
 } N = { .s = BADSOCK, .lan = BADSOCK };
 
-A4C_PRINTF(1, 2) static void say(const char *fmt, ...) {
+TL_PRINTF(1, 2) static void say(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   vsnprintf(N.status, sizeof N.status, fmt, ap);
@@ -265,7 +266,7 @@ static const Addr *peer_addr(void) { return N.via_relay ? &N.relay : N.have_peer
 /* The starting point both sides make from the code and the guest's nonce. */
 static void code_point(uint8_t g[32], const char *pin, const uint8_t nonce[16]) {
   uint8_t msg[11 + 6 + 16], h[32];
-  memcpy(msg, "A4C-CPACE-2", 11); /* 2: our own crypto (core/crypto.c) */
+  memcpy(msg, "TL-CPACE-2", 11); /* 2: our own crypto (core/crypto.c) */
   memcpy(msg + 11, pin, 6);
   memcpy(msg + 17, nonce, 16);
   cr_blake2b(h, 32, NULL, 0, msg, sizeof msg);
@@ -353,9 +354,9 @@ static void forget_keys(void) {
 }
 
 static bool new_pin(void) {
-  /* test hook (tools/playtest): A4C_PLANES with A4C_TEST_CODE=NNNNNN hosts with that code, so a test on two
+  /* test hook (tools/playtest): TL_PLANES with TL_TEST_CODE=NNNNNN hosts with that code, so a test on two
    * computers knows it in advance */
-  const char *t = getenv("A4C_PLANES") ? getenv("A4C_TEST_CODE") : NULL;
+  const char *t = getenv("TL_PLANES") ? getenv("TL_TEST_CODE") : NULL;
   if (t && strlen(t) == 6 && strspn(t, "0123456789") == 6) {
     memcpy(N.pin, t, 7);
     return true;
@@ -379,9 +380,9 @@ static void pace_reset(void) {
 }
 
 void net_close(void) {
-  if (N.rx_ok + N.rx_refused && getenv("A4C_PLANES"))
+  if (N.rx_ok + N.rx_refused && getenv("TL_PLANES"))
     plat_log("net: %d packets taken, %d refused", N.rx_ok, N.rx_refused);
-  if (N.holds && getenv("A4C_PLANES"))
+  if (N.holds && getenv("TL_PLANES"))
     plat_log("net: waited %d times for the other computer, %.1f s in all", N.holds, (double)N.held_s);
   N.rx_ok = N.rx_refused = 0;
   N.holds = 0;
@@ -424,10 +425,10 @@ bool net_is_host(void) { return N.role == R_HOST; }
 const char *net_status(void) { return N.status; }
 const char *net_code(void) { return N.role == R_HOST && (!N.via_relay || N.registered) ? N.pin : ""; }
 
-/* Tests: A4C_NET_PORT=N hosts on UDP N instead of NET_PORT and sends no LAN beacons, so test matches stay
+/* Tests: TL_NET_PORT=N hosts on UDP N instead of NET_PORT and sends no LAN beacons, so test matches stay
  * off the ports real games and other test runs use. */
 static int host_port(void) {
-  const char *e = getenv("A4C_NET_PORT");
+  const char *e = getenv("TL_NET_PORT");
   int p = e ? (int)safe_int(e, 0, INT_MIN, INT_MAX) : 0;
   return p > 1024 && p < 65536 ? p : NET_PORT;
 }
@@ -457,7 +458,7 @@ bool net_host(const NetMatch *m, const char *name, const char *relay) {
   N.phase = PH_WAIT;
   N.since_rx = N.beacon_t = 0;
   say(N.via_relay ? "REGISTERING THE GAME WITH THE RELAY...%s" : "WAITING FOR A PLAYER WITH THE CODE (LAN, OR UDP PORT 27960)%s", "");
-  if (getenv("A4C_PLANES")) plat_log("net: game code %s", N.pin); /* tests only: the code is a secret */
+  if (getenv("TL_PLANES")) plat_log("net: game code %s", N.pin); /* tests only: the code is a secret */
   return true;
 }
 
@@ -618,9 +619,19 @@ static void send_welcome(void) {
   send_peer(&w);
 }
 
+static void send_join(void) { /* the guest's join, again: in a match the host answers it with a welcome */
+  Buf p;
+  head(&p, T_JOIN);
+  put8(&p, N.guest_jet);
+  for (int k = 0; k < 3; k++) put8(&p, N.guest_load[k] + 1);
+  puts_(&p, N.name, 16);
+  send_peer(&p);
+}
+
 static void start_play(void) {
   N.phase = PH_PLAY;
   N.since_rx = 0;
+  N.play_rx = 0;
   N.ev_seq = N.ev_in = N.ev_ack = 0;
   pace_reset();
   cr_wipe(N.secret, sizeof N.secret);
@@ -814,7 +825,7 @@ static void wait_packet(Buf *p, int n, const Addr *from, NetMatch *out, NetEvent
     start_play();
     *ev = NETE_START;
   } else return;
-  if (!from_relay || type != T_RCODE) N.since_rx = 0;
+  if (!from_relay || type != T_RCODE) N.since_rx = 0, N.play_rx++;
 }
 
 NetEvent net_poll(float dt, NetMatch *out) {
@@ -890,12 +901,15 @@ NetEvent net_poll(float dt, NetMatch *out) {
   }
   if (N.start) {
     N.start = false;
+    N.play_rx = 0;
     *out = N.match;
     N.ev_seq = N.ev_in = N.ev_ack = 0;
     pace_reset();
     return NETE_START;
   }
-  if (N.phase == PH_PLAY && N.since_rx > 6) {
+  /* 6 s without a word: the other side has gone; but a match's first seconds get 45: a Pentium of the 90s short of
+   * memory builds its match (and swaps) for half a minute before its first packet */
+  if (N.phase == PH_PLAY && N.since_rx > (N.play_rx < 20 ? 45 : 6)) {
     N.phase = PH_GONE;
     say("CONNECTION LOST - THE OTHER COMPUTER LEFT%s", "");
     return NETE_LOST;
@@ -971,13 +985,15 @@ static void take_event(Buf *p, Game *g, bool apply) {
     if (apply && !p->bad && pi < g->nplanes && g->planes[pi].remote) sim_remote_flares(g, &g->planes[pi], chaff != 0);
     return;
   }
-  if (kind != NE_MISSILE && kind != NE_GONE) { /* not one we know: its length is unknown too, so nothing after it */
+  /* not one we know: its length is unknown too, so nothing after it */
+  if (kind != NE_MISSILE && kind != NE_GONE && kind != NE_TANKER) {
     p->bad = true;
     return;
   }
   if (kind == NE_TANKER) {
     int pi = get8(p);
-    if (apply && N.role == R_HOST && pi < g->nplanes && g->planes[pi].remote) sim_call_tanker(g, &g->planes[pi]);
+    if (apply && !p->bad && N.role == R_HOST && pi < g->nplanes && g->planes[pi].remote)
+      sim_call_tanker(g, &g->planes[pi]);
     return;
   }
   Missile m = { 0 };
@@ -1121,10 +1137,18 @@ static void take_state(Game *g, Buf *p) {
     int kc[MAX_PLANES];
     for (int j = 0; j < MAX_PLANES; j++) kc[j] = get8(p);
     if (p->bad || i >= g->nplanes || !g->planes[i].remote) continue;
+    /* numbers a jet can have: finite, a place on any map, a direction and an up that are not zero, a speed and a
+     * health in range. A forged or broken snapshot is dropped, so nothing huge reaches the plane's motion or the
+     * terrain. */
+    if (!finite3(pos) || !finite3(f) || !finite3(u) || !finite3(vel)) continue;
+    f = v3_norm(f), u = v3_norm(u);
+    bool ok = fabsf(pos.x) < 1e6f && fabsf(pos.y) < 1e6f && fabsf(pos.z) < 1e6f && v3_len(f) > 0.5f &&
+              v3_len(u) > 0.5f && fabsf(speed) < 1e4f && fabsf(thr) < 1e4f && fabsf(hp) < 1e6f;
+    if (!ok) continue;
     Plane *q = &g->planes[i];
     q->snap.pos = pos;
-    q->snap.f = v3_norm(f);
-    q->snap.u = v3_norm(u);
+    q->snap.f = f;
+    q->snap.u = u;
     q->snap.vel = v3_len(vel) < 600 ? vel : v3_scale(q->snap.f, speed);
     q->snap.speed = speed;
     q->snap.thr = thr;
@@ -1229,8 +1253,11 @@ static bool play_packet(Game *g, Buf *p, int n, const Addr *from) {
       return false;
     }
     N.pace_welc++; /* the same match: it moves the host's packet numbers on, but not its game */
-    if (g->time > 5) N.told_t = 1; /* past the match's first welcomes: the host is waiting for us */
-  } else if (type == T_JOIN && N.role == R_HOST) send_welcome(); /* the guest has not heard our welcome yet */
+    if (g->time > 5 && !N.hold) N.told_t = 1; /* past the match's first welcomes: the host is waiting for us */
+  } else if (type == T_JOIN && N.role == R_HOST) { /* the guest has not heard our welcome yet, or is waiting for us */
+    N.pace_welc++; /* not a state: the guest's packet numbers move on, not its game */
+    send_welcome();
+  }
   return true;
 }
 
@@ -1241,9 +1268,11 @@ static long pace_lag(void) {
   return (long)N.pace_sent - ((long)theirs - (long)N.pace_welc);
 }
 
-/* A slow computer runs several ticks a frame to keep up (main.c). One that still falls behind: the host waits
- * for a guest more than a second behind, until it is within 0.4 s, and both screens say so (net_pace_note). A
- * slow host needs nothing: its guest follows its verdicts and rematches whenever they come. */
+/* A slow computer runs several ticks a frame to keep up (main.c). One that still falls behind is waited for: the
+ * other side stands still while it is more than a second behind, until it is within 0.4 s, and both screens say so
+ * (net_pace_note). That goes for a slow host too: a guest that ran on alone was in another moment of the match
+ * than the host that judges it (a Pentium 120 hosting a Windows 11 PC: the clocks a minute and a half apart, and
+ * the PC won every match that was not even). */
 #define HOLD_AT   30
 #define HOLD_TILL 12
 
@@ -1273,15 +1302,22 @@ void net_tick(Game *g, float dt) {
   } else if (N.role == R_GUEST) {
     if (-lag > HOLD_AT) N.behind = true;
     else if (-lag <= HOLD_TILL) N.behind = false;
+    if (!N.hold && lag > HOLD_AT) {
+      N.hold = true;
+      N.holds++;
+      if (N.holds == 1) plat_log("net: the host is %.1f s behind: waiting for it", (double)lag / 30);
+    } else if (N.hold && lag <= HOLD_TILL) N.hold = false;
     if (N.told_t > 0) N.told_t -= dt;
   }
-  if (N.hold) { /* the game stands still here (main.c): a welcome now and then says we are still here; not a state,
-                  * which would count as game time we haven't run, and the guest counts welcomes out too */
+  if (N.hold) { /* the game stands still here (main.c): a word now and then says we are still here (the host's a
+                  * welcome, the guest's its join, which the host answers with one); not a state, which would count
+                  * as game time we haven't run, and each side counts the other's words out */
     N.held_s += dt;
     N.hold_t -= dt;
     if (N.hold_t <= 0) {
       N.hold_t = 0.5f;
-      send_welcome();
+      if (N.role == R_HOST) send_welcome();
+      else send_join();
     }
     return;
   }
@@ -1330,7 +1366,7 @@ static struct {
 
 static void watch_keys(const char *code) {
   uint8_t msg[32], k[64];
-  memcpy(msg, "A4C-WATCH-1", 11);
+  memcpy(msg, "TL-WATCH-1", 11);
   memset(msg + 11, 0, sizeof msg - 11);
   memcpy(msg + 11, code, 16);
   cr_blake2b(k, 64, NULL, 0, msg, 27);
@@ -1823,7 +1859,7 @@ void net_watch_apply(Game *g) {
 }
 
 /* ---- fuzzing (tests/lf_net.c) ------------------------------------------------------ */
-#ifdef A4C_FUZZ
+#ifdef TL_FUZZ
 /* One input: a phase to set up, an option byte, then the packets that arrive in it, each handed to the handler
  * the game's own receive loop calls (no socket is opened). Each packet is a flags byte (1: sealed; 2, 4: from
  * the relay or from a stranger rather than the other player), a step for its packet number (up to 127 on,
@@ -2071,7 +2107,7 @@ size_t net_fuzz_seed(Game *g, int k, uint8_t *out, size_t cap) {
     putn(&p, yh, 32);
     fuzz_packet(&o, k == NF_GUEST_RELAY ? 2 : 0, 1, &p);
   }
-    A4C_FALLTHROUGH; /* the welcome */
+    TL_FALLTHROUGH; /* the welcome */
   case NF_GUEST_KEYED:
     head(&p, T_WELCOME);
     put_match(&p, &N.match);

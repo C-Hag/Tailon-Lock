@@ -99,12 +99,12 @@ static void surface_hook(const Plane *p, int kind, int side, vec3 te, float deg)
 }
 
 bool eyes_init(void) {
-  const char *e = getenv("A4C_EYES");
+  const char *e = getenv("TL_EYES");
   if (!e || sscanf(e, "%d,%d", &rfd, &wfd) != 2 || rfd < 0 || wfd < 0) {
     rfd = wfd = -1;
     return false;
   }
-  if (getenv("A4C_EYES_EVERY")) every = (int)safe_int(getenv("A4C_EYES_EVERY"), 0, INT_MIN, INT_MAX);
+  if (getenv("TL_EYES_EVERY")) every = (int)safe_int(getenv("TL_EYES_EVERY"), 0, INT_MIN, INT_MAX);
   if (every < 1) every = 1;
   prev_text_hook = fb_text_hook;
   fb_text_hook = text_hook;
@@ -141,7 +141,7 @@ static void put(const void *b, size_t n) {
 
 static char   sheet[1 << 16];
 static size_t used;
-static void line(const char *f, ...) __attribute__((format(printf, 1, 2)));
+static void line(const char *f, ...) TL_PRINTF(1, 2);
 static void line(const char *f, ...) {
   va_list a;
   va_start(a, f);

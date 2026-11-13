@@ -112,7 +112,7 @@ def run_check(conf, branch, sha):
         git(conf['CLONE'], 'worktree', 'add', '--detach', '--force', tree, sha)
         env = dict(os.environ, HOME=home, XDG_CONFIG_HOME=os.path.join(home, '.config'))
         if conf.get('PRIVATE'):
-            env['A4C_CHECK_PRIVATE'] = conf['PRIVATE']
+            env['TL_CHECK_PRIVATE'] = conf['PRIVATE']
         t0 = time.time()
         p = subprocess.run([os.path.join(tree, 'tools', 'check')], cwd=tree, env=env, capture_output=True, text=True)
         out = p.stdout + p.stderr

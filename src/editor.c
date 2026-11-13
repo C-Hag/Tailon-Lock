@@ -260,8 +260,8 @@ static void save(void) {
     snprintf(path, sizeof path, "%s%s.json", rt, sc->key);
     ok += synth_save(sc, path);
   }
-#ifdef A4C_SOURCE_DIR
-  snprintf(path, sizeof path, "%s/assets/music/%s.json", A4C_SOURCE_DIR, sc->key);
+#ifdef TL_SOURCE_DIR
+  snprintf(path, sizeof path, "%s/assets/music/%s.json", TL_SOURCE_DIR, sc->key);
   if (plat_is_file(path)) ok += synth_save(sc, path);
 #endif
   dirty = !ok;

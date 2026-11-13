@@ -1,6 +1,6 @@
 /* lf_ff.c - a libFuzzer target for the floppy forge's unpackers (src/ff): TLPK, TLJ and TLH, which the game's
  * asset_load (src/assets.c) runs on every packed file it reads from the disk. Original code for this project. Build
- * with -DA4C_LIBFUZZER=ON (clang); run it under ASan and UBSan.
+ * with -DTL_LIBFUZZER=ON (clang); run it under ASan and UBSan.
  *
  * The first byte picks the unpacker, the rest is the file. Each one must keep what its header promises: NULL or the
  * bytes with a 0 after them; TLPK never more than its limit; TLJ's text is JSON the game's own parser takes (the

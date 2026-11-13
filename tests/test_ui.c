@@ -5,8 +5,8 @@
 /* what ui.c asks of the rest of the game (nothing of it is shown here) */
 /* every theme named: the settings page prints the name (an all-zero table gives printf a null %s) */
 #define T_ { "test", "TEST", 1, 1, 1 }
-const Theme THEMES[MUSIC_ALL] = { T_, T_, T_, T_, T_ };
-_Static_assert(MUSIC_ALL == 5, "one T_ per theme");
+const Theme THEMES[MUSIC_ALL] = { T_, T_, T_, T_, T_, T_ };
+_Static_assert(MUSIC_ALL == 6, "one T_ per theme");
 const JetSpec *assets_jet_spec(int jet) { return (void)jet, NULL; }
 int assets_map_count(void) { return 0; }
 const char *assets_map_name(int i) { return (void)i, ""; }
@@ -24,7 +24,7 @@ const char *net_lan_addr(int i) { return (void)i, ""; }
 double sfx_listened(void) { return 0; }
 bool plat_file_sync(FILE *f) { return (void)f, false; }
 bool plat_file_replace(const char *from, const char *to) { return (void)from, (void)to, false; }
-void plat_log(const char *fmt, ...) { (void)fmt; } /* plat_common.c's A4C_FILES line (tools/ff/inventory) */
+void plat_log(const char *fmt, ...) { (void)fmt; } /* plat_common.c's TL_FILES line (tools/ff/inventory) */
 
 static int fails;
 #define CHECK(c)                                                       \

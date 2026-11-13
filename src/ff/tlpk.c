@@ -19,7 +19,10 @@ uint8_t *tlpk_unpack(const uint8_t *in, size_t n, size_t limit, size_t *size) {
     return NULL;
   }
   if (!stretch_t[4095]) stretch_init();
-  model_init(m, o2bits);
+  if (!model_init(m, o2bits)) {
+    free(out), free(m);
+    return NULL;
+  }
   Rc r;
   rc_init(&r, in + TLPK_HEADER, n - TLPK_HEADER);
   uint32_t pos = 0;

@@ -177,6 +177,7 @@ typedef struct {
   int   in;              /* IN_CUT, IN_DISSOLVE or IN_WHIP (version 3) */
   float in_dur, in_dir;
   bool  scene;           /* the control room, drawn in code (cic.c), not the 3D world */
+  bool  radar;           /* and of those, the radar scope alone */
 } Shot;
 enum { IN_CUT, IN_DISSOLVE, IN_WHIP };
 typedef struct { float t0, t1, type, blink; int style; char text[64], speaker[16]; } Card;
@@ -441,7 +442,8 @@ bool intro_init(void) {
     s->in = !strcmp(it, "dissolve") ? IN_DISSOLVE : !strcmp(it, "whip") ? IN_WHIP : IN_CUT;
     s->in_dur = in ? numv(in, "dur", 0.5f) : 0;
     s->in_dir = in ? numv(in, "dir", 1) : 1;
-    s->scene = !strcmp(strv(e, "scene"), "cic");
+    s->radar = !strcmp(strv(e, "scene"), "radar");
+    s->scene = s->radar || !strcmp(strv(e, "scene"), "cic");
     if (parse_track(json_get(e, "cam"), 8, &s->cam)) nshots++;
   }
 
@@ -510,14 +512,21 @@ bool intro_init(void) {
 }
 
 bool intro_available(void) { return ready; }
-int  intro_music(void) { return music_theme_index(music_key[0] ? music_key : "horizon-intro"); }
+int intro_music(void) {
+  /* Heartbeat when it is there (not on the floppy), else the cut the script was timed to */
+  int hb = music_theme_index("heartbeat-intro");
+  if (!strcmp(THEMES[hb].key, "heartbeat-intro") && music_recorded(hb)) return hb;
+  return music_theme_index(music_key[0] ? music_key : "horizon-intro");
+}
 float intro_song_shift(void) { return song_shift; }
 
 /* ---- run state ---------------------------------------------------------- */
-enum { P_SMOKE, P_FIRE, P_FLASH, P_DEBRIS, P_STEAM, P_SPRAY, P_FSMOKE };
-static const struct { uint32_t c0, c1; float a; } PK[7] = {
+enum { P_SMOKE, P_FIRE, P_FLASH, P_DEBRIS, P_STEAM, P_SPRAY, P_FSMOKE, P_TRAIL, P_BURN };
+static const struct { uint32_t c0, c1; float a; } PK[9] = {
   { 0x969296, 0x5c5860, 0.55f }, { 0xffec96, 0xd24618, 1 }, { 0xfffae1, 0xffbe5a, 1 }, { 0x28221e, 0x1e1c1a, 1 },
-  { 0xf5f0ec, 0xd2ced6, 0.5f },  { 0xf0f4fa, 0xc8d6e6, 0.45f }, { 0xd8d4d8, 0x8a868f, 0.42f },
+  { 0xf5f0ec, 0xd2ced6, 0.5f },  { 0xf0f4fa, 0xc8d6e6, 0.2f }, { 0xd8d4d8, 0x8a868f, 0.42f },
+  { 0x6e6664, 0xa8a0a0, 0.16f }, /* a shard's thin trail: many small puffs overlap into one streak */
+  { 0x2c2624, 0x7c7476, 0.62f }, /* the burning wreck's oily smoke, black going grey */
 };
 typedef struct { int k; vec3 p, v; float life, max, s, g, d; } Part;
 #define INTRO_PARTS 3200
@@ -589,12 +598,23 @@ static void explode(vec3 pos, float size) {
     float off = 4 * rnd(), v = 12 + 20 * rnd(), life = 1.4f + 1.2f * rnd();
     part(P_FSMOKE, v3_add(pos, v3_scale(d, off)), v3_scale(d, v), life, 3 + 2 * size, 5, 1.2f);
   }
-  if (size > 1)
+  if (size > 1) {
     for (int i = 0; i < 26; i++) {
       vec3 d = rdir(0.2f);
       float v = 60 + 90 * rnd(), life = 1.5f + 1.5f * rnd();
       part(P_DEBRIS, pos, v3_scale(d, v), life, 1.4f, 0, 0.3f);
     }
+    for (int i = 0; i < 18 * size; i++) { /* the fireball's body turns to rolling black smoke */
+      vec3 d = rdir(0.35f);
+      float off = 3 + 7 * rnd(), v = 4 + 16 * rnd(), life = 2.2f + 2.2f * rnd(), r = 4 + 3 * rnd();
+      part(P_BURN, v3_add(pos, v3_scale(d, off)), v3_scale(d, v), life, r, 5, 0.9f);
+    }
+    for (int i = 0; i < 70; i++) { /* white-hot sparks flung out past the fire */
+      vec3 d = rdir(0.4f);
+      float v = 70 + 120 * rnd(), life = 0.3f + 0.6f * rnd(), r = 0.35f + 0.35f * rnd();
+      part(P_FIRE, pos, v3_scale(d, v), life, r, 0, 0.7f);
+    }
+  }
 }
 
 /* every sound of the film plays at this share of its level, under the music (0.45 until the music's ear-safe
@@ -766,7 +786,7 @@ static void step(float t, float dt) {
       vec3 tp = v3_sub(fr.pos, v3_scale(fr.f, tail + 6));
       float px = tp.x + (rnd() - 0.5f) * 5, pz = tp.z + (rnd() - 0.5f) * 5;
       float vx = (rnd() - 0.5f) * 6, vy = 3 + 5 * rnd(), vz = (rnd() - 0.5f) * 6, life = 0.8f + 0.6f * rnd();
-      part(P_SPRAY, v3(px, 0.5f, pz), v3(vx, vy, vz), life, 2, 4.5f, 0.9f);
+      part(P_SPRAY, v3(px, 0.5f, pz), v3(vx, vy, vz), life, 4, 7, 0.9f); /* large and thin: small ones read as a row of white dots */
     }
     /* wingtip vapour */
     if (in_win(a->trail, a->ntrail, t) > 0) {
@@ -802,10 +822,11 @@ static void step(float t, float dt) {
     q->v = v3_scale(q->v, expf(-q->d * dt));
     if (q->k == P_DEBRIS) {
       q->v.y -= 9.81f * dt;
-      if (rnd() < 0.2f) part(P_SMOKE, q->p, v3(0, 1, 0), 1.4f, 1.1f, 3, 1.5f); /* each shard trails smoke */
+      /* each shard trails smoke, a puff every 2.5 m or so whatever its speed: spaced by time they read as rows of dots */
+      if (rnd() < v3_len(q->v) * dt / 2.5f) part(P_TRAIL, q->p, v3(0, 1, 0), 0.9f, 0.7f, 3.5f, 1.5f);
     }
     else if (q->k == P_SPRAY) q->v.y -= 6 * dt;
-    else if (q->k == P_SMOKE || q->k == P_FSMOKE) q->v.y += 0.8f * dt;
+    else if (q->k == P_SMOKE || q->k == P_FSMOKE || q->k == P_BURN || q->k == P_TRAIL) q->v.y += 0.8f * dt;
     q->p = v3_add(q->p, v3_scale(q->v, dt));
     q->s += q->g * dt;
     q->life -= dt;
@@ -929,15 +950,15 @@ static void draw_wakes(Framebuffer *fb, const View *V, float t) {
     if (a->kind != K_SHIP || a->wake <= 0) continue;
     float Lh = a->model == M_CVN90 ? 160.0f : 62.0f, W0 = a->model == M_CVN90 ? 22.0f : 7.0f, k = a->wake;
     if (v3_dist(ship_local(a, t, v3(0, 0, 0)), V->cam.pos) > 30000) continue;
-    const int segs = 7;
+    /* the wake as soft ribbons, each piece running on from the last: puffs shrink to white dots in a wide view */
+    const int segs = 40;
     float len0 = 1100 * k;
     for (int s = 0; s < segs; s++) {
-      float z0 = -Lh - len0 * s / segs, z1 = -Lh - len0 * (s + 1) / segs;
-      float w0 = W0 + (float)s / segs * 120 * k, w1 = W0 + (float)(s + 1) / segs * 120 * k;
-      vec3 q[4] = { ship_local(a, t, v3(-w0, 0.3f, z0)), ship_local(a, t, v3(w0, 0.3f, z0)), ship_local(a, t, v3(w1, 0.3f, z1)),
-                    ship_local(a, t, v3(-w1, 0.3f, z1)) };
-      for (int c = 0; c < 4; c++) r3d_seg(fb, V, q[c], q[(c + 1) % 4], hexc(0xe8eef4), 3, 0.3f * (1 - (float)s / segs), 1);
-      r3d_seg(fb, V, ship_local(a, t, v3(0, 0.3f, z0)), ship_local(a, t, v3(0, 0.3f, z1)), hexc(0xffffff), w0 * 0.5f, 0.4f * (1 - (float)s / segs), 1);
+      float u0 = (float)s / segs, u1 = (float)(s + 1) / segs, z0 = -Lh - len0 * u0, z1 = -Lh - len0 * u1;
+      float w0 = W0 + u0 * 120 * k, w1 = W0 + u1 * 120 * k, fade = (1 - u0) * (1 - u0), r = (4 + 16 * u0) * k;
+      r3d_seg(fb, V, ship_local(a, t, v3(0, 0.4f, z0)), ship_local(a, t, v3(0, 0.4f, z1)), hexc(0xe2e8ee), w0 * 1.1f, 0.07f * fade, 0);
+      r3d_seg(fb, V, ship_local(a, t, v3(-w0, 0.4f, z0)), ship_local(a, t, v3(-w1, 0.4f, z1)), hexc(0xf0f4f8), r * 2, 0.13f * fade, 0);
+      r3d_seg(fb, V, ship_local(a, t, v3(w0, 0.4f, z0)), ship_local(a, t, v3(w1, 0.4f, z1)), hexc(0xf0f4f8), r * 2, 0.13f * fade, 0);
     }
   }
 }
@@ -1114,7 +1135,7 @@ static void draw_actors(Framebuffer *fb, const View *V, float t) {
     float k = 1 - (t - flares[i].t) / flares[i].life;
     r3d_sprite_kind(SPR_GLOW);
     r3d_ball(V, p, 1.6f * k + 0.9f, hexc(0xffd890), 0.8f * k);
-    r3d_ball(V, p, 0.6f + 0.25f * sinf(t * 50 + flares[i].t), hexc(0xffffff), 1); /* the hot core */
+    r3d_ball(V, p, 0.6f + 0.06f * sinf(t * 50 + flares[i].t), hexc(0xffffff), 1); /* the hot core: a wider beat strobes at 60 frames */
     r3d_sprite_kind(SPR_SOFT);
   }
   for (int i = 0; i < ntracers; i++)
@@ -1125,8 +1146,14 @@ static void draw_actors(Framebuffer *fb, const View *V, float t) {
     float u = 1 - q->life / q->max;
     if (q->k == P_DEBRIS) { /* a tumbling shard */
       float w = u * 14 + (float)i;
-      vec3 d = v3_scale(v3(sinf(w), cosf(w * 0.7f), sinf(w * 1.3f + 1)), q->s * (0.8f + (float)(i % 3)));
-      r3d_seg(fb, V, v3_sub(q->p, d), v3_add(q->p, d), hexc(0x201c1a), 0.25f + 0.15f * (float)(i % 4), 1, 1);
+      /* a chunk, not a needle: short and broad; it glows at first, and goes out before it ends */
+      vec3 d = v3_scale(v3(sinf(w), cosf(w * 0.7f), sinf(w * 1.3f + 1)), q->s * (0.3f + 0.2f * (float)(i % 3)));
+      float hot = clampf(1 - u / 0.3f, 0, 1);
+      r3d_seg(fb, V, v3_sub(q->p, d), v3_add(q->p, d), mixc(0x2a2624, 0xff9440, hot), 0.7f + 0.25f * (float)(i % 4), clampf((1 - u) * 5, 0, 1), 1);
+      if (hot > 0) {
+        r3d_sprite_kind(SPR_GLOW);
+        r3d_ball(V, q->p, 1.6f, hexc(0xff9440), 0.7f * hot);
+      }
       continue;
     }
     float a = PK[q->k].a * (q->k == P_FIRE || q->k == P_FLASH ? 1 - u : (1 - u) * fminf(1, u * 6 + 0.3f));
@@ -1773,9 +1800,26 @@ static void blend_frames(Framebuffer *fb, const uint32_t *prev, float keep) {
 /* the drawn control room over the picture with alpha a: blended in software,
  * on the GPU as the HUD layer's own alpha over the 3D picture under it */
 static Framebuffer room_fb;
+/* The drawn scenes are painted by the CPU, and a Retina screen has four times the pixels. So they are painted at about
+ * 1080 lines at most, scaled up, and every other frame on a large screen: the film holds its pace. */
+static Framebuffer room_lo;
 static void lay_scene(Framebuffer *fb, const Shot *sc, float t, float a, bool gpu) {
-  if (a <= 0 || !fb_resize(&room_fb, fb->w, fb->h)) return;
-  cic_draw(&room_fb, t, sc->t0, sc->t1);
+  static const Shot *last;
+  static int tick;
+  int k = fb->h > 1200 ? (fb->h + 1079) / 1080 : 1; /* sharp up to 1080 lines: the commander's gestures read */
+  bool same = sc == last && room_fb.w == fb->w && room_fb.h == fb->h;
+  if (!sc || a <= 0 || !fb_resize(&room_fb, fb->w, fb->h)) return;
+  if (k == 1 || !same || ++tick % 2 == 0) {
+    Framebuffer *to = &room_fb;
+    if (k > 1) {
+      if (!fb_resize(&room_lo, (fb->w + k - 1) / k, (fb->h + k - 1) / k)) return;
+      to = &room_lo;
+    }
+    if (sc->radar) cic_radar_draw(to, t, sc->t0, sc->t1);
+    else cic_draw(to, t, sc->t0, sc->t1);
+    if (k > 1) fb_scale_up(&room_fb, &room_lo, k);
+  }
+  last = sc;
   size_t n = (size_t)fb->w * fb->h;
   if (gpu) {
     uint32_t al = (uint32_t)lroundf(clampf(a, 0, 1) * 255) << 24;
@@ -1806,7 +1850,17 @@ static void smear_frame(Framebuffer *fb, float px) {
   free(row);
 }
 
+static void intro_render_frame(Framebuffer *fb);
+
 void intro_render(Framebuffer *fb) {
+  r3d_film_look(true);
+  hud_film_labels(true);
+  intro_render_frame(fb);
+  hud_film_labels(false);
+  r3d_film_look(false);
+}
+
+static void intro_render_frame(Framebuffer *fb) {
   if (!ready) return;
   float t = t_now;
   int idx = nshots - 1;

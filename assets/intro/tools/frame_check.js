@@ -4,6 +4,7 @@
 // runs there. The only ways out are written in the script, per shot, and listed in the output:
 //   `absent`  [{id, reason, from?, to?}]: the jet is not in this shot, and why. It must then not show in the picture.
 //   `closeup` a jet that may run past the frame edge, its centre staying in the frame.
+//   `partial` jets seen through a long lens in the background: cut by the frame edge, or partly in view while exempt.
 // With --strict any corner outside at any sample, a jet with no path and no entry, or an absent jet that shows, fails.
 // A subject may also be one of the deck crew (head and feet).
 const C = require('../src/intro_core.js');
@@ -77,10 +78,11 @@ for (const sh of S.shots) {
       let ws = points(a, t);
       if (off) {   // not in this shot: then it must not show (a cockpit's own jet and the inside of a room do not draw; specks do not count)
         const far = ws && Math.hypot(ws[0][0] - cam.p[0], ws[0][1] - cam.p[1], ws[0][2] - cam.p[2]) > (a.kind === 'static' ? 500 : 6000);
-        if (ws && !far && !sh.scene && !(sh.hud && sh.hud.actor === a.id) && ws.some(inside)) { const s = stat[a.id] || (stat[a.id] = { n: 0, inside: 0, out: [], gone: [], shows: [] }); s.shows.push(+t.toFixed(2)); }
+        if (ws && !far && !(sh.partial || []).includes(a.id) && !sh.scene && !(sh.hud && sh.hud.actor === a.id) && ws.some(inside)) { const s = stat[a.id] || (stat[a.id] = { n: 0, inside: 0, out: [], gone: [], shows: [] }); s.shows.push(+t.toFixed(2)); }
         continue;
       }
       if (ws && sh.closeup === a.id) { const q = C.sample(tracks[a.id], t); ws = [[q[1], q[2], q[3]]]; }
+      else if (ws && (sh.partial || []).includes(a.id)) ws = [ws.reduce((m, w) => [m[0] + w[0] / ws.length, m[1] + w[1] / ws.length, m[2] + w[2] / ws.length], [0, 0, 0])];
       see(a.id, ws);
     }
   }
@@ -92,7 +94,7 @@ for (const sh of S.shots) {
   });
   rows.push(`${sh.name.padEnd(8)} ${sh.t0.toFixed(2)}-${sh.t1.toFixed(2)}  horizon ${Math.round(100 * hz / nh)}%  ${parts.join('  ')}`);
 }
-const flagged = S.shots.filter(x => x.closeup).map(x => x.name + ': ' + x.closeup);
+const flagged = S.shots.filter(x => x.closeup || x.partial).map(x => x.name + ': ' + [x.closeup, ...(x.partial || [])].filter(Boolean).join(' '));
 console.log('close-ups (centre only, this jet in this shot): ' + (flagged.join(', ') || 'none'));
 console.log('exemptions (not in the shot, from the script):\n  ' + exempt.join('\n  '));
 console.log('wholly in frame (2.35:1 box, 92 % of it), every jet not exempted\n' + rows.join('\n'));

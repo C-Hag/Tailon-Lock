@@ -14,8 +14,8 @@
  *     byte at the last distance), mixed in the logistic domain by a small neural network whose weights are chosen
  *     by the bit's position and whether the match model still agrees.
  * Everything is integer arithmetic, so every system codes the same bits. */
-#ifndef A4C_TLPK_MODEL_H
-#define A4C_TLPK_MODEL_H
+#ifndef TL_TLPK_MODEL_H
+#define TL_TLPK_MODEL_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -59,7 +59,7 @@ FF_SMALL static int len_code(Rc *r, LenModel *m, int ps, int len) { /* len - 2: 
 /* ---- distances (1 .. 2^31) ---- */
 static int dist_slot(uint32_t dv) { /* dv = distance - 1 */
   if (dv < 4) return (int)dv;
-  int n = 31 - __builtin_clz(dv);
+  int n = ff_bits(dv) - 1;
   return 2 * n + (int)((dv >> (n - 1)) & 1);
 }
 typedef struct { Prob slot[4][64], spec[14][32], align[16]; } DistModel;
@@ -105,15 +105,18 @@ typedef struct {
   int32_t  w[32][NIN];
 } LitModel;
 
-static void lit_init(LitModel *m, int o2bits) {
+/* false (and nothing to free) when the order-2 table cannot be had */
+static bool lit_init(LitModel *m, int o2bits) {
   for (int i = 0; i < 256; i++) m->o0[i] = PROB_INIT;
   for (int i = 0; i < 65536; i++) m->o1[i] = PROB_INIT;
   for (int i = 0; i < 64; i++) m->mm[i] = PROB_INIT;
   m->o2mask = (1u << o2bits) - 1;
   m->o2 = malloc(((size_t)m->o2mask + 1) * sizeof *m->o2);
+  if (!m->o2) return false;
   for (uint32_t i = 0; i <= m->o2mask; i++) m->o2[i] = PROB_INIT;
   for (int s = 0; s < 32; s++)
     for (int i = 0; i < NIN; i++) m->w[s][i] = i == NIN - 1 ? 0 : (1 << 16) / 3;
+  return true;
 }
 static void lit_free(LitModel *m) { free(m->o2); }
 
@@ -179,7 +182,8 @@ static void rep_push(uint32_t *r, uint32_t d) {
   r[3] = r[2], r[2] = r[1], r[1] = r[0], r[0] = d;
 }
 
-static void model_init(Model *m, int o2bits) {
+/* false (and nothing to free) when the literal model's table cannot be had */
+static bool model_init(Model *m, int o2bits) {
   Prob *all[] = { &m->is_match[0][0], m->is_rep, m->is_rep0, &m->is_rep0_long[0][0], m->is_rep1, m->is_rep2 };
   size_t ns[] = { sizeof m->is_match / sizeof(Prob), NSTATES, NSTATES, sizeof m->is_rep0_long / sizeof(Prob), NSTATES,
                   NSTATES };
@@ -188,9 +192,10 @@ static void model_init(Model *m, int o2bits) {
   Prob *lp = (Prob *)&m->len, *rp = (Prob *)&m->rep_len, *dp = (Prob *)&m->dist;
   for (size_t i = 0; i < sizeof m->len / sizeof(Prob); i++) lp[i] = rp[i] = PROB_INIT;
   for (size_t i = 0; i < sizeof m->dist / sizeof(Prob); i++) dp[i] = PROB_INIT;
-  lit_init(&m->lit, o2bits);
+  if (!lit_init(&m->lit, o2bits)) return false;
   m->state = 0, m->mrun = 0;
   for (int i = 0; i < 4; i++) m->rep[i] = 1;
+  return true;
 }
 
 /* a token after "match?" was 1: *kind K_MATCH / K_REP / K_SHORT, *k the repeat (0..3), *len, *dist (the distance

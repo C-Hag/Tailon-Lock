@@ -1,7 +1,7 @@
 /* tlh.h - the floppy forge's terrain heights (TLH; tools/ff/tlh makes them) back into the 16-bit samples the game reads
  * (little-endian, row by row, as a .h16 file holds them). Original code for this project. */
-#ifndef A4C_TLH_H
-#define A4C_TLH_H
+#ifndef TL_TLH_H
+#define TL_TLH_H
 
 #include <stdbool.h>
 #include <stddef.h>

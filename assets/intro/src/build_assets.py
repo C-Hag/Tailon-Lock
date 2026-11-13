@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Collect what the intro needs from the jets and maps work into one compact JSON (intro_assets.json).
 
-usage: build_assets.py <ace4combat project dir> <out.json>
+usage: build_assets.py <tailonlock project dir> <out.json>
 Takes the NF-24 mesh (+ a clustered far LOD), the Twin Isles terrain at 400 m, its dawn light and the cumulus puffs
 of its 'scattered' weather. Same axes as the game: metres, +X right, +Y up, +Z toward the red base.
 """

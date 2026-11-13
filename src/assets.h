@@ -1,6 +1,6 @@
 /* assets.h - finding and loading the data files in assets/ (jets, intro). */
-#ifndef A4C_ASSETS_H
-#define A4C_ASSETS_H
+#ifndef TL_ASSETS_H
+#define TL_ASSETS_H
 
 #include <stdbool.h>
 
@@ -47,10 +47,12 @@ const JetSpec *assets_jet_spec(int jet);
 /* "#rrggbb" -> 0xRRGGBB */
 unsigned assets_hex(const char *s);
 
-#ifdef A4C_FUZZ
+#ifdef TL_FUZZ
 /* tests/lf_*.c: read the assets from the fuzzer's own folder; the first map of its index read again */
 void       assets_fuzz_dir(const char *d);
 const Map *assets_fuzz_map(void);
 #endif
+
+void assets_load_hi_jets(void); /* once, when ULTRA first draws */
 
 #endif

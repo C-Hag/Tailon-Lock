@@ -1,22 +1,28 @@
-# Tailon Lock 0.2.0: release notes
+# Tailon Lock 0.2.2: release notes
 
-## What's new in 0.2.0
+## What's new in 0.2.2
 
-- A new opening film: the carrier at dawn, a catapult launch from the deck, the pair overhead to a top-down view, enemies
-  spotted from the cockpit, then the dogfight from outside, in long takes with slow motion at the peaks. One of the two
-  jets is now the JA 46 Gladan. The music dips at each kill.
-- Outside views and effects: Tab now steps through cockpit, a banking chase view that leans into turns, and a flyby
-  view (a camera left in the jet's path, on a long lens; on the deck it stands by the catapult, so it shows the launch).
-  High up, jets pull contrails; hard turns low down pull wingtip and wing vapour; near the speed of sound a vapour cone
-  forms; low over the sea a fast jet whips up spray; the catapult steams; the afterburner flashes as it lights. All of
-  it is for the eye only: the flight and the matches are exactly as before.
-- The opening film is longer (82 s), with a backlit panorama of the carrier at dawn and a crane shot over the jet on
-  the catapult.
-- CPU pilots crash less: they see the ground further ahead at speed, glide on an empty tank, and when nearly dry the
-  runway is theirs. Fewer go-rounds for traffic, softer realistic touchdowns, no flying into tankers on a gun run, and no
-  more jets stuck on the runway.
-- The floppy edition is a real disk now: a start program and a 1.44 MB FAT12 image made by our own tools.
-- Logs say why a network packet was refused and which seed each match used.
+- Ultra graphics on Windows and Linux too: the Direct3D 12 and Vulkan shaders rebuilt with the Mac's finer sea,
+  shores, beaches and the jets' panel lines, so all three systems draw the same picture.
+- Each player picks their own gunsight in the hangar: cross, circle, circle and dot, triangle, dot, or none.
+- Certified on macOS and Linux, with Windows 11 on ARM checked in a virtual machine.
+
+## Known issues
+
+- On Windows without a graphics card (Microsoft's software renderer, as in most virtual machines), the distant
+  clouds in the opening film can look blocky. Windows with a graphics card, macOS and Linux are not affected as
+  far as we know.
+
+## What's new in 0.2.1
+
+- A new opening film, 82 s, set to the project's own song: the carrier at dawn, the radar picking up the bogeys, a
+  wide take of the launch off the catapult (the deck officer waves the jet off), the climb, and the dogfight in long
+  panoramic takes. Full frame from the title on.
+- Ultra graphics on the Mac: a finer sea with real glints, shores and beaches, smoother terrain, and detailed jet
+  models with panel lines when seen up close.
+- The feel of speed: speed streaks and a stronger sense of motion low and fast.
+- A real jet engine sound: roar, turbine whine, intake hiss, wind and afterburner rumble, in place of the old drone.
+- The control room is drawn far faster, so the step from the radar to the briefing no longer stutters.
 
 ## What it is
 
@@ -40,7 +46,7 @@ fits the whole game on one 1.44 MB disk.
 | Rules | MODERN or CLASSIC controls and rules; ARCADE or REALISTIC handling |
 | Renderers | MODERN (on the GPU, four graphics levels) and RETRO (software, low-res, chunky pixels) |
 | Music | 3 themes in the menu (Full Burn, Ghost Squadron, Steel Horizon), played live by the game's own synthesizer |
-| Intro | an opening film timed to Full Burn; it can be skipped or turned off |
+| Intro | an 82 s opening film set to the project's own song; it can be skipped or turned off |
 
 Also in this release:
 
@@ -58,23 +64,17 @@ Also in this release:
 | Linux | x86-64 (plain x86-64, no newer instruction sets needed) | `tailonlock` |
 | Windows 10 or 11, 64-bit | x86-64 | `TailonLock.exe`, one file with no extra libraries |
 
-The program is 3.3 MB on macOS (both CPUs), 1.9 MB on Windows and to be measured
-on Linux; the assets add 43 MB, of which 37 MB is the Full Burn recording.
+The program is 3.4 MB on macOS (both CPUs); the assets add 56 MB, most of it the
+recorded music (46 MB) and the detailed jet models (7 MB).
 
 ## The floppy edition
 
 The whole game on one 1.44 MB floppy (1,474,560 bytes). A disk holds a start
 program, the packed game and its packed assets; the start program unpacks the
 game to a temporary folder and plays it, so it needs a writable temporary folder.
-Sizes in bytes, measured on the release head:
-
-| | Linux x86_64 (gcc) | Windows x64 (MinGW gcc) | macOS arm64 |
-|---|---|---|---|
-| start program | 19,440 | 45,568 | 34,832 (before the final intro) |
-| game, packed | 481,764 | 539,150 | 423,369 (before the final intro) |
-| assets, packed (Full Burn included) | 504,817 | 504,817 | 504,817 |
-| **total** | **1,006,021** | **1,089,535** | to be measured |
-| **free on the disk** | **437,760** | **353,792** | to be measured |
+On macOS the packed data takes 591,352 bytes and the whole disk fits with 428,744 bytes to
+spare (measured with tools/ff/inventory; details in docs/FLOPPY.md). The recorded music does not fit on a
+disk, so on the floppy the opening film plays without its song and the menu offers Ghost Squadron and Steel Horizon.
 
 The packing is lossless: the packed assets give the same pictures, to the
 pixel, as the full build.
@@ -104,6 +104,8 @@ pixel, as the full build.
   cheat.
 - The relay server is not built on Windows.
 - A renderer change takes effect after a restart.
+- This release is certified on macOS. Its new sea, shores and jet panel lines are drawn on
+  the Mac (Metal); the Windows and Linux shaders get them in the next release.
 - The first time it hosts, Windows asks to let the game through the
   firewall. A downloaded copy of the macOS app is not signed: open it once
   with right-click > Open.

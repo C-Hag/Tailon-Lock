@@ -2,8 +2,8 @@
  * spawn (JS lines 2760-2827). Nothing here allocates: every pool is a fixed
  * array, and objects that others point at (jets, ground targets, flares) are
  * referred to by index plus a generation count instead of a pointer. */
-#ifndef A4C_GAME_H
-#define A4C_GAME_H
+#ifndef TL_GAME_H
+#define TL_GAME_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -303,6 +303,7 @@ typedef struct {
   /* network play: what happened here that the other computer must copy */
   bool     net;
   int      net_side;   /* 0 the host, 1 the guest: the top byte of our missile ids */
+  float    verdictT;   /* network host: how long one side alone has been finished (sim.c waits for news of the other) */
   struct { int kind; int plane; bool chaff; Missile m; } netev[32];
   int      nnetev;
 } Game;

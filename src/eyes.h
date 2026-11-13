@@ -1,12 +1,12 @@
 /* eyes.h - the link to the live test player (tools/livepilot), a test hook like --key.
  *
- * With A4C_EYES=RFD,WFD (two pipe ends the player opened, POSIX) the game sends every Nth finished picture
- * (A4C_EYES_EVERY, default 4: 15 pictures a second) to the player, with an answer sheet of what it drew and
+ * With TL_EYES=RFD,WFD (two pipe ends the player opened, POSIX) the game sends every Nth finished picture
+ * (TL_EYES_EVERY, default 4: 15 pictures a second) to the player, with an answer sheet of what it drew and
  * what the jet is really doing, then waits for the player's hands: keys down and up, clicks, window events,
  * and "go" for the next frames. All the reading of the picture is in the tool; the game only hands it over.
- * Without A4C_EYES nothing here runs. */
-#ifndef A4C_EYES_H
-#define A4C_EYES_H
+ * Without TL_EYES nothing here runs. */
+#ifndef TL_EYES_H
+#define TL_EYES_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,7 +14,7 @@
 #include "core/game.h"
 #include "raster.h"
 
-/* Opens the link if A4C_EYES names it; installs the text and dial hooks. */
+/* Opens the link if TL_EYES names it; installs the text and dial hooks. */
 bool eyes_init(void);
 bool eyes_on(void);
 /* This frame is one the player sees: start recording what the HUD draws into fb (texts drawn into other

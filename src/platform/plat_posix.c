@@ -51,8 +51,8 @@ static void migrate(const char *from, const char *to) {
 #endif
 
 int plat_config_dir(char *buf, size_t size) {
-  /* tests: A4C_CONFIG_DIR is the settings folder itself, so a test run never reads or writes the player's own */
-  const char *test_dir = getenv("A4C_CONFIG_DIR");
+  /* tests: TL_CONFIG_DIR is the settings folder itself, so a test run never reads or writes the player's own */
+  const char *test_dir = getenv("TL_CONFIG_DIR");
   if (test_dir && *test_dir) {
     int t = snprintf(buf, size, "%s", test_dir);
     return t > 0 && (size_t)t < size;

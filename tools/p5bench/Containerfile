@@ -1,3 +1,3 @@
-# The a4c-p5 image for tools/p5bench: 32-bit Debian with gcc and valgrind (build with podman build --arch 386).
+# The tl-p5 image for tools/p5bench: 32-bit Debian with gcc and valgrind (build with podman build --arch 386).
 FROM docker.io/i386/debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev valgrind && rm -rf /var/lib/apt/lists/*

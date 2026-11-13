@@ -1,7 +1,8 @@
 /* test_net.c - what net.c takes from the other computer, on its own functions: an event naming a jet, a target,
  * a decoy, a missile kind or an owner that is not there is dropped or loses that field, a number that is not
- * finite drops it, and a real event comes through as it was sent; a packet shorter than what it should hold is
- * refused, never filled in from the bytes an earlier packet left. Original code for this project. */
+ * finite drops it (in a STATE snapshot too, and a huge one), the guest's tanker call reaches the host, and a real
+ * event comes through as it was sent; a packet shorter than what it should hold is refused, never filled in from the
+ * bytes an earlier packet left. Original code for this project. */
 #include "../src/net.c"
 
 /* the little of the platform net.c and assets.c call */
@@ -120,6 +121,92 @@ static void test_events(void) {
   g->nmissiles = 0;
   take_event(&p, g, true);
   CHECK(g->nmissiles == 0);
+  /* the guest's tanker call reaches the host, and an event after it in the same packet still counts */
+  memset(g->flares, 0, sizeof g->flares);
+  N.role = R_HOST;
+  p.n = 0;
+  put8(&p, NE_TANKER);
+  put8(&p, 1);
+  put8(&p, NE_FLARES);
+  put8(&p, 1);
+  put8(&p, 0);
+  rewind_buf(&p);
+  take_event(&p, g, true);
+  CHECK(!p.bad && g->planes[1].tcalled && g->tankers[g->planes[1].team & 1].state == TK_INBOUND);
+  take_event(&p, g, true);
+  live = 0;
+  for (int i = 0; i < MAX_FLARES; i++) live += g->flares[i].live;
+  CHECK(!p.bad && live == 2);
+  /* a call for a jet that is not the other computer's, or on the guest's side: nothing */
+  g->planes[0].tcalled = false;
+  p.n = 0;
+  put8(&p, NE_TANKER);
+  put8(&p, 0);
+  rewind_buf(&p);
+  take_event(&p, g, true);
+  CHECK(!p.bad && !g->planes[0].tcalled);
+  N.role = R_NONE;
+  free(g);
+  g = NULL;
+}
+
+/* a STATE snapshot for plane 1 with the given place, direction and speed */
+static void put_state(Buf *p, vec3 pos, vec3 f, float speed) {
+  p->n = 0;
+  put32(p, N.match.game);
+  put8(p, 1);
+  put8(p, 1);
+  putv(p, pos);
+  putv(p, f);
+  putv(p, v3(0, 1, 0));
+  putv(p, v3_scale(f, speed));
+  putf(p, speed);
+  putf(p, 1);
+  put8(p, 1);
+  put8(p, 0);
+  putf(p, 100);
+  for (int i = 0; i < 4; i++) put8(p, 1);
+  for (int j = 0; j < MAX_PLANES; j++) put8(p, 0);
+  put8(p, 0); /* no targets */
+  put8(p, 0); /* no scores */
+  put8(p, 0); /* no tankers */
+}
+
+/* a snapshot with infinite, huge or zero numbers never reaches the plane; a real one does */
+static void test_state_values(void) {
+  g = calloc(1, sizeof *g);
+  if (!g) return;
+  g->nplanes = 2;
+  g->planes[1].remote = true;
+  g->planes[1].idx = 1;
+  g->planes[1].alive = true;
+  Buf p;
+  const vec3 bad_pos[] = { v3(INFINITY, 100, 0), v3(0, -INFINITY, 0), v3(3e38f, 100, 0) };
+  for (int k = 0; k < 3; k++) {
+    g->planes[1].snap.have = false;
+    put_state(&p, bad_pos[k], v3(0, 0, 1), 200);
+    rewind_buf(&p);
+    take_state(g, &p);
+    CHECK(!g->planes[1].snap.have);
+  }
+  const vec3 bad_f[] = { v3(INFINITY, 0, 0), v3(0, 0, 0), v3(3e38f, 3e38f, 0) };
+  for (int k = 0; k < 3; k++) {
+    g->planes[1].snap.have = false;
+    put_state(&p, v3(0, 100, 0), bad_f[k], 200);
+    rewind_buf(&p);
+    take_state(g, &p);
+    CHECK(!g->planes[1].snap.have);
+  }
+  g->planes[1].snap.have = false;
+  put_state(&p, v3(0, 100, 0), v3(0, 0, 1), 3e38f);
+  rewind_buf(&p);
+  take_state(g, &p);
+  CHECK(!g->planes[1].snap.have);
+  put_state(&p, v3(10, 100, 20), v3(0, 0, 2), 200);
+  rewind_buf(&p);
+  take_state(g, &p);
+  const Plane *q = &g->planes[1];
+  CHECK(q->snap.have && q->snap.pos.x == 10 && q->snap.f.z == 1 && q->snap.speed == 200 && isfinite(q->snap.vel.z));
   free(g);
   g = NULL;
 }
@@ -152,7 +239,7 @@ static void test_short(void) {
   N.lan = s;
   uint8_t junk[64];
   memset(junk, 'Z', sizeof junk);
-  memcpy(junk, "A4C", 3);
+  memcpy(junk, "TL", 3);
   junk[3] = VERSION;
   junk[4] = T_HELLO;
   sendto(s, (const char *)junk, sizeof junk, 0, (const struct sockaddr *)&a, sizeof a);
@@ -494,6 +581,7 @@ int main(void) {
   WSAStartup(MAKEWORD(2, 2), &w);
 #endif
   test_events();
+  test_state_values();
   test_pace();
   test_watch_chal();
   test_relay_full();

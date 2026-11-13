@@ -2,8 +2,8 @@
  * tail, elevons on a tailless delta), canards, rudders, and on realistic handling the flaps. Found in each jet's
  * model where its wings and fins have their hinge, cut out of the bare model (stores_bare) and drawn turned about
  * that hinge, on both renderers. The picture's alone: the sim never reads it. */
-#ifndef A4C_SURFACES_H
-#define A4C_SURFACES_H
+#ifndef TL_SURFACES_H
+#define TL_SURFACES_H
 
 #include "render3d.h"
 

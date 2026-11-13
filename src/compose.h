@@ -1,8 +1,8 @@
 /* compose.h - the music editor's rewrite tools: key detection, a melody
  * model learned from the game's own themes, and note transforms. Pure
  * functions over a Score; the editor locks the mixer around them. */
-#ifndef A4C_COMPOSE_H
-#define A4C_COMPOSE_H
+#ifndef TL_COMPOSE_H
+#define TL_COMPOSE_H
 
 #include "synth.h"
 

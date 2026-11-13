@@ -1,5 +1,5 @@
 // ---- pop music start ----
-// "Nose 2 Nose (Pop)": original Ace4Combat pop-rock song, about 2:30. Sea waves and a bugle-style snare-drum march
+// "Nose 2 Nose (Pop)": original Tailon Lock pop-rock song, about 2:30. Sea waves and a bugle-style snare-drum march
 // in E minor grow under a jet engine that roars in over 11 seconds and passes as the full band enters. Then a big 80s
 // movie-style bell intro, a driving guitar riff, a verse over a pulsing eighth-note bass, an I–V–vi–IV chorus, a synth
 // solo, a stripped-down breakdown that builds back into the refrain, and final choruses lifted a whole step, the last

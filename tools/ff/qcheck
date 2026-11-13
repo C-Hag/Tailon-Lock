@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """tools/ff/qcheck - the floppy forge's quality gate: the same stills drawn twice, with the original assets and
-with the packed ones (A4C_ASSETS points the game at a folder), compared by tools/ff/imgcmp.c (PSNR, SSIM, the
+with the packed ones (TL_ASSETS points the game at a folder), compared by tools/ff/imgcmp.c (PSNR, SSIM, the
 largest difference of a pixel), with a contact sheet of the worst for a person to look at; and what the packing
 must not touch at all: the audit's digest (the simulation) and the sound. Original code for this project; Python
 3.8+ standard library only.
@@ -8,10 +8,10 @@ must not touch at all: the audit's digest (the simulation) and the sound. Origin
 usage: tools/ff/qcheck --packed DIR [--original DIR] [--build DIR] [--gpu] [--digest] [--sound] [--report FILE]
        tools/ff/qcheck --self-test [--gpu]
 
-The stills: every one of the audit's views check (--audit --part views, A4C_VIEWS_ALL=1: the jets' cockpits and
+The stills: every one of the audit's views check (--audit --part views, TL_VIEWS_ALL=1: the jets' cockpits and
 chase views, the maps, the weather, the HUD), on the software renderer and with --gpu on the GPU one too, and
 frames of the opening film and its title card. The targets: SSIM >= 0.995 and PSNR >= 45 dB on every still;
---digest: the audit's digest (--part sorties --sorties 112, A4C_AUDIT_DEATHS=1) with the packed assets is the
+--digest: the audit's digest (--part sorties --sorties 112, TL_AUDIT_DEATHS=1) with the packed assets is the
 golden one (tests/golden/audit.sha256); --sound: each song the floppy keeps, rendered to a file by the game, and
 every sound effect, hash the same with both. --self-test packs nothing (the original against itself), so every
 still must come out the same: it proves the stills are the same from run to run. Exit 1 when a target is missed."""
@@ -27,7 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 OUT = os.path.join(ROOT, 'build', 'ff', 'qcheck')
 IMGCMP = os.path.join(ROOT, 'build', 'ff', 'imgcmp')
 SSIM_MIN, PSNR_MIN = 0.995, 45.0
-SONGS = ('ghost', 'horizon', 'horizon-intro')  # the scores the floppy keeps (Full Burn's is still to come)
+SONGS = ('ghost', 'horizon', 'horizon-intro')  # the scores the floppy keeps (Full Burn's is not on it)
 
 
 def game_exe(build):
@@ -38,11 +38,10 @@ def game_exe(build):
 
 
 def env_for(assets, cfg, headless=True):
-    e = dict(os.environ, A4C_ASSETS=assets.rstrip('/') + '/', XDG_CONFIG_HOME=cfg, HOME=cfg,
-             A4C_CONFIG_DIR=os.path.join(cfg, 'tailonlock'))
+    e = dict(os.environ, TL_ASSETS=assets.rstrip('/') + '/', XDG_CONFIG_HOME=cfg, HOME=cfg,
+             TL_CONFIG_DIR=os.path.join(cfg, 'tailonlock'))
     if headless:
-        e.update(SDL_VIDEO_DRIVER='dummy', SDL_RENDER_DRIVER='software', SDL_AUDIO_DRIVER='dummy',
-                 A4C_VIDEO='offscreen', A4C_AUDIO='dummy')
+        e.update(TL_VIDEO='offscreen', TL_AUDIO='dummy')
     return e
 
 
@@ -60,18 +59,18 @@ def stills(exe, assets, d, gpu):
     os.makedirs(d)
     for sub in ('soft', 'gpu'):
         os.makedirs(os.path.join(d, sub))  # the audit writes its stills into a folder that is there
-    os.environ.update(A4C_VIEWS_ALL='1')
+    os.environ.update(TL_VIEWS_ALL='1')
     run(exe, ['--audit', '--part', 'views', '--shots', os.path.join(d, 'soft'), '--out', os.path.join(d, 'soft.log')],
         assets)
     if gpu:
         run(exe, ['--audit', '--part', 'views', '--gpu', '--shots', os.path.join(d, 'gpu'), '--out',
                   os.path.join(d, 'gpu.log')], assets, headless=False)
-    os.environ.pop('A4C_VIEWS_ALL', None)
+    os.environ.pop('TL_VIEWS_ALL', None)
     film = os.path.join(d, 'film')
     os.makedirs(film)
-    os.environ['A4C_EVERY'] = '300'
+    os.environ['TL_EVERY'] = '300'
     run(exe, ['--frames', '2701', '--screenshot', os.path.join(film, 'frame-%05ld.bmp')], assets)
-    os.environ.pop('A4C_EVERY', None)
+    os.environ.pop('TL_EVERY', None)
     out = {}
     for dp, _, fs in os.walk(d):
         for f in fs:
@@ -90,9 +89,9 @@ def build_imgcmp():
 def digest(exe, assets):
     with tempfile.TemporaryDirectory() as t:
         log = os.path.join(t, 'audit.log')
-        os.environ['A4C_AUDIT_DEATHS'] = '1'
+        os.environ['TL_AUDIT_DEATHS'] = '1'
         run(exe, ['--audit', '--part', 'sorties', '--sorties', '112', '--out', log], assets, timeout=3600)
-        os.environ.pop('A4C_AUDIT_DEATHS', None)
+        os.environ.pop('TL_AUDIT_DEATHS', None)
         p = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'certify'), 'digest', log], capture_output=True,
                            text=True)
     m = re.search(r'^([0-9a-f]{64})', p.stdout, re.M)

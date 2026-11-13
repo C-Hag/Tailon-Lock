@@ -15,8 +15,8 @@
  * pointer step. Every getter takes NULL and wrong types quietly, so a lookup
  * chain needs no checks in between: json_number(json_get(json_get(doc, "a"),
  * "b"), 0) is 0 when anything on the way is missing. */
-#ifndef A4C_JSON_H
-#define A4C_JSON_H
+#ifndef TL_JSON_H
+#define TL_JSON_H
 
 #include <stdbool.h>
 #include <stddef.h>

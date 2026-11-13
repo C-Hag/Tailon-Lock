@@ -1,7 +1,7 @@
 /* ui.h - main menu, pause and game over, drawn with the bitmap font in the
  * C64 screen-and-border look of the JS overlays. */
-#ifndef A4C_UI_H
-#define A4C_UI_H
+#ifndef TL_UI_H
+#define TL_UI_H
 
 #include "config.h"
 #include "core/game.h"

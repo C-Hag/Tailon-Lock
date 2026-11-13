@@ -13,8 +13,8 @@
  * event for each input event and frame once per displayed frame, until frame
  * returns false, then quit. iOS and Android work that way, and the desktop
  * backends do the same, so the game is written once for both. */
-#ifndef A4C_PLAT_H
-#define A4C_PLAT_H
+#ifndef TL_PLAT_H
+#define TL_PLAT_H
 
 #include <stdarg.h>
 #include <stdbool.h>
@@ -28,7 +28,7 @@
 
 /* Writes the per-user config folder (%APPDATA%\TailonLock or
  * $XDG_CONFIG_HOME/tailonlock, ~/Library/Application Support/TailonLock on macOS) into buf, copying the old
- * Ace4Combat folder's settings over the first time; A4C_CONFIG_DIR, when set (the tests), is the folder instead,
+ * Tailon Lock folder's settings over the first time; TL_CONFIG_DIR, when set (the tests), is the folder instead,
  * on every system. Returns 0 if unknown. */
 int plat_config_dir(char *buf, size_t size);
 
@@ -65,8 +65,8 @@ void *plat_load_file(const char *path, size_t *size);
 FILE *plat_save_begin(const char *path, const char *mode, char *tmp, size_t size);
 bool  plat_save_end(FILE *f, const char *tmp, const char *path);
 /* One line to the log (stderr, or the system log on mobile). */
-void plat_log(const char *fmt, ...) A4C_PRINTF(1, 2);
-void plat_logv(const char *fmt, va_list ap) A4C_PRINTF(1, 0);
+void plat_log(const char *fmt, ...) TL_PRINTF(1, 2);
+void plat_logv(const char *fmt, va_list ap) TL_PRINTF(1, 0);
 /* A fine clock: ticks since some start, and ticks per second. */
 uint64_t plat_counter(void);
 uint64_t plat_counter_hz(void);
@@ -102,7 +102,7 @@ const PlatApp *plat_app(void);
 
 bool plat_window_open(const char *title, int w, int h);
 void plat_window_close(void);
-/* False when nothing shows the frames (A4C_VIDEO=offscreen or dummy): no display paces a frame loop then. */
+/* False when nothing shows the frames (TL_VIDEO=offscreen or dummy): no display paces a frame loop then. */
 bool plat_window_shown(void);
 /* True when a shown window's present waits for the display, so the display paces the frame loop. False with no
  * window, and where the display was found to block far longer than a refresh (a computer or VM without a GPU, whose
@@ -113,7 +113,7 @@ void plat_window_size(int *w, int *h);
 void plat_window_pixels(int *w, int *h);
 void plat_fullscreen_toggle(void);
 /* The system's window, for the GPU device (gx.h): what kind it is and its handles. NULL when there is no window
- * (A4C_VIDEO=offscreen, the headless tests). Wayland: display wl_display, window wl_surface. X11: display Display,
+ * (TL_VIDEO=offscreen, the headless tests). Wayland: display wl_display, window wl_surface. X11: display Display,
  * window the Window id (an XID in a pointer). Win32: display HINSTANCE, window HWND. Cocoa: display the
  * CAMetalLayer, window the NSWindow. */
 enum { PNAT_WAYLAND = 1, PNAT_X11, PNAT_WIN32, PNAT_COCOA };
@@ -123,7 +123,7 @@ const PlatNative *plat_native_window(void);
 float plat_refresh_hz(void);
 /* Waits until plat_counter() reaches t, to within a fraction of a millisecond. */
 void plat_wait_until(uint64_t t);
-/* No screen and no sound card (A4C_VIDEO=offscreen / A4C_AUDIO=dummy, set by the tests): the window is a picture in
+/* No screen and no sound card (TL_VIDEO=offscreen / TL_AUDIO=dummy, set by the tests): the window is a picture in
  * memory, presenting does not wait for a display, and the sound device takes the samples at its rate. */
 bool plat_headless(void);
 

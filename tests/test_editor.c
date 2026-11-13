@@ -14,8 +14,8 @@ bool plat_file_sync(FILE *f) { return (void)f, false; }
 bool plat_file_replace(const char *from, const char *to) { return (void)from, (void)to, false; }
 /* every theme named: the editor prints the name (an all-zero table gives printf a null %s) */
 #define T_ { "test", "TEST", 1, 1, 1 }
-const Theme THEMES[MUSIC_ALL] = { T_, T_, T_, T_, T_ };
-_Static_assert(MUSIC_ALL == 5, "one T_ per theme");
+const Theme THEMES[MUSIC_ALL] = { T_, T_, T_, T_, T_, T_ };
+_Static_assert(MUSIC_ALL == 6, "one T_ per theme");
 void music_play(int t) { (void)t; }
 void music_restart(int t) { (void)t; }
 void music_level(bool in_game) { (void)in_game; }

@@ -1,5 +1,5 @@
 // ---- strike music start ----
-// "Carrier Dawn (Strike)": action-paced original arrangement of the Ace4Combat theme. A jet flyby made from filtered
+// "Carrier Dawn (Strike)": action-paced original arrangement of the Tailon Lock theme. A jet flyby made from filtered
 // noise and a doppler-shifted turbine whine, layered detuned synth brass, DMX/Linn-style march drums, a 16th-note
 // sequencer bass, the overdriven guitar lead and FM bells. Keys: E minor, F# minor, tritone jump to C minor, E major.
 const StrikeMusic = (() => {

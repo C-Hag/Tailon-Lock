@@ -1,5 +1,5 @@
 // ---- pop music start ----
-// "Nose 2 Nose (Pop)": original Ace4Combat pop-rock song, about 2:20. A snare-drum march in E minor grows under a
+// "Nose 2 Nose (Pop)": original Tailon Lock pop-rock song, about 2:20. A snare-drum march in E minor grows under a
 // jet engine that roars in over 11 seconds and passes as the full band enters, then a big 80s movie-style bell intro, a driving guitar riff, verses over a pulsing
 // eighth-note bass, an I–V–vi–IV chorus, a synth solo, and a final chorus lifted a whole step that fades out over the
 // last 20 seconds, with an overtone bridge before the final choruses. Every pitched voice is retuned to pure ratios of

@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "core/jets.h"
+#include "gpu.h"
 
 const char *const SF_NAMES[SF_KINDS] = { "aileron", "elevon", "elevator", "canard", "rudder", "flap" };
 void (*surfaces_hook)(const Plane *p, int kind, int side, vec3 te, float deg);
@@ -291,6 +292,10 @@ void surfaces_draw(Framebuffer *fb, const View *V, const Game *g, const Plane *p
   if (cc.z < -M->rad || (cc.z > M->rad && M->rad / cc.z * V->F < 1.6f)) return;
   if (M->lod && M->rad / fmaxf(cc.z, 1) * V->F < 45) return;
   int team = p->team & 1;
+  /* at ULTRA the detailed model has these surfaces in it at rest: a piece shows only when it moves, and shines as the
+   * skin does */
+  const bool fine = gpu_ultra() && JETS[p->jet].hi[team].nv > 0;
+  if (fine) r3d_gloss(1);
   for (int i = 0; i < S->n; i++) {
     const Piece *P = &S->pc[i];
     float deg = deflection(g, p, P->kind, P->side, S->droop), a = deg * (PI_F / 180), c = cosf(a), s = sinf(a);
@@ -298,11 +303,12 @@ void surfaces_draw(Framebuffer *fb, const View *V, const Game *g, const Plane *p
     vec3 ex = turn(v3(1, 0, 0), P->axis, c, s), ey = turn(v3(0, 1, 0), P->axis, c, s), ez = turn(v3(0, 0, 1), P->axis, c, s);
     vec3 off = v3_sub(P->h0, turn(P->h0, P->axis, c, s));
 #define W(v) v3_add(v3_add(v3_scale(p->r, (v).x), v3_scale(p->u, (v).y)), v3_scale(p->f, (v).z))
-    r3d_mesh(fb, V, &P->m[team], v3_add(p->pos, W(off)), W(ex), W(ey), W(ez), 1, 1);
+    if (!fine || fabsf(deg) > 1.5f) r3d_mesh(fb, V, &P->m[team], v3_add(p->pos, W(off)), W(ex), W(ey), W(ez), 1, 1);
     if (surfaces_hook) {
       vec3 te = v3_add(P->h0, turn(v3_sub(P->te, P->h0), P->axis, c, s));
       surfaces_hook(p, P->kind, P->side, v3_add(p->pos, W(te)), deg);
     }
 #undef W
   }
+  if (fine) r3d_gloss(-1);
 }

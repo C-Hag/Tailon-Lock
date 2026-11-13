@@ -172,7 +172,7 @@ void cheat_hands(Game *g, Plane *p, float dt) {
 }
 
 /* ---- the rule watch ---------------------------------------------------------- */
-A4C_PRINTF(3, 4) static void broke(const Game *g, int rule, const char *fmt, ...) {
+TL_PRINTF(3, 4) static void broke(const Game *g, int rule, const char *fmt, ...) {
   Rule *R = &C.r[rule];
   if (R->n++ == 0) {
     R->firstT = g->time;

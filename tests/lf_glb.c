@@ -1,6 +1,6 @@
 /* lf_glb.c - a libFuzzer target for our own glTF binary reader
  * (src/core/glb.c), the libFuzzer version of tests/fuzz_glb.c with the same
- * rules. Original code for this project. Build with -DA4C_LIBFUZZER=ON
+ * rules. Original code for this project. Build with -DTL_LIBFUZZER=ON
  * (clang); run it under ASan and UBSan.
  *
  * The input is the .glb file, in a buffer of exactly its own size. An

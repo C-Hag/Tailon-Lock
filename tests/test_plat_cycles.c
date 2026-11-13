@@ -4,8 +4,8 @@
  * picture, each frame drawn and read back), so LeakSanitizer can see that
  * every start gives back all it took. Original code for this project.
  *
- * usage: test_plat_cycles [CYCLES [GPU_CYCLES]]   (defaults 1000 and 50; run with A4C_VIDEO=offscreen
- * A4C_AUDIO=dummy) */
+ * usage: test_plat_cycles [CYCLES [GPU_CYCLES]]   (defaults 1000 and 50; run with TL_VIDEO=offscreen
+ * TL_AUDIO=dummy) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

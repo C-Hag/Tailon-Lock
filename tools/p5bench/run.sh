@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs p5bench under callgrind with a Pentium-like cache (8 KB 2-way L1 code and data, 32-byte lines,
 # 256 KB L2), every scene at 320x200, 640x480 and 800x600 (RES= picks), full and retro detail, plus the audio cases.
-# Run inside the a4c-p5 container (podman run --arch 386), then callgrind_annotate each .cg and
+# Run inside the tl-p5 container (podman run --arch 386), then callgrind_annotate each .cg and
 # tools/p5bench/summarize.py. Test tool only.
 R=$(cd "$(dirname "$0")/../.." && pwd)
 B=$R/build/p5bench

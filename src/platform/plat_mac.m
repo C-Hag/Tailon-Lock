@@ -8,8 +8,8 @@
  * Original code for this project, written from Apple's public documentation of AppKit, QuartzCore, Metal,
  * AudioToolbox and GameController. Mac key codes to HID usages from the kVK_ constants in Carbon's Events.h.
  *
- * Headless (A4C_VIDEO=offscreen, the tests): no NSApplication and no window; the window is its size in memory,
- * presenting draws nothing and waits for nothing. A4C_AUDIO=dummy: a thread takes the samples at the real rate. */
+ * Headless (TL_VIDEO=offscreen, the tests): no NSApplication and no window; the window is its size in memory,
+ * presenting draws nothing and waits for nothing. TL_AUDIO=dummy: a thread takes the samples at the real rate. */
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreAudio/CoreAudio.h>
 #import <Cocoa/Cocoa.h>
@@ -173,9 +173,9 @@ static void fit_layer(void) {
   layer.drawableSize = CGSizeMake(s.width * k, s.height * k);
 }
 
-@interface A4CView : NSView
+@interface TLView : NSView
 @end
-@implementation A4CView
+@implementation TLView
 - (BOOL)isFlipped { return YES; } /* mouse rows from the top, as plat.h counts them */
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)acceptsFirstMouse:(NSEvent *)e { (void)e; return YES; }
@@ -208,9 +208,9 @@ static void fit_layer(void) {
 }
 @end
 
-@interface A4CDelegate : NSObject <NSWindowDelegate>
+@interface TLDelegate : NSObject <NSWindowDelegate>
 @end
-@implementation A4CDelegate
+@implementation TLDelegate
 - (BOOL)windowShouldClose:(NSWindow *)w { (void)w; simple(PE_QUIT); return NO; } /* the game decides */
 - (void)windowDidBecomeKey:(NSNotification *)n { (void)n; simple(PE_FOCUS_GAINED); }
 - (void)windowDidResignKey:(NSNotification *)n {
@@ -224,7 +224,7 @@ static void fit_layer(void) {
 - (void)toggleFull:(id)sender { (void)sender; [window toggleFullScreen:nil]; }
 @end
 
-static A4CDelegate *delegate;
+static TLDelegate *delegate;
 
 static void app_start(void) {
   if (app_up) return;
@@ -233,7 +233,7 @@ static void app_start(void) {
   [NSUserDefaults.standardUserDefaults registerDefaults:@{ @"ApplePersistenceIgnoreState" : @YES }];
   [NSApplication sharedApplication];
   [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-  delegate = [A4CDelegate new];
+  delegate = [TLDelegate new];
   NSMenu *bar = [NSMenu new], *appm = [NSMenu new];
   NSMenuItem *top = [NSMenuItem new];
   [bar addItem:top];
@@ -273,7 +273,7 @@ bool plat_window_open(const char *title, int w, int h) {
   window.acceptsMouseMovedEvents = YES;
   window.releasedWhenClosed = NO;
   window.delegate = delegate;
-  view = [[A4CView alloc] initWithFrame:r];
+  view = [[TLView alloc] initWithFrame:r];
   view.wantsLayer = YES;
   window.contentView = view;
   layer = (CAMetalLayer *)view.layer;
@@ -521,13 +521,13 @@ void plat_os_quit(void) {
   gc_keep = nil;
 }
 
-/* test hook (A4C_TEST_MODKEY=N): at the Nth pump, post the left Shift, Control, Option and Command keys, each down
+/* test hook (TL_TEST_MODKEY=N): at the Nth pump, post the left Shift, Control, Option and Command keys, each down
  * and up, as AppKit's own FlagsChanged events to the game's window, so a modifier goes the whole way a real one does
  * (a --key goes straight to the game) */
 static void post_test_modkey(void) {
   static long pumps, at = -1;
   if (at < 0) {
-    const char *v = getenv("A4C_TEST_MODKEY");
+    const char *v = getenv("TL_TEST_MODKEY");
     at = v ? strtol(v, NULL, 10) : 0;
   }
   if (at <= 0 || ++pumps != at || !window) return;
@@ -562,7 +562,7 @@ void plat_os_pump(void) {
   if (want_pads) pads_pump();
 }
 
-/* ---- sound: an AudioUnit on the default output, or a thread that takes the samples (A4C_AUDIO=dummy) ---- */
+/* ---- sound: an AudioUnit on the default output, or a thread that takes the samples (TL_AUDIO=dummy) ---- */
 
 static AudioComponentInstance unit;
 static pthread_mutex_t        audio_mx = PTHREAD_MUTEX_INITIALIZER;

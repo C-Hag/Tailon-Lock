@@ -1,6 +1,6 @@
 /* lf_song.c - a libFuzzer target for the songs (src/synth.c): the score
  * files in assets/music and the ones the music editor saves, read by
- * synth_load. Original code for this project. Build with -DA4C_LIBFUZZER=ON
+ * synth_load. Original code for this project. Build with -DTL_LIBFUZZER=ON
  * (clang); run it under ASan and UBSan.
  *
  * The input is the song's JSON, written as music/fz.json in the fuzzer's own

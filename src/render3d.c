@@ -17,6 +17,7 @@
 
 #include "core/defend.h"
 #include "command.h"
+#include "assets.h"
 #include "gpu.h"
 #include "hud.h"
 #include "stores.h"
@@ -93,6 +94,10 @@ void render_fog(float *start, float *range, float *max) {
   set_look(); /* the look of the map, time and weather set now */
   *start = L.fog_start, *range = L.fog_range, *max = L.fog_max;
 }
+
+/* The opening film's look (r3d_film_look): its dawn sea has no far ground to show, and its clouds are seen close */
+static bool film_look;
+void r3d_film_look(bool on) { film_look = on; }
 
 static float fog_at(float d) { return clampf((d - L.fog_start) / L.fog_range, 0, L.fog_max); }
 
@@ -212,7 +217,7 @@ static float mesh_gloss(const Mesh *M) {
   if (M == &MESH_TANKER || M == &MESH_JET[0] || M == &MESH_JET[1]) return 1;
   for (int j = 0; j < MAX_JETS; j++)
     for (int t = 0; t < 2; t++)
-      if (M == &JETS[j].mesh[t] || M == &JETS[j].lod[t]) return 1;
+      if (M == &JETS[j].mesh[t] || M == &JETS[j].lod[t] || M == &JETS[j].hi[t]) return 1;
   if (M == &MESH_CARRIER || M == &MESH_TARGET[0][TGT_SHIP] || M == &MESH_CIWS_GUN) return 0.25f;
   return 0;
 }
@@ -249,6 +254,15 @@ static void add_mesh_dim(Framebuffer *fb, const View *V, const Mesh *M, vec3 pos
     }
   }
   if (M->lod && rad / fmaxf(cc.z, 1) * V->F < 45) M = M->lod;
+  else if (gpu_ultra() && rad / fmaxf(cc.z, 1) * V->F >= 45) {
+    static bool hi_ready;
+    if (!hi_ready) {
+      hi_ready = true;
+      assets_load_hi_jets();
+      for (int j = 0; j < NJETS; j++) stores_set_hi(j);
+    }
+    if (M->hi && M->hi->nv) M = M->hi;
+  }
   if (gpu_active()) {
     gpu_mesh(M, pos, r, u, f, s, dim, mesh_gloss(M), inside_bridge && M == &MESH_CARRIER);
     return;
@@ -698,7 +712,8 @@ static float add_clouds(const View *V, uint32_t *inside_col) {
         }
       }
       if (gpu_active()) {
-        if (dist < FAR_Z) gpu_sprite(wp, P->r * 1.15f, 0, puff_colour(C, P), 0.9f, SPR_PUFF);
+        /* the film's clouds pass close: larger, thinner puffs overlap into one body, where whole ones show as discs */
+        if (dist < FAR_Z) gpu_sprite(wp, P->r * (film_look || gpu_ultra() ? 1.5f : 1.15f), 0, puff_colour(C, P), film_look || gpu_ultra() ? 0.52f : 0.9f, SPR_PUFF);
         continue;
       }
       vec3 c = to_cam(&V->cam, wp);
@@ -724,7 +739,9 @@ static float add_clouds(const View *V, uint32_t *inside_col) {
 }
 
 static void add_lights(const View *V, float time) {
-  if (L.lights <= 0.02f) return;
+  /* the film's carrier sails on from where the map has her, so the map's deck and airfield lights would float on the
+   * water behind her as dots; at its dawn the film shows none */
+  if (film_look || L.lights <= 0.02f) return;
   for (int i = 0; i < MAP->nlights; i++) {
     const MapLight *l = &MAP->lights[i];
     if (l->blink > 0 && fmodf(time, l->blink) > l->blink * 0.5f) continue;
@@ -766,10 +783,10 @@ static Camera cam_for(const Game *g, const Plane *p, bool demo, float *zoom) {
   } else if (p->chase) {
     c.pos = v3_add(v3_add(p->pos, v3_scale(p->f, -38)), v3_scale(p->u, 9));
     c.ext = true;
-    if (!getenv("A4C_CAM")) viewfx_camera(g, p, &c, zoom); /* the banking chase or the flyby (viewfx.c) */
-    /* test pictures (A4C_CAM=X,Y,Z): the chase camera at that point beside the jet (its right, up, forward,
+    if (!getenv("TL_CAM")) viewfx_camera(g, p, &c, zoom); /* the banking chase or the flyby (viewfx.c) */
+    /* test pictures (TL_CAM=X,Y,Z): the chase camera at that point beside the jet (its right, up, forward,
      * metres), looking at it */
-    const char *at = getenv("A4C_CAM");
+    const char *at = getenv("TL_CAM");
     float x, y, z;
     if (at && sscanf(at, "%f,%f,%f", &x, &y, &z) == 3) {
       c.pos = v3_add(p->pos, v3_add(v3_add(v3_scale(p->r, x), v3_scale(p->u, y)), v3_scale(p->f, z)));
@@ -837,7 +854,8 @@ void r3d_begin(Framebuffer *fb, const Camera *cam, int vx, int vy, int vw, int s
     e.fog_start = L.fog_start;
     e.fog_range = L.fog_range;
     e.fog_max = L.fog_max;
-    e.far_ground = MAP ? L.ground_far : GROUND_FAR;
+    e.far_ground = MAP ? (film_look || gpu_ultra() ? L.sky_hor : L.ground_far) : GROUND_FAR; /* in the film: no band of far land under the horizon */
+    e.film_sea = film_look;
     e.time = time;
     e.map = MAP;
     e.classic = !MAP;
@@ -1107,6 +1125,11 @@ void render_view(Framebuffer *fb, Game *g, Plane *p, int vx, int vy, int vw, int
    * 16:9 view and 45 up and down (the old view was 99 by 53, a fisheye) */
   if (!cam.ext) scene_F = fminf(vw * 0.5f / tanf(44 * PI_F / 180), sh * 0.5f / tanf(22.5f * PI_F / 180));
   else if (zoom > 1) scene_F = fminf(vw * 0.75f, (float)sh) * zoom; /* the flyby's long lens */
+  if (!opts.demo) {
+    float wide = 1;
+    viewfx_speed(g, p, &cam, &wide);
+    scene_F = (scene_F > 0 ? scene_F : fminf(vw * 0.75f, (float)sh)) * wide;
+  }
   render_scene(fb, g, &cam, vx, vy, vw, sh, &V, cam.ext ? NULL : p);
 
   HudView hv = { V.cam.pos, V.cam.r, V.cam.u, V.cam.f, V.vx, V.vy, V.vw, V.sh, V.cx, V.cy, V.F };

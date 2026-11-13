@@ -1,8 +1,8 @@
 /* jets.h - the selectable jets (JS JETS, JT, setJet; reference lines 364-388
  * of the hangar version). Their data comes from assets/jets.json; without it
  * there is one jet, the original built-in mesh with neutral stats. */
-#ifndef A4C_JETS_H
-#define A4C_JETS_H
+#ifndef TL_JETS_H
+#define TL_JETS_H
 
 #include <stdbool.h>
 
@@ -27,6 +27,7 @@ typedef struct {
   float stealth;
   bool  nogun;
   Mesh  mesh[2], lod[2]; /* per team, tinted toward the team colour */
+  Mesh  hi[2];           /* the detailed version, for the eye only: nothing in the simulation reads it */
 } JetType;
 
 extern JetType JETS[MAX_JETS];
@@ -43,6 +44,8 @@ static inline const JetType *jet_type(int jet, bool realistic) { return realisti
  * Returns its index, or -1 when the table is full. */
 int  jets_add(const char *id, const char *des, const char *name, const char *role, float speed, float turn,
               float climb, float range, float tail, const Mesh *near, const Mesh *far);
+/* A jet's detailed model, tinted per team as its plain one is. */
+void jets_set_hi(int jet, const Mesh *m);
 /* Puts the built-in jet in if nothing was loaded, and the drone. */
 void jets_finish(void);
 int  jets_find(const char *id);

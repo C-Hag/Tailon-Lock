@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tools/check - the local code checker: the gate every brick of docs/BUILD_PLAN.md passes.
+"""tools/check - the local code checker: the gate every change passes.
 Original code for this project. A Linux gate: on macOS only --only 5 (cleanroom) is meaningful, because the other
 stages expect gcc, Linux libraries and LeakSanitizer.
 
@@ -26,7 +26,7 @@ The stages:
                  engine makes the same triangles in C and in the browser game (assets/figure/parity.js)
    4 deps        what the binaries link and load, what CMake fetches, what the sources include
    5 cleanroom   no third-party names past the allow-list, no licence headers, no personal or machine
-                 terms, the homage line the only reference to the original game
+                 terms, and no name of other works anywhere
    6 headless    the 900-frame intro and 3,000 frames of each game mode under ASan: no crash, no leak
    7 picture     menu, cockpit and title card against their references, on the GPU (the game's own renderer,
                  headless) and with the software renderer: under 0.5 % of pixels differ
@@ -85,17 +85,17 @@ SYSTEM_HEADERS = r'^(assert|ctype|errno|float|inttypes|limits|locale|math|setjmp
     r'wayland-client|wayland-client-protocol|X11/[A-Za-z_]+|alsa/asoundlib)\.h$'
 # Personal and machine terms, and the names of the original game and of other works, are not written here:
 # a guard that lists them would itself put them in the repository. They come from a private, untracked file
-# (.check-private at the top of the tree, or the file A4C_CHECK_PRIVATE names), one rule a line:
+# (.check-private at the top of the tree, or the file TL_CHECK_PRIVATE names), one rule a line:
 #   personal REGEX     a term that must not appear anywhere (a name, a host, a machine, a path)
-#   original REGEX     a name of the original game or of another work: allowed only in the homage line
-#   homage TEXT        the one line of README.md that may name the original game
+#   original REGEX     a name of another work: allowed nowhere
+#   homage TEXT        (kept for older term lists; no line may match any more)
 # Without the file, stage 5 still runs every check below that needs no private term, and says so.
 PERSONAL_GENERIC = r'/home/[A-Za-z]|/Users/[A-Za-z]|@gmail\.com|@[A-Za-z0-9-]+\.lan\b'
 FORBIDDEN_FILES = r'(?i)\.(sid|sf2|prg|d64|t64|crt|ttf|otf|woff2?|m4a)$'
 
 
 def private_terms():
-    p = os.environ.get('A4C_CHECK_PRIVATE') or os.path.join(ROOT, '.check-private')
+    p = os.environ.get('TL_CHECK_PRIVATE') or os.path.join(ROOT, '.check-private')
     rules = {'personal': [], 'original': [], 'homage': []}
     if not os.path.exists(p):
         return None
@@ -112,7 +112,7 @@ def private_terms():
 LICENCE = r'SPDX-License-Identifier|Permission is hereby granted|Copyright \([cC]\)|THE SOFTWARE IS PROVIDED|' \
     r'Redistribution and use in source'
 # files allowed to name the libraries being replaced: the plan, the credits
-NAMES_DOCS = ['docs/BUILD_PLAN.md', 'README.md', 'docs/THIRD_PARTY.md', 'tools/check']
+NAMES_DOCS = ['README.md', 'docs/THIRD_PARTY.md', 'tools/check']
 
 BUILDS = {
     'gcc-release': dict(cc='gcc', type='Release', san=False),
@@ -169,7 +169,7 @@ def bdir(name):
 def game_env(tmp, gpu=False):
     """a scratch settings folder, no display, no sound card (the platform layer's offscreen window: the GPU
     renderer draws into a picture in memory, the software one keeps its framebuffer)"""
-    return {'XDG_CONFIG_HOME': tmp, 'HOME': tmp, 'A4C_VIDEO': 'offscreen', 'A4C_AUDIO': 'dummy'}
+    return {'XDG_CONFIG_HOME': tmp, 'HOME': tmp, 'TL_VIDEO': 'offscreen', 'TL_AUDIO': 'dummy'}
 
 
 def sha(path):
@@ -198,11 +198,11 @@ def build_one(name, conf, toolchain=None):
     # Ninja where it is installed, else make (as tools/certify does): a machine without Ninja still runs the gate
     gen = 'Ninja' if shutil.which('ninja') else 'Unix Makefiles'
     if not os.path.exists(os.path.join(d, 'build.ninja' if gen == 'Ninja' else 'Makefile')):
-        cmd = ['cmake', '-S', ROOT, '-B', d, '-G', gen, '-DCMAKE_BUILD_TYPE=' + conf['type'], '-DA4C_WERROR=ON']
+        cmd = ['cmake', '-S', ROOT, '-B', d, '-G', gen, '-DCMAKE_BUILD_TYPE=' + conf['type'], '-DTL_WERROR=ON']
         if toolchain:
             cmd.append('-DCMAKE_TOOLCHAIN_FILE=' + toolchain)
         else:
-            cmd += ['-DCMAKE_C_COMPILER=' + conf['cc'], '-DA4C_SANITIZE=' + ('ON' if conf['san'] else 'OFF')]
+            cmd += ['-DCMAKE_C_COMPILER=' + conf['cc'], '-DTL_SANITIZE=' + ('ON' if conf['san'] else 'OFF')]
         cmd += fetched_sources()
         rc, out = run(cmd)
         open(logp, 'w').write(out)
@@ -383,6 +383,8 @@ def golden_meshes(baseline, bad):
     shipped, same_shipped = 0, 0
     if not baseline:
         for p in tracked('assets/jets/*.glb'):
+            if '/' in p[len('assets/jets/'):]:
+                continue  # the detailed Ultra models in assets/jets/hi/ are for the eye only, not the reference meshes
             i = os.path.basename(p)[:-4]
             shipped += 1
             rc, out = run([dumper, os.path.join(ROOT, p)])
@@ -414,7 +416,7 @@ def stage_deps():
     ok_all = True
     rel = bdir('gcc-release')
     # what the binaries link
-    for exe in ('tailonlock', 'test_core', 'a4c_relay', 'json_dump', 'check_cmp'):
+    for exe in ('tailonlock', 'test_core', 'tl_relay', 'json_dump', 'check_cmp'):
         p = os.path.join(rel, exe)
         if not os.path.exists(p):
             continue
@@ -491,7 +493,7 @@ def stage_cleanroom():
     ok_all = True
     vendored = [e['dir'] for e in ALLOW.values() if e['dir']]
     # other projects' names: the allow-listed ones may appear while listed, the rest never
-    hits = grep('|'.join(FOREIGN), exclude=vendored + ['docs/BUILD_PLAN.md', 'tools/check'])
+    hits = grep('|'.join(FOREIGN), exclude=vendored + ['tools/check'])
     say('    foreign names (never allowed): %d hits' % len(hits))
     for p, n, l in hits[:8]:
         say('      %s:%d %s' % (p, n, l.strip()[:120]))
@@ -514,7 +516,7 @@ def stage_cleanroom():
         say('      %s:%d %s' % (p, n, l.strip()[:120]))
     ok_all &= not hits
     # files that must never be in the repository: SID tunes and their editor files, C64 images, fonts, and the
-    # owner's own .m4a recordings (they stay on his computer)
+    # private .m4a recordings (they stay off the repository)
     bad = [p for p in tracked() if re.search(FORBIDDEN_FILES, p)]
     say('    forbidden file types (.sid .sf2 .prg .d64 .crt, fonts, .m4a recordings): %d' % len(bad))
     for p in bad[:8]:
@@ -530,7 +532,7 @@ def stage_cleanroom():
     for p, n, l in hits[:8]:
         say('      %s:%d %s' % (p, n, l.strip()[:120]))
     ok_all &= not hits
-    # the original game and other works: the homage line only
+    # the original game and other works: none at all (the README is the game's own, with no homage line)
     if priv and priv['original']:
         pat = '|'.join('(?:%s)' % x for x in priv['original'])
         hits = grep(pat, exclude=vendored + ['tools/check'])
@@ -540,7 +542,7 @@ def stage_cleanroom():
             (homage, '' if homage == 1 else 's', len(other)))
         for p, n, l in other[:8]:
             say('      %s:%d %s' % (p, n, l.strip()[:120]))
-        ok_all &= homage == 1 and not other
+        ok_all &= homage == 0 and not other
     else:
         say('    the original game and other works: skipped (no private term list)')
     return ok_all
@@ -631,8 +633,17 @@ def stage_picture(baseline):
             continue
         if baseline:
             os.makedirs(os.path.dirname(refgz), exist_ok=True)
-            with open(cur, 'rb') as f, gzip.open(refgz, 'wb', 9) as gz:
-                gz.write(f.read())
+            with open(cur, 'rb') as f:
+                pic = f.read()
+            if os.path.exists(refgz):
+                with gzip.open(refgz, 'rb') as gz:
+                    if gz.read() == pic:  # the same picture: keep the file, so git sees no change
+                        say('    %-14s reference unchanged' % label)
+                        continue
+            # no name and no time in the gzip header: the same picture always makes the same file
+            with open(refgz, 'wb') as raw, gzip.GzipFile(filename='', mode='wb', compresslevel=9, fileobj=raw,
+                                                        mtime=0) as gz:
+                gz.write(pic)
             say('    %-14s reference taken' % label)
             continue
         if not os.path.exists(refgz):
@@ -670,7 +681,7 @@ def stage_sound(baseline, new_sound=False):
     cur = os.path.join(OUT, 'logs', key + '-render.wav')
     tmp = tempfile.mkdtemp(prefix='check-cfg-')
     env = game_env(tmp)
-    env['A4C_MUSIC_LOOP'] = str(secs)
+    env['TL_MUSIC_LOOP'] = str(secs)
     rc, out = run([exe, '--render-music', key, cur], env=env, timeout=900)
     shutil.rmtree(tmp, ignore_errors=True)
     if rc or not os.path.exists(cur):
@@ -825,7 +836,7 @@ def stage_floppy():
     if not os.path.exists(exe):
         say('    no release build to measure')
         return False
-    tmp = tempfile.mkdtemp(prefix='a4c-floppy-')
+    tmp = tempfile.mkdtemp(prefix='tl-floppy-')
     try:
         game = os.path.join(tmp, 'tailonlock')
         shutil.copy(exe, game)
@@ -847,7 +858,7 @@ def stage_floppy():
                 '%.0f KB over' % ((n - FLOPPY) / 1024) if over else '%.0f KB free' % ((FLOPPY - n) / 1024)))
             say('         biggest: ' + ', '.join('%s %.0f KB' % (nm, b / 1024) for b, nm in big))
         if not ok and not FLOPPY_HARD:
-            say('    (a report for now: the F track brings it under; see docs/BUILD_PLAN.md)')
+            say('    (a report for now, not a failure)')
         return ok or not FLOPPY_HARD
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

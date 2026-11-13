@@ -38,6 +38,15 @@ static void copy_tinted(Mesh *dst, const Mesh *src, int team) {
   }
 }
 
+void jets_set_hi(int jet, const Mesh *m) {
+  JetType *j = &JETS[jet];
+  for (int t = 0; t < 2; t++) {
+    copy_tinted(&j->hi[t], m, t);
+    j->hi[t].rad = j->mesh[t].rad;
+    j->mesh[t].hi = &j->hi[t];
+  }
+}
+
 int jets_add(const char *id, const char *des, const char *name, const char *role, float speed, float turn,
              float climb, float range, float tail, const Mesh *near, const Mesh *far) {
   if (NJETS >= DRONE_JET) return -1;

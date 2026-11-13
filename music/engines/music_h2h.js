@@ -1,5 +1,5 @@
 // ---- h2h music start ----
-// "Nose 2 Nose": original action opener for Ace4Combat, about 35 seconds before it loops. Played like a live band:
+// "Nose 2 Nose": original action opener for Tailon Lock, about 35 seconds before it loops. Played like a live band:
 // a syncopated drum groove that changes from bar to bar with fills, a big funky synth bass with octave jumps, and an
 // overdriven electric guitar that duels with two synth pianos in a classical D major style. Brass pads, a riser and a
 // jet flyby sit behind them. Every hit gets a little human timing and velocity variation.

@@ -59,4 +59,4 @@ given listening level (`--cal`, default 95 dB SPL for a full-scale sine):
 
 `tools/ear_scan` runs it on every theme and every sound effect (the game's
 `--render-sfx` hook renders each effect over the main theme's chorus at its
-in-game level). See `music/README.md` and `docs/ear/`.
+in-game level). See `music/README.md`; `tools/ear_scan` writes its report to `build/ear/`.

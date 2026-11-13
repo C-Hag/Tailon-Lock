@@ -73,12 +73,12 @@ void plat_core_pace_note(uint64_t waited) {
 
 bool plat_core_video_off(void) {
   static int off = -1;
-  if (off < 0) off = env_is("A4C_VIDEO", "offscreen", "dummy");
+  if (off < 0) off = env_is("TL_VIDEO", "offscreen", "dummy");
   return off;
 }
 bool plat_core_audio_off(void) {
   static int off = -1;
-  if (off < 0) off = env_is("A4C_AUDIO", "dummy", "none");
+  if (off < 0) off = env_is("TL_AUDIO", "dummy", "none");
   return off;
 }
 bool plat_headless(void) { return plat_core_video_off(); }
@@ -101,12 +101,12 @@ uint64_t plat_ms(void) {
 }
 
 void plat_logv(const char *fmt, va_list ap) {
-  /* A4C_LOG=FILE: the log also goes to that file (a Windows program has no console to write to) */
+  /* TL_LOG=FILE: the log also goes to that file (a Windows program has no console to write to) */
   static FILE *file;
   static bool tried;
   if (!tried) {
     tried = true;
-    const char *path = getenv("A4C_LOG");
+    const char *path = getenv("TL_LOG");
     if (path && *path) file = fopen(path, "a");
   }
   if (file) {

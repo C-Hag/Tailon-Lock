@@ -1,30 +1,33 @@
 # Tailon Lock: The Great Nose2Nose Engagement
 
-Inspired by ACE 2: The Ultimate Head to Head Conflict (Cascade Games, 1987).
+A simple dogfight arcade game, made to see what Claude can build and come up
+with: two jets, a carrier at sea and a sky to fight in, written from scratch
+by Claude in C11, on its own platform layer: it links nothing but the operating system's
+own libraries.
 
-A C11 + SDL3 game, ported from [the browser version it grew from](reference/).
-It was called Ace4Combat before it was renamed; the reference files and some internal names (the
-`A4C_` macros, the `a4c_core` library, the intro script's `ace4combat-intro`
-format) keep the old name. One code base builds a Linux binary, a Windows .exe and a macOS app, with
-two renderers:
+**To install and play it, follow [docs/INSTALL.md](docs/INSTALL.md):** step by
+step for macOS, Windows and Linux. The keys are in [docs/PLAYING.md](docs/PLAYING.md).
 
-- **Modern** (default): SDL3 GPU on Direct3D 12 (Windows), Metal (macOS) or
-  Vulkan (Linux, and Windows when D3D12 is missing). HDR with ACES tonemapping, MSAA, sun
+One code base builds a Linux binary, a Windows
+.exe and a macOS app, with two renderers:
+
+- **Modern** (default): our own GPU layer on Direct3D 12 (Windows), Metal (macOS) or
+  Vulkan (Linux). HDR with ACES tonemapping, MSAA, sun
   shadow maps, bloom, a procedural sea with Fresnel reflection and sun
   glitter, height fog, lit cloud puffs and a star sky. Graphics LOW, MEDIUM,
   HIGH or ULTRA in the menu set resolution scale, MSAA, shadow size and bloom.
   The HUD and menus are still drawn by the software rasterizer and laid on top.
-- **Retro**: the original software rasterizer into a low-res framebuffer,
+- **Retro**: the software rasterizer into a low-res framebuffer,
   scaled up nearest-neighbour, for the chunky look and old PCs. It is also
   the fallback when no GPU device can be made.
 
 The renderer menu row shows which backend is running; a change takes effect
 after a restart.
 
-**Status: playable.** The opening intro (timed to Steel Horizon), eight
+**Status: playable.** The opening intro film, eight
 selectable jets, four maps plus the classic arena with time of day and
 weather, 1 player against the CPU (easy, normal, ace), 2 player split screen
-versus or co-op, the full combat rules of the browser game, the HUD, cockpit
+versus or co-op, guns and missiles with lock-on, the HUD, cockpit
 panel and radar, sound effects, the three themes of the soundtrack
 played live by the game's own synthesizer, and network play (on the LAN, by
 internet address, or through a relay with a 6-digit game code).
@@ -32,7 +35,8 @@ HOTAS, rebindable keys, overcast cloud sheets and scenery props are still to
 come.
 
 The game loads its data from `assets/` next to the program (the build copies
-it there), so a build folder runs on its own. The whole game is about 7 MB.
+it there), so a build folder runs on its own. The whole game is about 60 MB,
+most of it the recorded music and the detailed jet models.
 
 ## Controls
 
@@ -50,9 +54,9 @@ CPU wingman). START set to CARRIER VS BASE puts player 1's side on its
 carrier's catapults (on maps without one, its runway): go to full power
 and the catapult fires. The other side starts at the end of its runway:
 power up, and pull back above the rotation speed (about 160 kt). IN THE
-AIR starts everyone airborne as before.
+AIR starts everyone airborne.
 
-**Handling** (menu): ARCADE turns as the original game does. REALISTIC
+**Handling** (menu): ARCADE turns the easy arcade way. REALISTIC
 limits every pull to the g the jet can take, so a hard break turns at about
 25 to 30 degrees a second at 8 to 9 g, as real fighters do, and the G meter
 shows the g actually pulled.
@@ -70,7 +74,7 @@ not locked down and it is a belly landing: a crash. The gear will not come
 up while the jet sits on its wheels. Jets start on the runway or the
 catapult with the gear down and take-off flaps, in the air clean. In
 realistic handling the padlock look (eyes on the enemy, held) moves from G
-to B. Arcade works all of this on its own, as before.
+to B. Arcade works all of this on its own.
 
 **Control surfaces**: seen from outside, every jet's ailerons, elevators
 (tailerons with a little roll in them), canards and rudders move with the
@@ -99,7 +103,7 @@ Pointing selects, a click presses a button or steps a value on, the right
 button or the wheel down steps it back, and the arrows around a value step
 it either way.
 
-**Classic** (CONTROLS in the menu, or `--classic`): classic 1987-style PC keys
+**Classic** (CONTROLS in the menu, or `--classic`): the classic keys
 and rules.
 
 | | Player 1 | Player 2 |
@@ -124,8 +128,8 @@ ceiling 60,000 ft. Both players get the classic cockpit panels. The classic-rule
 options appear with it: SCENARIO (full-scale conflict, or a close range
 dogfight with cannon and heat-seekers that starts in the air), PLANES EACH
 (1-20), CRASH DETECTION, and MISSILE HITS TO KILL (1-3). A missile hit
-leaves the controls dead for a few seconds, and the score counts as in the
-manual: 20 a cannon hit, 50 a missile hit, 200 a kill, 2000 a ground target.
+leaves the controls dead for a few seconds, and the score counts the classic
+way: 20 a cannon hit, 50 a missile hit, 200 a kill, 2000 a ground target.
 
 **Beat the Drone!** (MODE in the menu): one jet against the DR-7 Vesper, an
 unmanned combat drone with a vectoring nozzle and no pilot to black out (it
@@ -216,7 +220,7 @@ Alt+Enter or F11 toggles fullscreen. In 1 player both key sets fly your jet.
 Pads join seats in the order they were plugged in. Settings are saved in
 `~/.config/tailonlock/settings.ini` (`%APPDATA%\TailonLock` on Windows,
 `~/Library/Application Support/TailonLock` on macOS). The first time it
-runs, the game copies the settings over from the old `ace4combat` (`Ace4Combat`) folder if there is one.
+runs, the game copies the settings over from the old `tailonlock` (`Tailon Lock`) folder if there is one.
 
 ## Network play
 
@@ -235,7 +239,7 @@ way of joining:
 - **Internet address**: the host forwards UDP port 27960 on the router to
   their computer and hosts over INTERNET ADDRESS; the guest types the
   host's public address (`203.0.113.7`, or `host:port`) and the code.
-- **Internet relay**: no port forwarding. Someone runs `a4c_relay` (built
+- **Internet relay**: no port forwarding. Someone runs `tl_relay` (built
   with the game on Linux) on a server with UDP port 27970 open. Both type
   its address under RELAY SERVER, and the guest types the code.
 
@@ -253,7 +257,7 @@ remain: the relay sees the code, so a relay you do not trust could sit in
 the middle (run your own), and each computer still reports its own jet, so
 a modified copy of the game could cheat.
 
-As in the browser game, each computer flies its own jet and sends its state
+Each computer flies its own jet and sends its state
 30 times a second; the other computer smooths its copy toward it. A hit
 counts on the computer that owns the jet or target that was hit, and
 missiles, flares and chaff travel as events, so a laggy link shows a jet a
@@ -263,31 +267,13 @@ On Windows, allow the game through the firewall the first time it hosts.
 
 ## System requirements
 
-Measured on 2026-10-24 with CPU pilots flying a 1-player match, 1280x720
-(`--seconds 20`, uncapped frame rate):
-
-| Setup | Renderer | Frames per second | CPU per frame | RAM | GPU memory |
-|---|---|---|---|---|---|
-| Desktop PC with a mid-range GPU, Linux | MODERN LOW (Vulkan) | 4386 | 0.23 ms | 52 MB | about 120-280 MB |
-| same | MODERN MEDIUM | 3846 | 0.26 ms | 52 MB | about 120-340 MB |
-| same | MODERN HIGH | 3556 | 0.25 ms | 52 MB | about 190-250 MB |
-| same | MODERN ULTRA (8x MSAA, 4096 shadows) | 2889 | 0.25 ms | 52 MB | about 315-335 MB |
-| same | RETRO (software raster) | 870 | 1.15 ms | 89 MB | under 90 MB |
-| same PC, no GPU (llvmpipe, software Vulkan) | MODERN LOW | 232 | 59 ms of CPU across threads | 130 MB | none |
-| Windows 11 virtual machine, no GPU (WARP) | MODERN LOW (Direct3D 12) | 8 | | | none |
-| same | RETRO | 40 | | 45 MB | none |
-
-GPU memory is the rise in the card's use during the run, so it carries
-some noise from the desktop. Install size: the program is 5.0 MB on Linux
-and 5.7 MB on Windows, the assets 3.4 MB. Network play sends 25-30 packets a
-second each way, at most 373 bytes each: 4-7 KB/s per direction in a
-2 vs 2 match.
-
-From those numbers (the GPU class is an estimate, scaled down from the RX
-9070's headroom; no older card was measured):
+Network play sends 25-30 packets a second each way, at most 373 bytes each:
+4-7 KB/s per direction in a 2 vs 2 match. The program is 3.4 MB on macOS (one
+app for Intel and Apple silicon); with its assets (most of them the recorded
+music and the detailed jet models) the game takes about 60 MB.
 
 - **Minimum:** 64-bit Windows 10/11, Linux or macOS 11+ (Intel or Apple silicon), any dual-core CPU, 1 GB RAM,
-  20 MB of disk. A GPU with Vulkan, Direct3D 12 or Metal for the MODERN renderer
+  60 MB of disk. A GPU with Vulkan, Direct3D 12 or Metal for the MODERN renderer
   (LOW); without one, RETRO runs on the CPU (40 fps on four slow cores).
   For online play, 64 kbit/s each way.
 - **Recommended:** a quad-core CPU, 4 GB RAM, and a Vulkan or Direct3D 12
@@ -296,33 +282,18 @@ From those numbers (the GPU class is an estimate, scaled down from the RX
 
 ## Building on Linux
 
-Any current Linux distribution with GCC 14+ (or Clang) works. CMake downloads
-a pinned SDL3 release and builds it from source, linked statically, so you
-only need its development headers and the tools. The commands below are for
-dnf-based distributions; on others install the same packages under their own
-names (some distributions keep a few of them in an extra repository).
+Any current Linux distribution with GCC 14+ (or Clang) works. The game needs no
+development libraries: it opens the system's own Wayland or X11, ALSA and Vulkan
+libraries when it starts. The commands below are for dnf-based distributions;
+on others install the same tools under their own names.
 
 1. Build tools:
 
    ```sh
-   sudo dnf groupinstall "Development Tools"
-   sudo dnf install cmake ninja-build clang compiler-rt gdb git pkgconf-pkg-config
+   sudo dnf install gcc clang cmake ninja-build git
    ```
 
-2. SDL3's dependencies (video, audio, input). Without these SDL3 builds with
-   features missing, or CMake stops and names the missing one:
-
-   ```sh
-   sudo dnf install \
-     wayland-devel wayland-protocols-devel libxkbcommon-devel libdecor-devel \
-     libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel \
-     libXfixes-devel libXScrnSaver-devel libXtst-devel \
-     mesa-libEGL-devel mesa-libGL-devel mesa-libgbm-devel libdrm-devel \
-     pipewire-devel pulseaudio-libs-devel alsa-lib-devel \
-     systemd-devel dbus-devel ibus-devel libusb1-devel
-   ```
-
-4. Configure, build, test and run:
+2. Configure, build, test and run:
 
    ```sh
    cmake --preset linux-release
@@ -331,15 +302,12 @@ names (some distributions keep a few of them in an extra repository).
    ./build/linux-release/tailonlock
    ```
 
-The first configure downloads SDL3 (about 15 MB) and builds it, which takes a
-minute or two. Later builds only rebuild the game.
-
 The full local check is `tools/check` (about 75 s with every core busy;
 `tools/check --quick` runs only the build, test, golden-data and dependency
 stages). It builds with GCC and Clang, with and without ASan/UBSan, runs every
 test, compares the JSON assets, screenshots (GPU and software) and the music
 with the references in `tests/golden/`, times a flight scene, and
-cross-builds the Windows .exe. See `docs/BUILD_PLAN.md`. GCC's sanitizer
+cross-builds the Windows .exe. GCC's sanitizer
 runtimes come from the `libasan` and `libubsan` packages.
 
 The compiled shaders are checked in as `src/gpu_shaders.h`, so a build needs
@@ -348,7 +316,7 @@ no shader compiler. After editing `shaders/*.hlsl`, run
 `build/_tools/` and regenerates the header for both Vulkan and Direct3D 12.
 macOS uses `shaders/metal.msl`, the same shaders written in Metal's own
 language: keep it in step with the HLSL and run `tools/embed_msl.py`, which
-writes `src/gpu_msl.h` (SDL compiles it when the game starts).
+writes `src/gpu_msl.h` (Metal compiles it when the game starts).
 
 ### Presets
 
@@ -368,19 +336,18 @@ Each preset builds into `build/<preset>/`.
 ### Windows .exe from Linux
 
 ```sh
-sudo dnf install mingw64-gcc mingw64-gcc-c++ mingw64-winpthreads-static   # the MinGW-w64 cross compiler
+sudo dnf install mingw64-gcc mingw64-winpthreads-static   # the MinGW-w64 cross compiler
 cmake --preset windows-mingw
 cmake --build --preset windows-mingw
 wine build/windows-mingw/TailonLock.exe   # if wine is installed
 ```
 
-`mingw64-gcc-c++` is needed even though the game is C: SDL3 compiles a few
-C++ files on Windows. The .exe is fully static (no DLLs to ship). If your
+The .exe is fully static (no DLLs to ship). If your
 distribution has no MinGW-w64 packages, build inside a container that has them:
 
 ```sh
 podman run --rm -v "$PWD":/src:Z -w /src fedora:42 sh -c \
-  'dnf install -y cmake ninja-build mingw64-gcc mingw64-gcc-c++ mingw64-winpthreads-static &&
+  'dnf install -y cmake ninja-build mingw64-gcc mingw64-winpthreads-static &&
    cmake --preset windows-mingw && cmake --build --preset windows-mingw'
 ```
 
@@ -411,7 +378,7 @@ with `xattr -dr com.apple.quarantine TailonLock.app`.
 
 - `--scale N`: internal resolution divisor, 1, 2 or 3 (default 1 with the modern renderer, 2 with retro).
 - `--frames N`: quit after N frames, running exactly one 60 Hz tick per
-  frame so runs repeat. With `SDL_VIDEO_DRIVER=dummy` this is the headless
+  frame so runs repeat. With `TL_VIDEO=dummy` this is the headless
   smoke test that `ctest` and CI run.
 - `--play 1p|2p|coop`: skip the menu.
 - `--seed N`: fixed random seed.
@@ -436,12 +403,12 @@ drawing a frame.
   climb, ceiling, turn, roll, stall and recovery, endurance, take-off,
   catapult, landing) under each rule set and print what they measured.
 - `--set key=value`: any settings.ini line. `--cmd b` lets CPU pilots fly the
-  players' jets; with `A4C_CHECK=1` a `--frames` run logs broken physics.
+  players' jets; with `TL_CHECK=1` a `--frames` run logs broken physics.
 - `--host [RELAY]`: host a network match straight away (LAN and UDP 27960,
   or through the relay); `--join ADDR` joins by address and
-  `--join RELAY/` through a relay, with `--code NNNNNN` (with `A4C_PLANES=1` the
+  `--join RELAY/` through a relay, with `--code NNNNNN` (with `TL_PLANES=1` the
   host logs its code). `--seconds N` quits after N seconds;
-  with `A4C_PLANES=1` the log shows how each match ended on both computers.
+  with `TL_PLANES=1` the log shows how each match ended on both computers.
 - `--version`
 
 ## Layout
@@ -451,7 +418,7 @@ src/
   main.c            the game's side of the loop: fixed 60 Hz update, render, flow
   raster.c          software framebuffer, fills (later polygons, depth buffer)
   render3d.c        camera, near clip, sky/ground, per-view draw
-  gpu.c             modern renderer: SDL3 GPU, shadows, sea, fog, bloom
+  gpu.c             modern renderer: shadows, sea, fog, bloom, on the platform's GPU layer
   gpu_shaders.h     compiled shaders (SPIR-V + DXIL), made by tools/build_shaders.sh
   hud.c  ui.c       cockpit, radar, bitmap text; in-game menus
   input.c           keyboard seats and gamepads
@@ -461,45 +428,35 @@ src/
   net.c             UDP online play
   core/             game rules, no platform: mathx.h, world, mesh, game, sim, ai
   platform/         plat.h, everything from the computer: loop, window, input, sound;
-                    plat_sdl.c (today's backend, on SDL3), plat_posix.c / plat_win32.c
-                    (config folder, sockets, paths), plat_common.c (files)
+                    plat_mac.m + gx_metal.m (macOS), plat_win32.c + gx_d3d12.c (Windows),
+                    plat_linux.c, plat_wayland.c, plat_x11.c + gx_vulkan.c (Linux),
+                    plat_posix.c (config folder, sockets, paths), plat_common.c (files)
 shaders/            HLSL sources for the modern renderer
 relay/              matchmaking and forwarding server for online play
 tests/              unit tests (core, JSON, GLB, crypto, plat.h)
 intro.c             the opening cinematic (assets/intro/INTRO.md)
 assets.c            loads jets, carrier, maps and intro from assets/
 assets/             game data: jets, carrier, maps, intro (see assets/README.md)
-docs/               the build plan, CI, third-party code (docs/THIRD_PARTY.md)
+docs/               install guide, playing, CI, third-party code (none: docs/THIRD_PARTY.md)
 music/              soundtrack: rendered tracks and the JS engines (see music/README.md)
-reference/          the original browser game, for side-by-side checks
+reference/          a music listening page, for side-by-side checks
 cmake/              MinGW toolchain file
 ```
 
-`src/core` never includes SDL, so the rules can be unit-tested on their own
-and run the same on both computers in an online match. Each stub file says
-which JS section it comes from and which milestone fills it in.
+`src/core` never includes the platform layer, so the rules can be unit-tested on their own
+and run the same on both computers in an online match. Each file says
+which part of the game it holds.
 
 ## CI
 
 Our own CI, `tools/ci`, runs `tools/check` on every new branch head on the
-development PC and posts the result to GitHub as a commit status; there are
+build computer and posts the result to GitHub as a commit status; there are
 no GitHub Actions workflows. See docs/CI.md.
-
-## Milestones
-
-1. **Skeleton**: window, framebuffer, fixed loop. *(done)*
-2. **Static world**: math, meshes, camera, sky, ground and grid. *(done)*
-3. **1P vs CPU**: sim, AI, HUD, cockpit, radar. *(done; time of day still to do)*
-4. Menus, settings, 2P split screen and gamepads. *(first version done; HOTAS, rebinding and "press A to join" still to do)*
-5. Sound: mixer, effects, music. *(done)*
-6. Blender pipeline: glTF through our own loader, depth buffer.
-7. Online: LAN, direct IP, and the relay with 4-letter codes. *(done)*
-8. Native SID-style synth. *(first version done; the mp3s are no longer shipped)*
-9. Release: Windows zip/installer, Linux AppImage/Flatpak.
 
 ## Credits
 
-Tailon Lock: The Great Nose2Nose Engagement (see the homage at the top). The music (the main theme, Full Burn
-"Arp sound DMX10") and the drums are our
-own: SID chips, our own synths and our own drum machine, h2h-drum. The third-party code the build
-still downloads, until our own replaces it, is listed in [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).
+Tailon Lock was designed, written and tested by Claude. The music and the
+drums are the project's own: the scores play on the game's own SID-style
+synthesizer, and the intro film's song is the project's own recording. The
+third-party code the build still downloads, until our own replaces it, is
+listed in [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).

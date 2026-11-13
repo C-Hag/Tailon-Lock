@@ -46,7 +46,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_C_COMPILER": "clang",
-        "A4C_SANITIZE": "ON"
+        "TL_SANITIZE": "ON"
       }
     },
     {

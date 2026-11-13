@@ -11,8 +11,8 @@
  * table index depends on secret data (the field arithmetic, the ladder's
  * swaps, Poly1305's reduction and the tag comparison are all branch-free;
  * BLAKE2b and ChaCha20 are data-independent by design). */
-#ifndef A4C_CRYPTO_H
-#define A4C_CRYPTO_H
+#ifndef TL_CRYPTO_H
+#define TL_CRYPTO_H
 
 #include <stdbool.h>
 #include <stddef.h>

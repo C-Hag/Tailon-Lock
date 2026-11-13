@@ -1,4 +1,4 @@
-# CI: our own, on the development PC
+# CI: our own, on a build computer
 
 The repository has no GitHub Actions workflows and uses no GitHub-hosted
 minutes. Its CI is `tools/ci`, a small program of ours. On a timer it:
@@ -42,7 +42,7 @@ forks never reach the machine, because the CI only fetches `origin`.
 ## Security
 
 - **Its own user.** It runs as an unprivileged user (`tlci` below) with no
-  sudo. It cannot read the owner's home, which is `drwx------`.
+  sudo. It cannot read the main user's home, which is `drwx------`.
 - **A narrow token.** The token is a fine-grained personal access token for
   **this repository only**, with exactly two permissions: **Commit statuses:
   read and write**, and **Contents: read-only** (so the clone can fetch).
@@ -60,7 +60,7 @@ forks never reach the machine, because the CI only fetches `origin`.
 
 ## One-time setup
 
-Run as the owner. Make the token on GitHub first: **Settings > Developer
+Run as the main user. Make the token on GitHub first: **Settings > Developer
 settings > Personal access tokens > Fine-grained tokens > Generate new
 token**. Choose resource owner: you; repository access: only this repository;
 permissions: Commit statuses read and write, Contents read-only. Copy the

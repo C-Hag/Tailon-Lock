@@ -1,5 +1,5 @@
 # landing: carrier trap: wheels slam, arresting wire zing, engines spooling down
-a4c-sfx 1
+tl-sfx 1
 play once 3.9
 volume f
 wave mutew

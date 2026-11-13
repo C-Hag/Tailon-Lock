@@ -8,8 +8,8 @@
  * linear and radial gradients; clipping to a path; a global alpha; an additive
  * mode for glows; save and restore of all of it. The framebuffer is opaque
  * 0xFFRRGGBB. */
-#ifndef A4C_PAINT_H
-#define A4C_PAINT_H
+#ifndef TL_PAINT_H
+#define TL_PAINT_H
 
 #include <stdbool.h>
 #include <stdint.h>

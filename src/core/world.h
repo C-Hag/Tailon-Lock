@@ -1,6 +1,6 @@
 /* world.h - arena, bases, mountains seeded with 1987, terrainH (JS lines 230-306). */
-#ifndef A4C_WORLD_H
-#define A4C_WORLD_H
+#ifndef TL_WORLD_H
+#define TL_WORLD_H
 
 #include <stdint.h>
 

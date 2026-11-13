@@ -1,6 +1,6 @@
 /* tlpk.h - unpacking the floppy forge's packed files (TLPK; tools/ff/tlpk makes them). Original code for this project. */
-#ifndef A4C_TLPK_H
-#define A4C_TLPK_H
+#ifndef TL_TLPK_H
+#define TL_TLPK_H
 
 #include <stdbool.h>
 #include <stddef.h>

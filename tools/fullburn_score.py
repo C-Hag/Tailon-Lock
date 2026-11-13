@@ -15,7 +15,7 @@ ear-safe mix (DMX10 ear) has them: the bell clock 4 dB down with a 2.9 kHz cut a
 enters, the buzz-arp lead dipped at 2.4 kHz. The game's own SID drums play the opening, as the SID chip did.
 
 fullburn.json is the whole song; the game loops bars 33-72 (61.4-138.0 s, the old recording's loop), and
---render-music with A4C_MUSIC_FULL=1 plays it to the end. fullburn-intro.json is the opening film's cut, as the
+--render-music with TL_MUSIC_FULL=1 plays it to the end. fullburn-intro.json is the opening film's cut, as the
 old fullburn-intro.wav: half a second of silence, then the song from the top for 79.1 s (bars 1-40 and the first
 of 41), the last 2.5 s faded out; it plays once, and the menu's Full Burn carries on from it at the same place.
 """

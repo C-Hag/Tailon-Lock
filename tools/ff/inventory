@@ -5,12 +5,12 @@ floppy (1,474,560 bytes). Original code for this project; Python 3.8+ standard l
 usage: tools/ff/inventory [--build DIR] [--packed DIR] [--json FILE] [--report FILE] [--no-program]
 
 What the game reads is found by asking it: a few headless runs (the intro and menu, a match on every map, the
-defence and drone modes, the audit's data sheets) with A4C_FILES=1, which logs every file it loads, plus the songs
+defence and drone modes, the audit's data sheets) with TL_FILES=1, which logs every file it loads, plus the songs
 named in src/music.c's THEMES (a menu choice loads them later). Everything else in assets/ (the web pages, the
 build scripts, figure/ and sfx/, which are built into the program) is listed as not shipped.
 
 The program is measured as the floppy build would make it: one CPU each (arm64 and x86_64), -Os, dead code
-stripped, symbols stripped, from build/ff-<cpu> (configured and built here when missing); SDL3's share comes from
+stripped, symbols stripped, from build/ff-<cpu> (configured and built here when missing); the shares come from
 the link map. The budget: the program packed <= 420 KB, the data <= 900 KB, and >= 100 KB for the unpacker, the
 headers and a margin. Today's sizes are given raw and through xz -9e, the yardstick (never shipped); --packed DIR
 adds the forge's own packed sizes when there are some.
@@ -32,7 +32,7 @@ BUDGET = {'program': 420 * 1024, 'data': 900 * 1024}
 # the songs the floppy keeps (the author's choice): Full Burn and the opening film's cut of it (as scores, rebuilt
 # from the recording), Ghost Squadron, Steel Horizon and the film's cut of it
 FLOPPY_SONGS = ('fullburn', 'fullburn-intro', 'ghost', 'horizon', 'horizon-intro')
-CMAKE = os.environ.get('A4C_CMAKE') or shutil.which('cmake') or 'cmake'  # A4C_CMAKE: a cmake that is not on the PATH
+CMAKE = os.environ.get('TL_CMAKE') or shutil.which('cmake') or 'cmake'  # TL_CMAKE: a cmake that is not on the PATH
 
 # what each file is, for the floppy: (kind, what the simulation reads from it)
 KINDS = [
@@ -81,9 +81,8 @@ def run_game(exe, args):
         os.makedirs(os.path.join(cfg, 'tailonlock'))
         with open(os.path.join(cfg, 'tailonlock', 'settings.ini'), 'w') as f:
             f.write('intro=1\n')
-        env = dict(os.environ, XDG_CONFIG_HOME=cfg, A4C_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), HOME=cfg,
-                   SDL_VIDEO_DRIVER='dummy', SDL_RENDER_DRIVER='software', SDL_AUDIO_DRIVER='dummy',
-                   A4C_VIDEO='offscreen', A4C_AUDIO='dummy', A4C_FILES='1')
+        env = dict(os.environ, XDG_CONFIG_HOME=cfg, TL_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), HOME=cfg,
+                   TL_VIDEO='offscreen', TL_AUDIO='dummy', TL_FILES='1')
         p = subprocess.run([exe] + args, env=env, capture_output=True, text=True, timeout=600)
     return p.returncode, (p.stdout + p.stderr).splitlines()
 
@@ -162,7 +161,7 @@ def link_shares(mapfile):
                 if any(s <= a < e for s, e in zero):
                     continue
                 f = files.get(int(m.group(3)), '')
-                k = 'SDL3' if 'SDL3' in f else 'game core (sim, AI, world)' if 'a4c_core' in f else \
+                k = 'game core (sim, AI, world)' if 'tl_core' in f else \
                     'game (renderers, film, synth, UI, net)' if 'tailonlock.dir' in f else 'linker and system stubs'
                 share[k] = share.get(k, 0) + n
     return share
@@ -244,7 +243,7 @@ def main():
             data = open(stripped, 'rb').read()
             shares = link_shares(os.path.join(d, 'link.map'))
             prog[cpu] = {'stripped': len(data), 'xz': xz(data), 'shares': shares,
-                         'no_sdl_raw': len(data) - shares.get('SDL3', 0)}
+                         'raw': len(data)}
 
     # the check: everything read is here, and the kinds add up
     ok = not missing and sum(k['raw'] for k in kinds.values()) == data_raw
@@ -270,11 +269,11 @@ def main():
             w.write('| %s | %s | %s |\n' % (k, format(prog['arm64']['shares'].get(k, 0), ','),
                                            format(prog['x86_64']['shares'].get(k, 0), ',')))
         w.write('| file, xz -9e | %s | %s |\n' % tuple(format(prog[c]['xz'], ',') for c in ('arm64', 'x86_64')))
-        w.write('| without SDL3, raw | %s | %s |\n\n' % tuple(format(prog[c]['no_sdl_raw'], ',') for c in ('arm64', 'x86_64')))
+        w.write('\n')
         a = prog['arm64']
         w.write('## The budget (arm64)\n\n| | Budget | Today, xz yardstick |\n|---|---|---|\n')
-        w.write('| program, packed | <= %s | %s with SDL3 (%s raw without it) |\n' % (
-            format(BUDGET['program'], ','), format(a['xz'], ','), format(a['no_sdl_raw'], ',')))
+        w.write('| program, packed | <= %s | %s (%s raw) |\n' % (
+            format(BUDGET['program'], ','), format(a['xz'], ','), format(a['raw'], ',')))
         w.write('| data | <= %s | %s |\n' % (format(BUDGET['data'], ','), format(floppy_xz, ',')))
         rest = FLOPPY - a['xz'] - floppy_xz
         w.write('| unpacker, headers, margin | >= %s | %s left |\n' % (format(100 * 1024, ','), format(rest, ',')))

@@ -317,6 +317,30 @@ static bool glb_mesh_file(const char *rel, Mesh *m) {
 
 static int meshes_from_glb; /* how many meshes came from .glb files */
 
+/* The detailed jets (jets/hi/<id>.glb, made by jets/src/hi_models.py), for the eye only: loaded the first time ULTRA
+ * asks for them, so the plain game, the floppy and the simulation never touch them. */
+void assets_load_hi_jets(void) {
+  static bool done;
+  if (done) return;
+  done = true;
+  int n = 0;
+  for (int j = 0; j < NJETS; j++) {
+    char rel[64];
+    Mesh m;
+    memset(&m, 0, sizeof m);
+    int w = snprintf(rel, sizeof rel, "jets/hi/%s.glb", JETS[j].id);
+    if (w <= 0 || (size_t)w >= sizeof rel) {   /* an id too long for the path: no detailed model for it */
+      plat_log("assets: jet id too long for its detailed model");
+      continue;
+    }
+    if (glb_mesh_file(rel, &m)) {
+      jets_set_hi(j, &m);
+      n++;
+    }
+  }
+  plat_log("assets: %d detailed jets", n);
+}
+
 /* a source mesh: assets/jets/<id>.glb when there is one, else the JSON mesh */
 static bool source_mesh(const char *id, const Json *json_mesh, Mesh *m) {
   char rel[64];
@@ -607,12 +631,12 @@ bool assets_init(void) {
   const char *base = plat_base_path();
   char cand[4][1024];
   int n = 0;
-  /* tests (tools/ff/qcheck): A4C_ASSETS, a folder with a trailing slash, is the assets folder, first */
-  const char *test_dir = getenv("A4C_ASSETS");
+  /* tests (tools/ff/qcheck): TL_ASSETS, a folder with a trailing slash, is the assets folder, first */
+  const char *test_dir = getenv("TL_ASSETS");
   if (test_dir && *test_dir) snprintf(cand[n++], sizeof cand[0], "%.1000s", test_dir);
   if (base) snprintf(cand[n++], sizeof cand[0], "%sassets/", base);
-#ifdef A4C_SOURCE_DIR
-  snprintf(cand[n++], sizeof cand[0], "%s/assets/", A4C_SOURCE_DIR);
+#ifdef TL_SOURCE_DIR
+  snprintf(cand[n++], sizeof cand[0], "%s/assets/", TL_SOURCE_DIR);
 #endif
   snprintf(cand[n++], sizeof cand[0], "assets/");
   for (int i = 0; i < n; i++)
@@ -671,7 +695,7 @@ int assets_export_meshes(const char *out_dir, bool glb) {
 }
 
 /* ---- fuzzing (tests/lf_song.c, tests/lf_map.c) ---------------------------------- */
-#ifdef A4C_FUZZ
+#ifdef TL_FUZZ
 void assets_fuzz_dir(const char *d) { snprintf(dir, sizeof dir, "%.1000s", d); }
 
 static void free_map(Map *m) {

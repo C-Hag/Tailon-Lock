@@ -4,8 +4,8 @@
  * a clock, the general-quarters light, the operator's console close by, and the bolted chairs. The same as the browser
  * game's (assets/figure/figure.js: room, chair, roomLamps, lightRoom); both make the same triangles. Original code for
  * this project. Units: metres, y up, z away from the film's camera, x to its right. */
-#ifndef A4C_ROOM_H
-#define A4C_ROOM_H
+#ifndef TL_ROOM_H
+#define TL_ROOM_H
 
 #include <stdbool.h>
 

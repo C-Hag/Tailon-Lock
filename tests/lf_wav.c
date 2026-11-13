@@ -1,7 +1,7 @@
 /* lf_wav.c - a libFuzzer target for the WAV reader (plat_load_wav in
  * src/platform/plat_core.c): the chunks, every sample format it takes, and
  * the resampler to the game's rate. Original code for this project. Build
- * with -DA4C_LIBFUZZER=ON (clang); run it under ASan and UBSan.
+ * with -DTL_LIBFUZZER=ON (clang); run it under ASan and UBSan.
  *
  * The input is the file, written to the fuzzer's own folder and read at the
  * mixer's rate, as the music player does. plat_core.c is linked as it is,

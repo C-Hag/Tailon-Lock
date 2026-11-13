@@ -4,7 +4,7 @@
  * needs to forward a port on their router. Runs on any small Linux box with
  * UDP port 27970 open:
  *
- *   a4c_relay [port]
+ *   tl_relay [port]
  *
  * The match itself is encrypted end to end with a key made from the code
  * (src/net.c), so the relay only sees sealed packets. The code is also that
@@ -14,7 +14,7 @@
  * answers nothing, for a live code as for any other, and a wrong code and a
  * game somebody is playing get the same T_RFAIL.
  *
- * Packets start "A4C", a version and a type (see src/net.c). */
+ * Packets start "TL", a version and a type (see src/net.c). */
 #define _POSIX_C_SOURCE 200112L
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -145,12 +145,12 @@ int main(int argc, char **argv) {
   a.sin_addr.s_addr = htonl(INADDR_ANY);
   a.sin_port = htons((uint16_t)port);
   if (s < 0 || bind(s, (struct sockaddr *)&a, sizeof a) != 0) {
-    perror("a4c_relay: bind");
+    perror("tl_relay: bind");
     return 1;
   }
   struct timeval tv = { 1, 0 };
   setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
-  printf("a4c_relay: listening on UDP %d\n", port);
+  printf("tl_relay: listening on UDP %d\n", port);
   fflush(stdout);
   uint8_t p[1500];
   double last_sweep = now(), last_minute = now();

@@ -1,7 +1,6 @@
 # Assets
 
-Game data the C port loads at run time, copied from the project's generated
-files. The build copies this folder next to the program.
+Game data the game loads at run time, made by the project's own tools. The build copies this folder next to the program.
 
 - `jets/jets_game.js`: the eight jets in the game's mesh format (+X right
   wing, +Y up, +Z nose, metres) with their hangar scores. The game reads the
@@ -14,6 +13,5 @@ files. The build copies this folder next to the program.
 - `intro/`: the opening cinematic. `INTRO.md` describes `intro_script.json`
   and `intro_assets.json`.
 
-The generators (and the `.glb` models for Blender) live in the project files
-and on the `claude/c-port-assets` branch; rebuild there and copy the outputs
-here.
+The files here are the finished outputs the game loads; the tools that made
+them are not part of this repository.

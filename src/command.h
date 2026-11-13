@@ -1,7 +1,7 @@
 /* command.h - player 2's seat in the carrier defence: the control room
  * (a tactical radar and the turret board) and the view from a manned turret. */
-#ifndef A4C_COMMAND_H
-#define A4C_COMMAND_H
+#ifndef TL_COMMAND_H
+#define TL_COMMAND_H
 
 #include "core/game.h"
 #include "raster.h"

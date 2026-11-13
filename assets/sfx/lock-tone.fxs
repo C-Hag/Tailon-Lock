@@ -1,5 +1,5 @@
 # lock-tone: missile lock: steady warbling pulse tone (loop)
-a4c-sfx 1
+tl-sfx 1
 play loop 64
 volume f
 wave mutew

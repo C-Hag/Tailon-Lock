@@ -3,10 +3,10 @@
  * the settings are then saved (where every value picks a name from a table)
  * and read back. Every value must stay in the range config.h gives it, after
  * the first read and after the second; one outside aborts. Original code for
- * this project. Build with -DA4C_LIBFUZZER=ON (clang); run it under ASan and
+ * this project. Build with -DTL_LIBFUZZER=ON (clang); run it under ASan and
  * UBSan.
  *
- * The file is A4C_CONFIG_DIR/settings.ini in the fuzzer's own folder (never
+ * The file is TL_CONFIG_DIR/settings.ini in the fuzzer's own folder (never
  * the player's). The maps' index lists the four real maps, so a map setting
  * can find one. */
 #include "lf_common.h" /* first: it asks for POSIX */

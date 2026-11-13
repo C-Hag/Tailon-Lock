@@ -33,7 +33,7 @@ void *plat_load_file(const char *path, size_t *size) {
   }
   buf[len] = 0;
   if (size) *size = len;
-  if (getenv("A4C_FILES")) plat_log("file: %s %lu", path, (unsigned long)len); /* tests (tools/ff/inventory): what the game reads */
+  if (getenv("TL_FILES")) plat_log("file: %s %lu", path, (unsigned long)len); /* tests (tools/ff/inventory): what the game reads */
   return buf;
 }
 

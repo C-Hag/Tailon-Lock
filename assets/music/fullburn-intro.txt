@@ -1,14 +1,11 @@
 fullburn-intro.wav: the opening film's music, a cut of the main theme, Full Burn "Arp sound DMX10"
 (music/fullburn/), from its ear-safe mix (the bell clock softened, the lead's 2.4 kHz dip, -20 LUFS). Half a second of silence, then bars 1-40 of the
-song (6-frame sixteenths on the PAL clock, 1.9152 s a bar), faded over 2.5 s; 32 kHz stereo. The same
-cut and timing as the DMX3 version it replaces, so the film's sync points are unchanged. The game plays
+song (6-frame sixteenths on the PAL clock, 1.9152 s a bar), faded over 2.5 s; 32 kHz stereo. The game plays
 it from the recording instead of a score (music.c, themes with a .wav), once, and the menu's own theme
 takes over when it ends.
 
-Intro version 9 (2026-11-05): the film plays the score (fullburn-intro.json), not this recording, and that score
-repeats 8 bars of the song's intro (bars 1-4, 3-4, 3-4, 5-6, 5-6, 5-6, then 7 on), so the band hit is at 27.31 s. This
-recording keeps the old 66 s cut and is out of step with the version 9 film. The game never plays it while
-fullburn-intro.json is there: a score always wins over a recording of the same theme (music.c, load_recording).
+The game plays the score (fullburn-intro.json) when it is there, not this recording: a score always wins over
+a recording of the same theme (music.c, load_recording). The opening film itself plays heartbeat-intro.
 
 All our own audio: the SID chips, our 80s-rig synths and our own drum machine (h2h-drum). No samples,
 no attribution needed.

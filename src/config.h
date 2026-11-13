@@ -1,6 +1,6 @@
 /* config.h - settings.ini in the per-user config folder (JS settings/localStorage). */
-#ifndef A4C_CONFIG_H
-#define A4C_CONFIG_H
+#ifndef TL_CONFIG_H
+#define TL_CONFIG_H
 
 #include <stdbool.h>
 
@@ -13,6 +13,7 @@ typedef struct {
   bool       drone2;    /* beat the drone: player 2 flies the drone (else the CPU) */
   Difficulty diff;
   bool       invert, sound, music, intro, gforce;
+  int        sight[2]; /* SIGHT_*: each local seat's gunsight on the nose (a display choice, this computer only) */
   int        volume;  /* master volume 1-10, 3 dB a step: 10 is full level, 7 (the default) is 9 dB below it */
   bool       child;   /* hearing: the children's mode caps the volume at 5, 6 dB under the default (docs/HEARING.md) */
   bool       classic; /* classic keys and rules */
@@ -41,6 +42,9 @@ typedef struct {
 
 enum { NV_LAN, NV_ADDRESS, NV_RELAY, NV_COUNT };
 
+/* the gunsight's shapes, as settings.ini names them */
+enum { SIGHT_OFF, SIGHT_CROSS, SIGHT_CIRCLE, SIGHT_RING_DOT, SIGHT_TRIANGLE, SIGHT_DOT, SIGHT_COUNT };
+extern const char *const SIGHT_NAMES[SIGHT_COUNT];
 void config_defaults(Settings *s);
 void config_load(Settings *s);
 /* One settings.ini line: key and value (also --set key=value). */

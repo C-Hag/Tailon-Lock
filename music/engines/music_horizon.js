@@ -5,7 +5,7 @@
 // with a slow width sweep, and a chirping pulse ostinato fills the off-beat sixteenths. The leads get a SID pulse layer
 // with delayed vibrato and a slide into long notes, and every verse and dogfight ends on a one-bar break where only the
 // bass walks up into the next section. Style only: no notes or samples are taken from the original.
-// "Steel Horizon": an original Ace4Combat pop-rock and cinematic anthem, about 2:40 at 120 BPM. It opens like Nose 2 Nose
+// "Steel Horizon": an original Tailon Lock pop-rock and cinematic anthem, about 2:40 at 120 BPM. It opens like Nose 2 Nose
 // (Pop) with a new tune: sea waves and a rock build-up grow under a jet that passes as the band enters. Then a
 // brass, bells and choir fanfare, a galloping guitar riff, a verse that starts sparse, a rising pre-chorus, a big
 // IV–I–V–vi chorus led by the OB-X8 synth, a twin-lead "dogfight" in harmony, a calm-sea bridge with sonar pings,

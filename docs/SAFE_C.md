@@ -11,7 +11,7 @@ them (and so does `certify plat`'s P0); the compiler flags below are on in every
   kept: `q = realloc(p, n); if (!q) …; p = q;`), never a write through NULL.
 - **Sizes that can overflow are checked** with `safe_add` and `safe_mul` (`core/safe.h`) before they are used to
   allocate or index.
-- **Every switch case that falls through says so** with `A4C_FALLTHROUGH;` (`-Wimplicit-fallthrough`).
+- **Every switch case that falls through says so** with `TL_FALLTHROUGH;` (`-Wimplicit-fallthrough`).
 - **No cast that loses alignment** (`-Wcast-align`): read unaligned data with `memcpy`; where the alignment is
   certain (offsetof a float field, an allocator's own header), the cast goes through `void *` with a comment that
   says why.
@@ -28,7 +28,7 @@ them (and so does `certify plat`'s P0); the compiler flags below are on in every
 | `scanf` `%s` or `%[` without a width | `%63s`, `%15[^:]` | the field cannot run past its buffer |
 
 - **Format strings are literals.** A function that passes its format on to `printf` or `vsnprintf` is declared
-  with `A4C_PRINTF(f, a)`, so the compiler checks every call (`-Wformat=2`). Text from a file, the network or the
+  with `TL_PRINTF(f, a)`, so the compiler checks every call (`-Wformat=2`). Text from a file, the network or the
   command line is never a format: it goes in as `"%s"`.
 - **Every buffer write is bounded**: `snprintf` with `sizeof` of the target, `memcpy` with a length checked
   against both ends.
@@ -51,8 +51,7 @@ On every GCC and Clang build: `-Wall -Wextra -Wshadow -Wstrict-prototypes -Wform
 `-D_FORTIFY_SOURCE=3` (2 where the compiler has no 3) outside Debug and sanitizer builds. `-ffp-contract=off` keeps
 the simulation's floats the same on every computer.
 
-`-Wconversion -Wsign-conversion` run as a report: each one is fixed or explained in the audit
-(docs/audits/safe-c-2026-11-02.md).
+`-Wconversion -Wsign-conversion` run as a report: each one is fixed or explained where it stands.
 
 ## The checks
 

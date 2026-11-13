@@ -29,8 +29,8 @@
  * (the format's place for an application's own data), each face's corner
  * count, the exact colour and the mesh's radius. Other glTF readers see
  * ordinary coloured triangles. */
-#ifndef A4C_GLB_H
-#define A4C_GLB_H
+#ifndef TL_GLB_H
+#define TL_GLB_H
 
 #include <stdbool.h>
 #include <stddef.h>

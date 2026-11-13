@@ -1,6 +1,6 @@
 # tools/static.supp - the findings of tools/static (cppcheck, clang-tidy) that are not bugs, each with its reason.
 # One per line: tool check path # reason. tool is cppcheck, clang-tidy or *; check and path take * and ?.
-# The audit behind every line, with each finding looked at one by one: docs/audits/static-2026-11-02.md.
+# Every line was reviewed finding by finding; the reason after each says why it is not a bug.
 # A line for one file covers only the findings reviewed there; a new one in another file fails until it is looked at.
 
 # ---- by design everywhere: the C11-only rule and the game's own idioms ----
@@ -109,8 +109,8 @@ clang-tidy cert-int09-c src/platform/plat_x11.c # the X11 event codes, each as t
 cppcheck unmatchedSuppression nofile # cppcheck 2.18 skips unusedFunction when run with -j N, so the --suppress=unusedFunction that tools/static passes is unmatched
 # ---- the Linux platform files and the Linux build, looked at one by one ----
 clang-tidy clang-analyzer-core.NonNullParamChecker src/audit.c # getenv read twice: the second is the same value the first was checked non-NULL; nothing calls setenv
-clang-tidy clang-analyzer-core.NonNullParamChecker src/eyes.c # the same twice-read getenv (A4C_EYES_EVERY)
-clang-tidy clang-analyzer-core.NonNullParamChecker src/main.c # the same twice-read getenv (A4C_EVERY)
+clang-tidy clang-analyzer-core.NonNullParamChecker src/eyes.c # the same twice-read getenv (TL_EYES_EVERY)
+clang-tidy clang-analyzer-core.NonNullParamChecker src/main.c # the same twice-read getenv (TL_EVERY)
 clang-tidy clang-analyzer-security.ArrayBound src/platform/plat_wayland.c # each read is limited to cap - n - 1, so n < cap and s[n] = 0 is inside
 clang-tidy performance-no-int-to-ptr src/platform/plat_wayland.c # an output's index as the listener's user data, as Wayland's API takes it
 clang-tidy performance-no-int-to-ptr src/platform/plat_x11.c # the X11 window id in PlatNative's pointer field, as the API defines it

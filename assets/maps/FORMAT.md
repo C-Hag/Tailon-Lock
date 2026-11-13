@@ -1,6 +1,6 @@
-# Tailon Lock map format, version 1 (first written for Ace4Combat)
+# Tailon Lock map format, version 1 (first written for Tailon Lock)
 
-One map is one JSON document (`<id>.json`). The same data drives the browser game and the C port.
+One map is one JSON document (`<id>.json`). The same data drives the game and its browser edition (`web/`).
 `maps_game.js` holds all four for the browser (`window.ACE_MAPS[id]`). For C, the heightmap and surface
 grid are also written as raw files (`<id>.h16`, `<id>.mat`), so a loader only needs a small JSON parser for the rest.
 

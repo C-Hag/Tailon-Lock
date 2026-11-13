@@ -1,11 +1,11 @@
 /* music.h - the soundtrack, played by the native SID-style synth. */
-#ifndef A4C_MUSIC_H
-#define A4C_MUSIC_H
+#ifndef TL_MUSIC_H
+#define TL_MUSIC_H
 
 #include <stdbool.h>
 
 #define MUSIC_THEMES 3               /* the ones the menu offers */
-#define MUSIC_ALL    (MUSIC_THEMES + 2) /* and the opening film's own cuts */
+#define MUSIC_ALL    (MUSIC_THEMES + 3) /* and the opening film's own cuts */
 
 /* mix: the gain that brings the theme to a common loudness */
 typedef struct { const char *key, *name; float play, menu, mix; } Theme;

@@ -43,6 +43,8 @@ typedef struct {
   int    ntip;
   float  tipT;
   float  abFlash, lastAb;
+  /* the feel of speed */
+  float  spK, spT, shX, shY;
 } PlaneFx;
 
 typedef struct { vec3 p, v; float life, max, s0, s1; uint32_t col; float a; bool spray; } VPart;
@@ -160,6 +162,61 @@ void viewfx_camera(const Game *g, const Plane *p, Camera *c, float *zoom) {
 }
 
 /* ---- effects ---------------------------------------------------------- */
+/* The feel of speed, as a film or a real cockpit gives it: the view widens as the jet winds up, and it trembles at the
+ * top end and on the burner. On the view only: the jet, its guns and the HUD's figures do not move. */
+void viewfx_speed(const Game *g, const Plane *p, Camera *c, float *fscale) {
+  *fscale = 1;
+  int i = (int)(p - g->planes);
+  if (i < 0 || i >= MAX_PLANES || !p->alive || viewfx_mode(p) == VIEW_FLYBY) return;
+  PlaneFx *s = &PF[i];
+  float ab = ab_of(p), want = clampf((p->speed - 140) / 280, 0, 1);
+  float dt = clampf(g->time - s->spT, 0, 0.1f);
+  s->spT = g->time;
+  s->spK += (0.72f * want + 0.28f * ab - s->spK) * fminf(1, dt / 0.6f);
+  *fscale = 1 - 0.17f * s->spK;
+  if (dt > 0) {
+    s->shX += (vrnd() - 0.5f - s->shX) * 0.4f;
+    s->shY += (vrnd() - 0.5f - s->shY) * 0.4f;
+  }
+  float a = s->spK * s->spK * (0.0022f + 0.0028f * ab);
+  c->f = v3_norm(v3_add(c->f, v3_add(v3_scale(c->r, s->shX * a), v3_scale(c->u, s->shY * a))));
+  c->r = v3_norm(v3_cross(c->u, c->f));
+  c->u = v3_cross(c->f, c->r);
+}
+
+/* Fine streaks of air and moisture fixed in the world, so they stream past the camera at the jet's true speed. Long and
+ * faint, never dots. */
+static void draw_streaks(Framebuffer *fb, const View *V, const Game *g) {
+  const Plane *p = NULL;
+  float best = 1e30f;
+  for (int i = 0; i < g->nlocals; i++) {
+    const Plane *q = &g->planes[g->locals[i]];
+    float d = v3_dist(q->pos, V->cam.pos);
+    if (d < best) best = d, p = q;
+  }
+  if (!p || !p->alive || p->speed < 150 || best > 200) return;
+  float k = clampf((p->speed - 150) / 250, 0, 1);
+  vec3 dir = v3_norm(p->vel);
+  float len = p->speed * 0.055f;
+  const float CELL = 85;
+  int cx = (int)floorf(V->cam.pos.x / CELL), cy = (int)floorf(V->cam.pos.y / CELL), cz = (int)floorf(V->cam.pos.z / CELL);
+  for (int z = cz - 2; z <= cz + 2; z++)
+    for (int y = cy - 2; y <= cy + 2; y++)
+      for (int x = cx - 2; x <= cx + 2; x++) {
+        uint32_t h = ((uint32_t)x * 73856093u) ^ ((uint32_t)y * 19349663u) ^ ((uint32_t)z * 83492791u);
+        h = h * 2654435761u + 12345u;
+        if (h & 1u) continue;
+        float fx = (float)((h >> 8) & 255) / 255, fy = (float)((h >> 16) & 255) / 255, fz = (float)(h >> 24) / 255;
+        vec3 q = v3((float)x * CELL + fx * CELL, (float)y * CELL + fy * CELL, (float)z * CELL + fz * CELL);
+        if (q.y < 4) continue;
+        vec3 d = v3_sub(q, V->cam.pos);
+        float dist = v3_len(d);
+        if (dist < 6 || dist > 200 || v3_dot(d, V->cam.f) < 0) continue;
+        float a = 0.2f * k * fminf(1, (dist - 6) / 20) * (1 - dist / 200);
+        r3d_seg(fb, V, q, v3_sub(q, v3_scale(dir, len)), hexc(0xe6edf4), 0.05f, a, 1);
+      }
+}
+
 static void puff(vec3 p, vec3 v, float life, float s0, float s1, uint32_t col, float a, bool spray) {
   if (nvp >= MAX_VP) return;
   vp[nvp++] = (VPart){ p, v, life, life, s0, s1, col, a, spray };
@@ -304,6 +361,7 @@ static void draw_vapour(const View *V, const Game *g, const Plane *p) {
 
 void viewfx_draw(Framebuffer *fb, const View *V, const Game *g) {
   if (g != fxG) return;
+  if (gpu_active()) draw_streaks(fb, V, g);
   for (int i = 0; i < g->nplanes && i < MAX_PLANES; i++) {
     const Plane *p = &g->planes[i];
     const PlaneFx *s = &PF[i];

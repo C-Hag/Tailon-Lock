@@ -614,6 +614,11 @@ static void lay_out(int j) {
   }
 }
 
+/* the detailed model, for the eye only at ULTRA: drawn in place of the bare airframe (the weapons still hang on it) */
+void stores_set_hi(int jet) {
+  for (int t = 0; t < 2; t++) BARE[jet][t].hi = &JETS[jet].hi[t];
+}
+
 const Mesh *stores_bare(int jet, int team) {
   if (jet < 0 || jet >= MAX_JETS || team < 0 || team > 1) return NULL;
   if (!LAY[jet].done) lay_out(jet);

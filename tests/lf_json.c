@@ -1,6 +1,6 @@
 /* lf_json.c - a libFuzzer target for our own JSON reader (src/core/json.c),
  * the libFuzzer version of tests/fuzz_json.c with the same rules. Original
- * code for this project. Build with -DA4C_LIBFUZZER=ON (clang); run it under
+ * code for this project. Build with -DTL_LIBFUZZER=ON (clang); run it under
  * ASan and UBSan.
  *
  * The input is the text, in a buffer of exactly its own size. The tokenizer

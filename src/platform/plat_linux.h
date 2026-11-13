@@ -2,8 +2,8 @@
  * pads, the offscreen window, and the calls of plat.h) uses one window
  * system, plat_wayland.c or plat_x11.c, through this table. Original code for
  * this project. */
-#ifndef A4C_PLAT_LINUX_H
-#define A4C_PLAT_LINUX_H
+#ifndef TL_PLAT_LINUX_H
+#define TL_PLAT_LINUX_H
 
 #include "platform/plat_core.h"
 

@@ -477,7 +477,7 @@ function bakeObject(o) {
 }
 function shotFile() {
   return {
-    format: 'ace4combat-intro-shots', version: INTRO.version, from: 'Tailon Lock storyboard', saved: new Date().toISOString(),
+    format: 'tailonlock-intro-shots', version: INTRO.version, from: 'Tailon Lock storyboard', saved: new Date().toISOString(),
     note: 'Shots and objects in intro_script.json terms: cam keys [t, x, y, z, yaw, pitch, roll, fov], actor keys [t, x, y, z, yaw, pitch, roll], world metres, times from the first music sample. `storyboard` reopens in the editor.',
     shots: doc.shots.filter(s => s.keys.length).map(bakeShot), actors: doc.objects.filter(o => o.keys.length).map(bakeObject),
     hide_intro_actors: doc.hidden, storyboard: cleanDoc()

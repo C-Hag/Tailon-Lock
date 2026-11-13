@@ -2,6 +2,7 @@
  * cockpit panel, radar scope and attitude ball (JS drawHUD, drawPanel, bar,
  * lamp, radarScope, attitude; lines 3487-3660). */
 #include "hud.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -26,6 +27,13 @@ static float label_x(const char *s, float sx, float vx, float vw, int scale) {
   float half = text_width(s, scale) / 2.0f + scale;
   return half * 2 >= vw ? vx + vw / 2 : clampf(sx, vx + half, vx + vw - half);
 }
+
+static bool film_labels;
+static int sight_styles[2] = { SIGHT_CROSS, SIGHT_CROSS }, sight_style = SIGHT_CROSS;
+void hud_show_sight(int seat, int style) {
+  if (seat >= 0 && seat < 2) sight_styles[seat] = style;
+}
+void hud_film_labels(bool on) { film_labels = on; }
 
 /* a label's box, for the messages under the sight to keep clear of (the tanker's "TANKER 9.8KM" had "BINGO - BASE
  * 2 KM" written over it) */
@@ -110,11 +118,37 @@ static void sight_and_tape(Framebuffer *fb, const Plane *p, float cx, float cy, 
   char buf[16];
   /* gunsight */
   float gp = 4 * k, l = 9 * k;
-  fb_line(fb, cx - l, cy, cx - gp, cy, C(HUDC), k, 1);
-  fb_line(fb, cx + gp, cy, cx + l, cy, C(HUDC), k, 1);
-  fb_line(fb, cx, cy - l, cx, cy - gp, C(HUDC), k, 1);
-  fb_line(fb, cx, cy + gp, cx, cy + l, C(HUDC), k, 1);
-  fb_rect(fb, (int)(cx - k / 2), (int)(cy - k / 2), ks, ks, C(HUDC));
+  switch (sight_style) {
+  case SIGHT_CROSS:
+    fb_line(fb, cx - l, cy, cx - gp, cy, C(HUDC), k, 1);
+    fb_line(fb, cx + gp, cy, cx + l, cy, C(HUDC), k, 1);
+    fb_line(fb, cx, cy - l, cx, cy - gp, C(HUDC), k, 1);
+    fb_line(fb, cx, cy + gp, cx, cy + l, C(HUDC), k, 1);
+    fb_rect(fb, (int)(cx - k / 2), (int)(cy - k / 2), ks, ks, C(HUDC));
+    break;
+  case SIGHT_CIRCLE:
+  case SIGHT_RING_DOT:
+    /* a ring as wide as the cross, in 24 straight pieces */
+    for (int s = 0; s < 24; s++) {
+      float a0 = s * (2 * PI_F / 24), a1 = (s + 1) * (2 * PI_F / 24);
+      fb_line(fb, cx + cosf(a0) * l * 0.8f, cy + sinf(a0) * l * 0.8f, cx + cosf(a1) * l * 0.8f, cy + sinf(a1) * l * 0.8f,
+              C(HUDC), k, 1);
+    }
+    if (sight_style == SIGHT_RING_DOT) fb_rect(fb, (int)(cx - k), (int)(cy - k), 2 * ks, 2 * ks, C(HUDC));
+    break;
+  case SIGHT_TRIANGLE: {
+    /* a chevron's point on the nose: a triangle pointing up, its tip on the aim point */
+    float h = l * 0.9f;
+    fb_line(fb, cx, cy, cx - h, cy + h, C(HUDC), k, 1);
+    fb_line(fb, cx, cy, cx + h, cy + h, C(HUDC), k, 1);
+    fb_line(fb, cx - h, cy + h, cx + h, cy + h, C(HUDC), k, 1);
+    break;
+  }
+  case SIGHT_DOT:
+    fb_rect(fb, (int)(cx - k), (int)(cy - k), 2 * ks, 2 * ks, C(HUDC));
+    break;
+  default: break; /* off */
+  }
 
   /* heading tape */
   float hdg = fmodf(atan2f(p->f.x, p->f.z) * 180 / PI_F + 360, 360);
@@ -199,6 +233,8 @@ void hud_draw(Framebuffer *fb, Game *g, Plane *p, const HudView *V, bool label) 
       else
         fb_text(fb, "NOSE", cx + cosf(ang) * (vw / 2 - 30 * k), cy + sinf(ang) * (sh / 2 - 20 * k), ks, C(HUDC), ALIGN_CENTER, 2);
     }
+    /* the second local seat's own gunsight; on a network every computer's own player is its first seat */
+    sight_style = sight_styles[g->nlocals > 1 && p == &g->planes[g->locals[1]] ? 1 : 0];
     if (!padlock) sight_and_tape(fb, p, cx, cy, vy, vw, ks);
 
     /* jet markers: brackets for enemies, a tag for wingmen, an edge arrow for the nearest enemy */
@@ -210,7 +246,8 @@ void hud_draw(Framebuffer *fb, Game *g, Plane *p, const HudView *V, bool label) 
       vec3 c = hud_cam(V, e->pos);
       float d = v3_dist(e->pos, p->pos);
       uint32_t col = C(TEAM[e->team].ui);
-      if (foe) snprintf(buf, sizeof buf, "%.1fKM", d / 1000);
+      if (foe && film_labels && e != nearest) buf[0] = 0; /* in the film two contacts close together wrote their ranges over each other */
+      else if (foe) snprintf(buf, sizeof buf, "%.1fKM", d / 1000);
       else snprintf(buf, sizeof buf, "%s", e->name);
       float sx = c.z > NEAR_Z ? cx + c.x / c.z * V->F : 0, sy = c.z > NEAR_Z ? cy - c.y / c.z * V->F : 0;
       float m = 14 * k;

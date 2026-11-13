@@ -1,7 +1,7 @@
 /* tlj.h - the floppy forge's binary JSON (TLJ; tools/ff/tlj makes it) back into JSON text, which the game's own parser
  * then reads, so the tree is the one the original text gives. Original code for this project. */
-#ifndef A4C_TLJ_H
-#define A4C_TLJ_H
+#ifndef TL_TLJ_H
+#define TL_TLJ_H
 
 #include <stdbool.h>
 #include <stddef.h>

@@ -16,7 +16,7 @@ struct ViewData {
   float4 skyTop;   // rgb; w: star brightness
   float4 skyHor;   // rgb; w: water level
   float4 fogCol;   // rgb; w: fog density per metre
-  float4 misc;     // x: fog start, y: classic arena, z: shadow texel size, w: exposure
+  float4 misc;     // x: fog start, y: classic arena, z: shadow texel size, w: the sea: 3 the opening film, 2 ULTRA, else 1
   float4 haze;     // rgb: the ground beyond what is drawn; w: the most a surface fades into the fog
 };
 

@@ -1,4 +1,4 @@
 # The FreeDOS test's emulators: Bochs (its own free BIOS and VGA BIOS) and mtools to read and write the disk
-# image, from Debian's packages. Test tools only. podman build -t a4c-dos:1 tools/p5bench/freedos
+# image, from Debian's packages. Test tools only. podman build -t tl-dos:1 tools/p5bench/freedos
 FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends bochs bochsbios vgabios mtools >/dev/null && rm -rf /var/lib/apt/lists/*

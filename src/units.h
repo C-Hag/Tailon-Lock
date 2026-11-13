@@ -1,8 +1,8 @@
 /* units.h - the game's units for people: what the instruments, the HUD and the menus show. The simulation
  * works in metres and metres a second; every display converts with these, so two instruments never disagree.
  * Original code for this project. */
-#ifndef A4C_UNITS_H
-#define A4C_UNITS_H
+#ifndef TL_UNITS_H
+#define TL_UNITS_H
 
 #define FT_PER_M     3.28084f   /* 1 ft = 0.3048 m exactly */
 #define KT_PER_MPS   1.943844f  /* 1 kt = 1852 m an hour */

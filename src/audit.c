@@ -66,7 +66,7 @@ static void jend(void) {
 }
 
 /* a named check: printed, counted, and kept for the report */
-A4C_PRINTF(4, 5) static bool verdict(const char *area, const char *name, bool ok, const char *fmt, ...) {
+TL_PRINTF(4, 5) static bool verdict(const char *area, const char *name, bool ok, const char *fmt, ...) {
   char detail[256];
   va_list ap;
   va_start(ap, fmt);
@@ -1301,7 +1301,7 @@ static void start_tests(void) {
           p->fuel = fmaxf(22, fminf(80, need * (lv == 2 ? 1.0f : 1.5f) + 20 * game_burn(g, p, 0.3f))) - 0.5f;
           float low = 100;
           bool down = false;
-          const char *hd = getenv("A4C_AUDIT_HOME"); /* "LEVEL JET MAP": that trip's every 2 s */
+          const char *hd = getenv("TL_AUDIT_HOME"); /* "LEVEL JET MAP": that trip's every 2 s */
           bool tr = hd && strstr(hd, JETS[j].id) && strstr(hd, mname) && hd[0] - '0' == lv;
           for (int i = 0; i < 600 * 60 && p->alive; i++) {
             tick(g);
@@ -1316,7 +1316,7 @@ static void start_tests(void) {
           if (down && low > 0) ok++, worst = fminf(worst, low);
           else {
             dry += low <= 0;
-            if (getenv("A4C_AUDIT_HOME")) printf("    home: %s %s level %d: %s, fuel from %.0f, down to %.0f, t %.0f s\n", mname, JETS[j].id, lv,
+            if (getenv("TL_AUDIT_HOME")) printf("    home: %s %s level %d: %s, fuel from %.0f, down to %.0f, t %.0f s\n", mname, JETS[j].id, lv,
                                                   !p->alive ? "lost" : down ? "landed dry" : "not down", need, low, g->time);
             if (!why[0])
               snprintf(why, sizeof why, "%s %.8s level %d: %s, fuel down to %.0f", mname, JETS[j].id, lv,
@@ -1542,7 +1542,7 @@ typedef struct {
 
 static const char *const MODE_NAMES[] = { "demo", "1 player", "2 players", "carrier defence", "beat the drone" };
 
-A4C_PRINTF(2, 3) static void fault(Tally *t, const char *fmt, ...) {
+TL_PRINTF(2, 3) static void fault(Tally *t, const char *fmt, ...) {
   t->faults++;
   if (t->nfault >= 6) return;
   va_list ap;
@@ -1723,7 +1723,7 @@ static void sortie(int jet, int k, Tally *t, uint32_t seed) {
           t->stops++;
           t->tripS += downT - tripT;
           t->finalS += downT - (finalT >= 0 ? finalT : downT);
-          if (getenv("A4C_AUDIT_TRIPS")) /* each landing of the jet under test, timed */
+          if (getenv("TL_AUDIT_TRIPS")) /* each landing of the jet under test, timed */
             printf("      trip %s t=%.0f: %.0f s out, final at %.0f s, touchdown %.0f kt, %.0f m along, %s [%s]\n", p->name, tripT, downT - tripT,
                    finalT - tripT, p->speed * KT, (p->pos.z - BASES[p->team].z) * BASES[p->team].dir, g->realistic ? "realistic" : "arcade", cfg);
           if (MAP && map_carrier_at(MAP, p->pos.x, p->pos.z) >= 0) one.deck++;
@@ -1748,11 +1748,11 @@ static void sortie(int jet, int k, Tally *t, uint32_t seed) {
           else if (p->deathMsg && strstr(p->deathMsg, "COLLISION")) t->collisions++;
         }
       }
-      if (prevAlive[i] && !p->alive && getenv("A4C_AUDIT_DEATHS"))
+      if (prevAlive[i] && !p->alive && getenv("TL_AUDIT_DEATHS"))
         printf("      death t=%.0f %s (%s, %s): %s at %.0f %.0f %.0f, %.0f m above ground, %.0f kt, f.y %.2f, bfm %s, fuel %.0f leg %d refuel %d home %.0f m, spawned %.0f s before [%s]\n", g->time,
                p->name, jt->id, p->is_ai ? "cpu" : "seat", p->deathMsg ? p->deathMsg : "?", p->pos.x, p->pos.y, p->pos.z,
                p->pos.y - terrain_h(p->pos.x, p->pos.z), p->speed * KT, p->f.y, BFM_NAMES[p->ai.bfm], p->fuel, p->ai.final_leg, p->ai.refuel, sqrtf((p->pos.x - BASES[p->team].x) * (p->pos.x - BASES[p->team].x) + (p->pos.z - BASES[p->team].z) * (p->pos.z - BASES[p->team].z)), aliveT[i], cfg);
-      if (getenv("A4C_AUDIT_TRACE") && !strcmp(getenv("A4C_AUDIT_TRACE"), p->name) && p->alive && ticks % 15 == 0)
+      if (getenv("TL_AUDIT_TRACE") && !strcmp(getenv("TL_AUDIT_TRACE"), p->name) && p->alive && ticks % 15 == 0)
         printf("      trace t=%.2f agl %.0f kt %.0f f.y %.2f pitch %.2f roll %.2f bank %.0f g %.1f thr %.2f bfm %s stall %d fuel %.0f refuel %d leg %d x %.0f z %.0f\n", g->time,
                p->pos.y - terrain_h(p->pos.x, p->pos.z), p->speed * KT, p->f.y, p->ctl.pitch, p->ctl.roll, bank_of(p) * DEG, p->gload,
                p->throttle, BFM_NAMES[p->ai.bfm], p->stall, p->fuel, p->ai.refuel, p->ai.final_leg, p->pos.x, p->pos.z);
@@ -1854,7 +1854,7 @@ static void sortie(int jet, int k, Tally *t, uint32_t seed) {
     sp[s]->pass += one.pass;
     sp[s]->lost += one.lost;
   }
-  if (getenv("A4C_AUDIT_VERBOSE") || t->faults > faults0)
+  if (getenv("TL_AUDIT_VERBOSE") || t->faults > faults0)
     printf("    %2d %-6s %-62s %s in %5.1f min, %s; kills %d, deaths %d\n", k, mj->id, cfg, g->over ? "over" : "TIMEOUT", ticks / 3600.0f,
            g->winner < 0 ? "draw" : g->winner == me->team ? "won" : "lost", me->kills, me->lives < 0 ? 0 : (g->lives > 0 ? g->lives : LIVES) - me->lives);
 }
@@ -2166,7 +2166,7 @@ static const char *shots_dir = ".";
 static bool shots_given; /* --shots DIR: without it the GPU sea stills go to the system's temp folder and are removed */
 /* a failed still, kept as a BMP beside the contact sheet for a closer look */
 static void keep_still(const char *name, bool ok) {
-  if (ok && !getenv("A4C_VIEWS_ALL")) return; /* A4C_VIEWS_ALL=1: every still, not only the failed ones */
+  if (ok && !getenv("TL_VIEWS_ALL")) return; /* TL_VIEWS_ALL=1: every still, not only the failed ones */
   char path[512];
   int n = snprintf(path, sizeof path, "%s/", shots_dir);
   if (n < 0 || n >= (int)sizeof path - 5) { /* a folder name too long for the path: no still, rather than past it */
@@ -2647,7 +2647,7 @@ static void view_test(Game *g, Plane *p, const char *what, int tod, bool chase, 
  * to "KER 9.7KM" there before) */
 /* a failed check's example for its message: as much of it as fits, and "..." at the end when it was cut, so a
  * long text never truncates silently (the snprintf's result is looked at, docs/SAFE_C.md) */
-static void example(char *ex, size_t size, const char *fmt, ...) A4C_PRINTF(3, 4);
+static void example(char *ex, size_t size, const char *fmt, ...) TL_PRINTF(3, 4);
 static void example(char *ex, size_t size, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -2738,7 +2738,7 @@ static void lock_message_test(Game *g, Plane *p, Plane *e) {
       example(ex, sizeof ex, ": \"%s\" over it", text_box[i].s);
     }
   }
-  if (getenv("A4C_VIEWS_DEBUG"))
+  if (getenv("TL_VIEWS_DEBUG"))
     for (int i = 0; i < ntext && i < 256; i++) printf("    text %s %d,%d-%d,%d\n", text_box[i].s, text_box[i].x0, text_box[i].y0, text_box[i].x1, text_box[i].y1);
   verdict("views", "the lock's LOCK clear of the messages", lock >= 0 && over == 0, "LOCK %s, %d texts over it%s",
           lock >= 0 ? "drawn" : "NOT drawn", over, ex);
@@ -2982,7 +2982,7 @@ static void surfaces_test(Game *g, Plane *p, Plane *e, int j) {
     fb_clear(&VF, 0xFF000000u);
     render_scene(&VF, g, &cam, 0, 0, VW, VH, &V, p);
     surfaces_hook = NULL;
-    if (getenv("A4C_VIEWS_ALL")) {
+    if (getenv("TL_VIEWS_ALL")) {
       char path[512];
       int n = snprintf(path, sizeof path, "%s/surfaces-%s-%d.bmp", shots_dir, JETS[j].id, pass);
       if (n < 0 || (size_t)n >= sizeof path) /* a folder name too long for the path: no picture, never a cut name */

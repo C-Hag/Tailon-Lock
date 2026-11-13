@@ -13,7 +13,7 @@ void render_scene(Framebuffer *fb, Game *g, const Camera *cam, int vx, int vy, i
 }
 bool plat_file_sync(FILE *f) { return (void)f, false; }
 bool plat_file_replace(const char *from, const char *to) { return (void)from, (void)to, false; }
-void plat_log(const char *fmt, ...) { (void)fmt; } /* plat_common.c's A4C_FILES line (tools/ff/inventory) */
+void plat_log(const char *fmt, ...) { (void)fmt; } /* plat_common.c's TL_FILES line (tools/ff/inventory) */
 
 static int fails;
 #define CHECK(c)                                                       \

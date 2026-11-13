@@ -21,8 +21,8 @@
  *   vertex buffer   one, slot 0            MSL: the vertex buffer goes after the uniform buffers, buffer(2)... is
  *                                          the backend's choice; attributes by location
  * Clip space is Direct3D's: y up, depth 0..1, the picture's first row at the top. */
-#ifndef A4C_GX_H
-#define A4C_GX_H
+#ifndef TL_GX_H
+#define TL_GX_H
 
 #include <stdbool.h>
 #include <stddef.h>

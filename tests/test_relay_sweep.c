@@ -1,8 +1,8 @@
-/* test_relay_sweep.c - the real relay (a4c_relay, started here on 127.0.0.1 on a free port) against someone
+/* test_relay_sweep.c - the real relay (tl_relay, started here on 127.0.0.1 on a free port) against someone
  * sweeping for live game codes from one address: after its 10 wrong codes it hears nothing more, not even for a
  * live code, and a game someone is playing answers exactly as a wrong code does. Original code for this project.
  *
- * usage: test_relay_sweep PATH_TO_A4C_RELAY */
+ * usage: test_relay_sweep PATH_TO_TL_RELAY */
 #define _POSIX_C_SOURCE 200809L
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -100,7 +100,7 @@ static int start(const char *exe) {
 
 int main(int argc, char **argv) {
   if (argc < 2) {
-    fprintf(stderr, "usage: test_relay_sweep PATH_TO_A4C_RELAY\n");
+    fprintf(stderr, "usage: test_relay_sweep PATH_TO_TL_RELAY\n");
     return 2;
   }
   signal(SIGPIPE, SIG_IGN);

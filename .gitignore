@@ -30,7 +30,7 @@ vgcore.*
 /.check-private
 __pycache__/
 
-# the owner's own recordings stay on his computer (tools/check fails on one)
+# private recordings stay off the repository (tools/check fails on one)
 *.m4a
 
 # audit output once committed at the top (git rm --cached in the release head)

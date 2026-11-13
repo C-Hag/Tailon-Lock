@@ -1,7 +1,7 @@
 /* lf_map.c - a libFuzzer target for the map loader (src/assets.c) and the
  * terrain lookups (src/core/map.c, terrain_h in src/core/world.c): the map's
  * JSON, its .h16 heights and its .mat surface. Original code for this
- * project. Build with -DA4C_LIBFUZZER=ON (clang); run it under ASan and UBSan.
+ * project. Build with -DTL_LIBFUZZER=ON (clang); run it under ASan and UBSan.
  *
  * An input is a flags byte, the lengths of the heights and the surface (16
  * bits each, little-endian), those bytes, and the rest is the map's JSON. The

@@ -381,7 +381,7 @@ typedef struct {
   double *R, rhop;
 } Result;
 
-A4C_PRINTF(3, 4) static void add(Result *r, int sev, const char *fmt, ...) {
+TL_PRINTF(3, 4) static void add(Result *r, int sev, const char *fmt, ...) {
   if (sev > r->sev) r->sev = sev;
   if (r->nf >= (int)(sizeof r->f / sizeof r->f[0])) return;
   Finding *f = &r->f[r->nf++];

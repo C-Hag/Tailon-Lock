@@ -41,8 +41,8 @@ def run(exe, args, frames, tag):
     os.makedirs(os.path.join(cfg, 'tailonlock'))
     with open(os.path.join(cfg, 'tailonlock', 'settings.ini'), 'w') as f:
         f.write('intro=1\n')
-    env = dict(os.environ, XDG_CONFIG_HOME=cfg, A4C_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), A4C_VIDEO='dummy',
-               A4C_AUDIO='dummy', A4C_STATE='1', A4C_PLANES='1')
+    env = dict(os.environ, XDG_CONFIG_HOME=cfg, TL_CONFIG_DIR=os.path.join(cfg, 'tailonlock'), TL_VIDEO='dummy',
+               TL_AUDIO='dummy', TL_STATE='1', TL_PLANES='1')
     # the start on the command line too, whatever the settings say: a catapult start would leave the jets still for
     # the stick scenarios
     p = subprocess.run([exe, '--frames', str(frames), '--set', 'start=air'] + args, env=env, capture_output=True, text=True,
@@ -223,9 +223,9 @@ def s11(exe):
     common = ['--cmd', 'b', '--games', '1', '--seconds', '30', '--set', 'intro=0', '--renderer', 'retro']
     port = free_udp_port()  # not 27960: a game or the live tester may be hosting on this computer
     env = lambda h: dict(os.environ, XDG_CONFIG_HOME=os.path.join(d, h), HOME=os.path.join(d, h),
-                         A4C_CONFIG_DIR=os.path.join(d, h, 'tailonlock'), A4C_NET_PORT=str(port),
-                         A4C_VIDEO='dummy', A4C_AUDIO='dummy', A4C_STATE='1',
-                         A4C_PLANES='1', A4C_LOG=os.path.join(d, h + '.log'))
+                         TL_CONFIG_DIR=os.path.join(d, h, 'tailonlock'), TL_NET_PORT=str(port),
+                         TL_VIDEO='dummy', TL_AUDIO='dummy', TL_STATE='1',
+                         TL_PLANES='1', TL_LOG=os.path.join(d, h + '.log'))
     for h in ('host', 'guest'):
         os.makedirs(os.path.join(d, h))
     host = subprocess.Popen([exe, '--host'] + common + ['--btpad', 'pads=1', '--pad', 'p300:1:drop=3000'], env=env('host'),

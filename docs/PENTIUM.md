@@ -2,7 +2,7 @@
 
 Measured on 2026-10-29 with `tools/p5bench` (a test tool, not shipped). The game's own software renderer,
 flight sim, film and synth were built as a 32-bit x87 program (`-march=pentium -mno-mmx -mno-sse
--mfpmath=387`, no SDL). Instructions were counted with valgrind's callgrind, using a Pentium-like cache:
+-mfpmath=387`). Instructions were counted with valgrind's callgrind, using a Pentium-like cache:
 8 KB two-way L1 for code and for data, 32-byte lines, 256 KB of L2. Each scene was measured over 4 frames;
 the setup is not counted. The frame rates assume a 120 MHz P54C. The `+mem` column adds L1 line fills (about
 12 clocks from L2, 30 from memory) and write-buffer stalls to the 0.8-IPC estimate.

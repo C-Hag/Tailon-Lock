@@ -1,6 +1,6 @@
 /* hud.h - gunsight, lock box, cockpit panel, radar, attitude ball, bitmap text (JS lines 3487-3660). */
-#ifndef A4C_HUD_H
-#define A4C_HUD_H
+#ifndef TL_HUD_H
+#define TL_HUD_H
 
 #include <stdbool.h>
 
@@ -18,6 +18,8 @@ typedef struct {
   float vx, vy, vw, sh, cx, cy, F;
 } HudView;
 
+void hud_show_sight(int seat, int style); /* a local seat's gunsight on the nose, SIGHT_* (config.h; the hangar) */
+void hud_film_labels(bool on); /* the opening film: only the nearest contact shows its range */
 void hud_draw(Framebuffer *fb, Game *g, Plane *p, const HudView *V, bool label);
 void hud_panel(Framebuffer *fb, Game *g, Plane *p, float x, float y, float w, float h);
 /* Tests (the audit's views): told when a panel text had to be cut to fit, with what it lost. NULL: off. */

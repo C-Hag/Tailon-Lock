@@ -1,5 +1,5 @@
 # explosion: small explosion: noise boom through a closing low-pass, low thump, crackle
-a4c-sfx 1
+tl-sfx 1
 play once 2.3
 volume f
 wave mutew

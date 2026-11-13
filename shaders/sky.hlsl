@@ -27,7 +27,7 @@ float4 fs_main(VSOut i) : SV_Target0 {
     float h = hash21(cell);
     float tw = 0.7 + 0.3 * sin(v.camPos.w * 3 + h * 40);
     float2 f = frac(q) - 0.5;
-    if (h > 0.985) c += v.skyTop.w * tw * smoothstep(0.35, 0.0, length(f)) * (h - 0.985) * 120;
+    if (h > 0.985) c += v.skyTop.w * tw * (1 - smoothstep(0.0, 0.35, length(f))) * (h - 0.985) * 120;
   }
   return float4(c, 1);
 }

@@ -1,10 +1,10 @@
 /* lf_common.h - what the libFuzzer targets (tests/lf_*.c) share: a folder of
- * their own for the files they write (and A4C_CONFIG_DIR pointing into it, so
+ * their own for the files they write (and TL_CONFIG_DIR pointing into it, so
  * a run never reads or writes the player's settings), a file written whole,
  * and, unless the target links the real plat_core.c (LF_PLAT_CORE), a
  * stand-in for its log and clock. Original code for this project. */
-#ifndef A4C_LF_COMMON_H
-#define A4C_LF_COMMON_H
+#ifndef TL_LF_COMMON_H
+#define TL_LF_COMMON_H
 
 #define _POSIX_C_SOURCE 200809L /* mkdtemp, setenv */
 #ifdef __APPLE__
@@ -20,7 +20,7 @@
 
 static char lf_dir[512];
 
-/* Makes the folder (once) with the given subfolders, and points A4C_CONFIG_DIR at it. */
+/* Makes the folder (once) with the given subfolders, and points TL_CONFIG_DIR at it. */
 static inline const char *lf_folder(const char *const *subs) {
   if (lf_dir[0]) return lf_dir;
   const char *t = getenv("TMPDIR");
@@ -29,7 +29,7 @@ static inline const char *lf_folder(const char *const *subs) {
     perror("lf: mkdtemp");
     abort();
   }
-  setenv("A4C_CONFIG_DIR", lf_dir, 1);
+  setenv("TL_CONFIG_DIR", lf_dir, 1);
   for (int i = 0; subs && subs[i]; i++) {
     char p[600];
     snprintf(p, sizeof p, "%s/%s", lf_dir, subs[i]);

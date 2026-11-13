@@ -1,13 +1,11 @@
 # Third-party code
 
-The repository holds no third-party source. Until our own code replaces it
-(docs/BUILD_PLAN.md), CMake downloads one library at configure time, a
-pinned release checked against its SHA-256:
+None. The repository holds no third-party source, and the build downloads
+nothing: the game links only the operating system's own libraries (on macOS
+its system frameworks; on Windows the system DLLs; on Linux libc, libm and
+pthread, and it opens the system's Wayland or X11, ALSA and Vulkan libraries
+when it starts). Every file is original code written for this project.
 
-| Library | Version | Used for | Replaced in | Licence |
-|---------|---------|----------|-------------|---------|
-| SDL3 | 3.4.18 | window, input, sound, GPU | brick 20 | zlib |
-
-A binary built from this repository contains it, so a release must carry
-its licence notice. The notices are in the downloaded sources (the
-`LICENSE.txt` file under `build/*/_deps/`).
+One tool, for developers only: after changing the HLSL shaders, `tools/build_shaders.sh` downloads a pinned
+release of Microsoft's shader compiler (dxc) into `build/_tools/` to make `src/gpu_shaders.h`. It is not part of the
+game, and a normal build does not need it.

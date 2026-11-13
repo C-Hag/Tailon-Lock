@@ -56,7 +56,7 @@ def main():
         if os.path.exists(p):
             os.remove(p)
     tmp = tempfile.mkdtemp(prefix='ear-cfg-')
-    env = dict(os.environ, XDG_CONFIG_HOME=tmp, HOME=tmp, A4C_VIDEO='offscreen', A4C_AUDIO='dummy', A4C_MUSIC_S=str(secs))
+    env = dict(os.environ, XDG_CONFIG_HOME=tmp, HOME=tmp, TL_VIDEO='offscreen', TL_AUDIO='dummy', TL_MUSIC_S=str(secs))
     worst = 0
     jobs = []  # (name, wav, extra ear_check arguments)
     for key in theme_keys():
@@ -77,8 +77,8 @@ def main():
             head = f.read(400)
         ways = []
         if '"loop_end"' in head:
-            ways = [('through the player, %d s' % secs, '-loop', dict(A4C_MUSIC_LOOP=str(secs))),
-                    ('whole song', '-full', dict(A4C_MUSIC_FULL='1'))]
+            ways = [('through the player, %d s' % secs, '-loop', dict(TL_MUSIC_LOOP=str(secs))),
+                    ('whole song', '-full', dict(TL_MUSIC_FULL='1'))]
         for what, tag, more in ways:
             w2 = os.path.join(out, key + tag + '.wav')
             print('render', key, '(%s)' % what, flush=True)

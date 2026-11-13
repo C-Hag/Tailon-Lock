@@ -31,9 +31,9 @@ h2{font-family:var(--font-display);font-weight:400;font-size:13px;letter-spacing
 ul{margin:0;padding-left:18px;line-height:1.5;font-size:15px;display:grid;gap:6px;max-width:64ch}
 </style>
 <div class="c64">
-  <p class="eyebrow" id="eyebrow">Ace4Combat · Steel Horizon · 140 BPM</p>
+  <p class="eyebrow" id="eyebrow">Tailon Lock · Steel Horizon · 140 BPM</p>
   <h1 id="title">NOSE 2 NOSE</h1>
-  <p class="lede">Ace4Combat music, played live in your browser. Steel Horizon is the newest song, about 2:40 long: an epic naval and flight anthem that mixes pop-rock with a cinematic score. The Pop version is the full song, about 2:30 long, and combines all of the themes. Nose 2 Nose is a 35-second action opener played like a live band: an electric guitar duels with two synth pianos over a funky groove. Carrier Dawn is the main theme, in Strike, Cinematic, Chiptune and Overtone versions.</p>
+  <p class="lede">Tailon Lock music, played live in your browser. Steel Horizon is the newest song, about 2:40 long: an epic naval and flight anthem that mixes pop-rock with a cinematic score. The Pop version is the full song, about 2:30 long, and combines all of the themes. Nose 2 Nose is a 35-second action opener played like a live band: an electric guitar duels with two synth pianos over a funky groove. Carrier Dawn is the main theme, in Strike, Cinematic, Chiptune and Overtone versions.</p>
   <div class="controls" style="margin-bottom:14px"><span class="seg" role="group" aria-label="Version"><button class="ver" type="button" data-ver="horizon" aria-pressed="true">Steel Horizon</button><button class="ver" type="button" data-ver="pop" aria-pressed="false">Pop</button><button class="ver" type="button" data-ver="h2h" aria-pressed="false">Nose 2 Nose</button><button class="ver" type="button" data-ver="anthem" aria-pressed="false">Anthem</button><button class="ver" type="button" data-ver="strike" aria-pressed="false">Strike</button><button class="ver" type="button" data-ver="cine" aria-pressed="false">Cinematic</button><button class="ver" type="button" data-ver="chip" aria-pressed="false">Chiptune</button><button class="ver" type="button" data-ver="overtone" aria-pressed="false">Overtone</button></span></div>
   <div class="controls">
     <button class="play" id="play" type="button">Play</button>
@@ -290,7 +290,7 @@ const Music = (() => {
 // ---- music end ----
 
 // ---- cinematic music start ----
-// "Carrier Dawn (Cinematic)": original arrangement of the Ace4Combat theme. FM bell chords, 808-style drums,
+// "Carrier Dawn (Cinematic)": original arrangement of the Tailon Lock theme. FM bell chords, 808-style drums,
 // an overdriven sustained guitar lead, power-fifth bass and a big reverb. Keys: E minor, up to F# minor,
 // a tritone jump to C minor, and another tritone jump to an E major finale. Melody and progressions are original.
 const CineMusic = (() => {
@@ -698,7 +698,7 @@ const OvertoneMusic = (() => {
 // with a slow width sweep, a chirping pulse ostinato fills the off-beat sixteenths, and a SID pulse lead with delayed
 // vibrato doubles the hook. The verse and solo end on a one-bar break where only the bass walks up into the next
 // section. Style only: no notes or samples are taken from the original.
-// "Nose 2 Nose (Pop)": original Ace4Combat pop-rock song, about 2:30. Sea waves and a blues-rock build-up in E
+// "Nose 2 Nose (Pop)": original Tailon Lock pop-rock song, about 2:30. Sea waves and a blues-rock build-up in E
 // grow under a jet engine that roars in over 11 seconds and passes as the full band enters. Then a big 80s
 // movie-style bell intro, a driving guitar riff, a verse over a pulsing eighth-note bass, an I–V–vi–IV chorus, a synth
 // solo, a stripped-down breakdown that builds back into the refrain, and final choruses lifted a whole step, the last
@@ -1261,7 +1261,7 @@ const PopMusic = (() => {
 // with a slow width sweep, and a chirping pulse ostinato fills the off-beat sixteenths. The leads get a SID pulse layer
 // with delayed vibrato and a slide into long notes, and every verse and dogfight ends on a one-bar break where only the
 // bass walks up into the next section. Style only: no notes or samples are taken from the original.
-// "Steel Horizon": an original Ace4Combat pop-rock and cinematic anthem, about 2:40 at 120 BPM. It opens like Nose 2 Nose
+// "Steel Horizon": an original Tailon Lock pop-rock and cinematic anthem, about 2:40 at 120 BPM. It opens like Nose 2 Nose
 // (Pop) with a new tune: sea waves and a rock build-up grow under a jet that passes as the band enters. Then a
 // brass, bells and choir fanfare, a galloping guitar riff, a verse that starts sparse, a rising pre-chorus, a big
 // IV–I–V–vi chorus led by the OB-X8 synth, a twin-lead "dogfight" in harmony, a calm-sea bridge with sonar pings,
@@ -1860,7 +1860,7 @@ const HorizonMusic = (() => {
 })();
 // ---- horizon music end ----
 // ---- anthem music start ----
-// "Nose 2 Nose Anthem": original Ace4Combat track on the I–V–vi–IV progression (C–G–Am–F), played by the same live
+// "Nose 2 Nose Anthem": original Tailon Lock track on the I–V–vi–IV progression (C–G–Am–F), played by the same live
 // band as Nose 2 Nose: funk groove drums with fills, big synth bass, electric guitar lead and power chords, with synth
 // pianos and brass behind. Intro, verse, chorus, then a whole-step lift to D major (D–A–Bm–G) for the last chorus.
 const AnthemMusic = (() => {
@@ -2185,7 +2185,7 @@ const AnthemMusic = (() => {
 })();
 // ---- anthem music end ----
 // ---- h2h music start ----
-// "Nose 2 Nose": original action opener for Ace4Combat, about 35 seconds before it loops. Played like a live band:
+// "Nose 2 Nose": original action opener for Tailon Lock, about 35 seconds before it loops. Played like a live band:
 // a syncopated drum groove that changes from bar to bar with fills, a big funky synth bass with octave jumps, and an
 // overdriven electric guitar that duels with two synth pianos in a classical D major style. Brass pads, a riser and a
 // jet flyby sit behind them. Every hit gets a little human timing and velocity variation.
@@ -2519,7 +2519,7 @@ const H2HMusic = (() => {
 })();
 // ---- h2h music end ----
 // ---- strike music start ----
-// "Carrier Dawn (Strike)": action-paced original arrangement of the Ace4Combat theme. A jet flyby made from filtered
+// "Carrier Dawn (Strike)": action-paced original arrangement of the Tailon Lock theme. A jet flyby made from filtered
 // noise and a doppler-shifted turbine whine, layered detuned synth brass, DMX/Linn-style march drums, a 16th-note
 // sequencer bass, the overdriven guitar lead and FM bells. Keys: E minor, F# minor, tritone jump to C minor, E major.
 const StrikeMusic = (() => {
@@ -2783,22 +2783,22 @@ const StrikeMusic = (() => {
   const DR = { r: 'ROLL', k: 'KICK', s: 'SNARE', h: 'HAT', o: 'OPEN HAT', X: 'CRASH', g: 'GHOST' };
   const drumName = d => !d ? '---' : DR[d] || (d[0] === 'T' ? 'TOM' : d[0] === 'r' ? 'ROLL' : '---');
   const V = {
-    overtone: { m: OvertoneMusic, title: 'CARRIER DAWN', voices: [['lead', 'Lead'], ['arps', 'Overtone arps'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Tuning'], eyebrow: 'Ace4Combat theme · Overtone SID · 120 BPM',
+    overtone: { m: OvertoneMusic, title: 'CARRIER DAWN', voices: [['lead', 'Lead'], ['arps', 'Overtone arps'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Tuning'], eyebrow: 'Tailon Lock theme · Overtone SID · 120 BPM',
       row: s => s.lead ? [nn(s.lead.m), s.chord.name, s.lead.h ? 'HARMONIC ' + s.lead.h : (c => (c > 0 ? '+' : '') + c + ' CENT')(Math.round(1200 * Math.log2(s.lead.f / (440 * Math.pow(2, (s.lead.m - 69) / 12)))))]
         : ['---', s.chord.name, '---'] },
-    horizon: { m: HorizonMusic, title: 'STEEL HORIZON', voices: [['guitar', 'Guitar'], ['synths', 'Synths'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Section'], eyebrow: 'Ace4Combat · Steel Horizon · 140 BPM',
+    horizon: { m: HorizonMusic, title: 'STEEL HORIZON', voices: [['guitar', 'Guitar'], ['synths', 'Synths'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Section'], eyebrow: 'Tailon Lock · Steel Horizon · 140 BPM',
       row: s => [s.syn ? nn(s.syn.m) : s.gtr ? nn(s.gtr.m) : s.p1.length ? nn(s.p1[0].m) : s.p2.length ? '(' + nn(s.p2[0].m) + ')' : '---', s.chord.name, s.sec.toUpperCase()] },
-    pop: { m: PopMusic, title: 'NOSE 2 NOSE', voices: [['guitar', 'Guitar'], ['synths', 'Synths'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Section'], eyebrow: 'Ace4Combat · Nose 2 Nose (Pop) · 140 BPM',
+    pop: { m: PopMusic, title: 'NOSE 2 NOSE', voices: [['guitar', 'Guitar'], ['synths', 'Synths'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Section'], eyebrow: 'Tailon Lock · Nose 2 Nose (Pop) · 140 BPM',
       row: s => [s.syn ? nn(s.syn.m) : s.glass && s.glass.h ? 'HARMONIC ' + s.glass.h : s.gtr ? nn(s.gtr.m) : s.p1.length ? nn(s.p1[0].m) : s.p2.length ? '(' + nn(s.p2[0].m) + ')' : '---', s.chord.name, s.sec.toUpperCase()] },
-    anthem: { m: AnthemMusic, title: 'NOSE 2 NOSE ANTHEM', voices: [['guitar', 'Guitar'], ['synths', 'Synths'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Section'], eyebrow: 'Ace4Combat · Nose 2 Nose Anthem · 122 BPM',
+    anthem: { m: AnthemMusic, title: 'NOSE 2 NOSE ANTHEM', voices: [['guitar', 'Guitar'], ['synths', 'Synths'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Section'], eyebrow: 'Tailon Lock · Nose 2 Nose Anthem · 122 BPM',
       row: s => [s.gtr ? nn(s.gtr.m) : s.p1.length ? nn(s.p1[0].m) : s.p2.length ? '(' + nn(s.p2[0].m) + ')' : '---', s.chord.name, s.sec.toUpperCase()] },
-    h2h: { m: H2HMusic, title: 'NOSE 2 NOSE', voices: [['guitar', 'Guitar'], ['synths', 'Synths'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Section'], eyebrow: 'Ace4Combat · Nose 2 Nose · 118 BPM',
+    h2h: { m: H2HMusic, title: 'NOSE 2 NOSE', voices: [['guitar', 'Guitar'], ['synths', 'Synths'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Section'], eyebrow: 'Tailon Lock · Nose 2 Nose · 118 BPM',
       row: s => [s.gtr ? nn(s.gtr.m) : s.p1.length ? nn(s.p1[0].m) : s.p2.length ? '(' + nn(s.p2[0].m) + ')' : '---', s.chord.name, s.sec.toUpperCase()] },
-    strike: { m: StrikeMusic, voices: [['guitar', 'Guitar'], ['brass', 'Brass'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Key'], eyebrow: 'Ace4Combat theme · Strike · 124 BPM',
+    strike: { m: StrikeMusic, voices: [['guitar', 'Guitar'], ['brass', 'Brass'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Key'], eyebrow: 'Tailon Lock theme · Strike · 124 BPM',
       row: s => [s.gtr ? nn(s.gtr.m) : s.lead ? nn(s.lead.m) : s.jet ? 'JET' : '---', s.bar !== undefined && (s.pad || s.bell || s.stab) ? s.chord.name : '---', s.key] },
-    cine: { m: CineMusic, voices: [['guitar', 'Guitar'], ['bells', 'Bells'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Guitar', 'Chord', 'Key'], eyebrow: 'Ace4Combat theme · Cinematic · 90 BPM',
+    cine: { m: CineMusic, voices: [['guitar', 'Guitar'], ['bells', 'Bells'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Guitar', 'Chord', 'Key'], eyebrow: 'Tailon Lock theme · Cinematic · 90 BPM',
       row: s => [s.gtr ? nn(s.gtr.m) : '---', s.bell >= 0.8 ? s.chord.name : '---', s.key] },
-    chip: { m: Music, voices: [['lead', 'Lead'], ['arp', 'Chords'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Bass'], eyebrow: 'Ace4Combat theme · Chiptune · 132 BPM',
+    chip: { m: Music, voices: [['lead', 'Lead'], ['arp', 'Chords'], ['bass', 'Bass'], ['drums', 'Drums']], heads: ['Lead', 'Chord', 'Bass'], eyebrow: 'Tailon Lock theme · Chiptune · 132 BPM',
       row: s => [s.lead ? nn(s.lead.m) : s.echo ? '(' + nn(s.echo.m) + ')' : '---', s.arp || '---', nn(s.bass)] }
   };
   let ver = 'horizon', cur = 0, ac = null;

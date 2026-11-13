@@ -93,6 +93,7 @@ static uint32_t b_mesh_cap;
 
 /* terrain */
 static const Map *terrain_map;
+static int terrain_sub; /* how finely it is built: more at ULTRA */
 static GxBuf *b_tvert, *b_tidx;
 static uint32_t t_count;
 static bool terrain_dirty;
@@ -267,9 +268,12 @@ static int pick_msaa(int want) {
   return want;
 }
 
+bool gpu_ultra(void) { return dev && quality >= GQ_ULTRA; }
+
 void gpu_set_quality(int q) {
   if (!dev || q < 0 || q >= GQ_COUNT || q == quality) return;
   gx_wait_idle();
+  if ((q >= GQ_ULTRA) != (quality >= GQ_ULTRA)) ngmesh = 0, nmverts = 0, mesh_dirty = true; /* the jets' shading differs */
   quality = q;
   int m = pick_msaa(QUAL[q].msaa);
   if (m != msaa) {
@@ -342,6 +346,57 @@ static void put(WVert *v, vec3 p, vec3 n, uint32_t rgb, uint8_t a) {
   v->c[3] = a;
 }
 
+/* ULTRA: shading over a jet's curves instead of its facets. A corner's normal is the average of the faces meeting at
+ * that point within 38 degrees of this face, so curves round off and the hard edges (wing tips, intakes) stay hard. */
+static vec3 face_normal(const Mesh *m, const Face *fc) {
+  vec3 n = v3(0, 0, 0);
+  for (int i = 0; i < fc->n; i++) {
+    vec3 p = m->v[fc->i[i]], q = m->v[fc->i[(i + 1) % fc->n]];
+    n = v3_add(n, v3((p.y - q.y) * (p.z + q.z), (p.z - q.z) * (p.x + q.x), (p.x - q.x) * (p.y + q.y)));
+  }
+  return n; /* its length is twice the face's area */
+}
+static vec3 corner_normal(const Mesh *m, const vec3 *fn, const int *canon, const int *head, const int *next, int vi, vec3 own) {
+  vec3 sum = v3(0, 0, 0);
+  /* the faces at this point: a list per point */
+  for (int e = head[canon[vi]]; e >= 0; e = next[e]) {
+    int k = e / FACE_MAX_V;
+    if (v3_len(fn[k]) < 1e-9f || v3_dot(v3_norm(fn[k]), own) < 0.788f) continue;
+    sum = v3_add(sum, fn[k]);
+  }
+  (void)m;
+  return v3_len(sum) > 1e-9f ? v3_norm(sum) : own;
+}
+
+/* points at the same place are one point, however the mesh indexes them: an open hash on the position to the millimetre */
+static void same_points(const Mesh *m, int *canon) {
+  uint32_t cap = 16;
+  while (cap < (uint32_t)m->nv * 2) cap *= 2;
+  int *tab = malloc(sizeof(int) * cap);
+  if (!tab) {
+    for (int i = 0; i < m->nv; i++) canon[i] = i;
+    return;
+  }
+  for (uint32_t i = 0; i < cap; i++) tab[i] = -1;
+  for (int i = 0; i < m->nv; i++) {
+    int qx = (int)lroundf(m->v[i].x * 1000), qy = (int)lroundf(m->v[i].y * 1000), qz = (int)lroundf(m->v[i].z * 1000);
+    uint32_t h = ((uint32_t)qx * 73856093u) ^ ((uint32_t)qy * 19349663u) ^ ((uint32_t)qz * 83492791u);
+    canon[i] = i;
+    for (uint32_t p = h & (cap - 1);; p = (p + 1) & (cap - 1)) {
+      if (tab[p] < 0) {
+        tab[p] = i;
+        break;
+      }
+      vec3 o = m->v[tab[p]];
+      if ((int)lroundf(o.x * 1000) == qx && (int)lroundf(o.y * 1000) == qy && (int)lroundf(o.z * 1000) == qz) {
+        canon[i] = tab[p];
+        break;
+      }
+    }
+  }
+  free(tab);
+}
+
 static int mesh_index(const Mesh *m) {
   for (int i = 0; i < ngmesh; i++)
     if (gmesh[i].m == m) return i;
@@ -349,6 +404,23 @@ static int mesh_index(const Mesh *m) {
   GMesh *g = &gmesh[ngmesh];
   g->m = m;
   g->first = (uint32_t)nmverts;
+  /* (small meshes only: the search is by every face; the jets and stores, not the carrier) */
+  bool fine = quality >= GQ_ULTRA && m->nf > 0;
+  vec3 *fn = fine ? malloc(sizeof(vec3) * (size_t)m->nf) : NULL;
+  int *canon = fine ? malloc(sizeof(int) * (size_t)m->nv) : NULL;
+  int *head = fine ? malloc(sizeof(int) * (size_t)m->nv) : NULL, *next = fine ? malloc(sizeof(int) * (size_t)m->nf * FACE_MAX_V) : NULL;
+  if (!fn || !canon || !head || !next) fine = false;
+  if (fine) {
+    for (int k = 0; k < m->nf; k++) fn[k] = face_normal(m, &m->f[k]);
+    same_points(m, canon);
+    for (int i = 0; i < m->nv; i++) head[i] = -1;
+    for (int k = 0; k < m->nf; k++)
+      for (int i = 0; i < m->f[k].n; i++) {
+        int c = canon[m->f[k].i[i]], e = k * FACE_MAX_V + i;
+        next[e] = head[c];
+        head[c] = e;
+      }
+  }
   for (int k = 0; k < m->nf; k++) {
     const Face *fc = &m->f[k];
     /* the face's normal over all its corners (Newell), so a first three in a line still give it; a face
@@ -361,14 +433,19 @@ static int mesh_index(const Mesh *m) {
     }
     if (v3_len(n) < 1e-9f) continue;
     n = v3_norm(n);
+    bool smooth = fine && !(fc->c & FACE_GLOW);
     for (int t = 1; t + 1 < fc->n; t++) {
       GROW(mverts, nmverts, capmverts, 3);
       uint8_t al = fc->c & FACE_GLOW ? 192 : 255; /* 0.5-0.9: glows */
-      put(&mverts[nmverts++], m->v[fc->i[0]], n, fc->c, al);
-      put(&mverts[nmverts++], m->v[fc->i[t]], n, fc->c, al);
-      put(&mverts[nmverts++], m->v[fc->i[t + 1]], n, fc->c, al);
+      put(&mverts[nmverts++], m->v[fc->i[0]], smooth ? corner_normal(m, fn, canon, head, next, fc->i[0], n) : n, fc->c, al);
+      put(&mverts[nmverts++], m->v[fc->i[t]], smooth ? corner_normal(m, fn, canon, head, next, fc->i[t], n) : n, fc->c, al);
+      put(&mverts[nmverts++], m->v[fc->i[t + 1]], smooth ? corner_normal(m, fn, canon, head, next, fc->i[t + 1], n) : n, fc->c, al);
     }
   }
+  free(fn);
+  free(canon);
+  free(head);
+  free(next);
   g->count = (uint32_t)nmverts - g->first;
   mesh_dirty = true;
   return ngmesh++;
@@ -380,18 +457,90 @@ static float hs(const Map *m, int i, int j) {
   return m->h[j * MAP_SAMPLES + i];
 }
 
+/* ---- terrain at ULTRA: the map's 129 x 129 heights, 125 m apart, read as a smooth surface and drawn at four times the
+ * resolution. For the eye only: the flight and the collisions keep the map's own heights (map_height), which this
+ * surface passes through at every sample. */
+#define HI_SUB 4
+static float catmull(float a, float b, float c, float d, float t) {
+  return b + 0.5f * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
+}
+static float hi_height(const Map *m, float x, float z) {
+  int i = (int)floorf(x), j = (int)floorf(z);
+  float u = x - (float)i, v = z - (float)j;
+  /* flat ground stays flat: a runway must not swell between its samples */
+  float h00 = hs(m, i, j), h10 = hs(m, i + 1, j), h01 = hs(m, i, j + 1), h11 = hs(m, i + 1, j + 1);
+  float lo = fminf(fminf(h00, h10), fminf(h01, h11)), hi = fmaxf(fmaxf(h00, h10), fmaxf(h01, h11));
+  if (hi - lo < 1.5f) return (h00 * (1 - u) + h10 * u) * (1 - v) + (h01 * (1 - u) + h11 * u) * v;
+  float r[4];
+  for (int q = 0; q < 4; q++)
+    r[q] = catmull(hs(m, i - 1, j - 1 + q), hs(m, i, j - 1 + q), hs(m, i + 1, j - 1 + q), hs(m, i + 2, j - 1 + q), u);
+  return catmull(r[0], r[1], r[2], r[3], v);
+}
+/* a cell's material, clamped to the map */
+static int cell_mat(const Map *m, int i, int j) {
+  i = i < 0 ? 0 : i >= MAP_CELLS ? MAP_CELLS - 1 : i;
+  j = j < 0 ? 0 : j >= MAP_CELLS ? MAP_CELLS - 1 : j;
+  int k = m->mat[j * MAP_CELLS + i];
+  return k < m->npal ? k : 0;
+}
+/* the colour and the land's share at a point: the cells round it, weighted by a smooth (B-spline) kernel, so the coast
+ * is a curve and not the cells' stairs */
+static void hi_surface(const Map *m, float x, float z, float h, float rgb[3], float *land) {
+  float cx = x - 0.5f, cz = z - 0.5f;
+  int i0 = (int)floorf(cx), j0 = (int)floorf(cz);
+  float u = cx - (float)i0, v = cz - (float)j0, wu[4], wv[4];
+  wu[0] = (1 - u) * (1 - u) * (1 - u) / 6, wu[1] = (3 * u * u * u - 6 * u * u + 4) / 6;
+  wu[2] = (-3 * u * u * u + 3 * u * u + 3 * u + 1) / 6, wu[3] = u * u * u / 6;
+  wv[0] = (1 - v) * (1 - v) * (1 - v) / 6, wv[1] = (3 * v * v * v - 6 * v * v + 4) / 6;
+  wv[2] = (-3 * v * v * v + 3 * v * v + 3 * v + 1) / 6, wv[3] = v * v * v / 6;
+  float c[2][3] = { { 0, 0, 0 }, { 0, 0, 0 } }, wt[2] = { 0, 0 };
+  for (int b = 0; b < 4; b++)
+    for (int a = 0; a < 4; a++) {
+      int k = cell_mat(m, i0 - 1 + a, j0 - 1 + b), s = m->pal[k].water ? 0 : 1;
+      float w = wu[a] * wv[b];
+      uint32_t col = m->pal[k].color;
+      c[s][0] += w * (float)((col >> 16) & 255), c[s][1] += w * (float)((col >> 8) & 255), c[s][2] += w * (float)(col & 255);
+      wt[s] += w;
+    }
+  *land = wt[1] / (wt[0] + wt[1]);
+  /* ground that stands clear of the sea is land whatever its cell says: no ponds on the beach */
+  if (m->sea) *land = fmaxf(*land, clampf((h - m->water_level - 0.5f) / 3, 0, 1));
+  /* each side keeps its own colours up to the coast: no green shallows, no blue beach */
+  bool on_land = *land >= 0.5f;
+  const float *from = on_land ? c[1] : c[0];
+  float wk = on_land ? wt[1] : wt[0];
+  static const float SAND[3] = { 217, 197, 143 };
+  for (int q = 0; q < 3; q++) rgb[q] = wk > 1e-3f ? from[q] / wk : on_land ? SAND[q] : c[0][q] / fmaxf(wt[0], 1e-3f);
+}
+
 static void build_terrain(const Map *m) {
   terrain_map = m;
+  terrain_sub = 0;
   ntverts = ntidx = 0;
   if (!m) return;
-  int N = MAP_SAMPLES;
+  const int S = quality >= GQ_ULTRA ? HI_SUB : 1;
+  terrain_sub = S;
+  int cells = MAP_CELLS * S, N = cells + 1;
   free(tverts);
   free(tidx);
   tverts = malloc(sizeof(WVert) * (size_t)N * N);
-  tidx = malloc(sizeof(uint32_t) * MAP_CELLS * MAP_CELLS * 6);
+  tidx = malloc(sizeof(uint32_t) * (size_t)cells * cells * 6);
+  if (!tverts || !tidx) return;
   for (int j = 0; j < N; j++)
     for (int i = 0; i < N; i++) {
       float sp = m->spacing;
+      if (S > 1) {
+        const float e = 1.0f / S, gx = (float)i * e, gz = (float)j * e;
+        float rgb[3], land;
+        vec3 p = v3(m->origin_x + gx * sp, hi_height(m, gx, gz), m->origin_z + gz * sp);
+        vec3 n = v3_norm(v3((hi_height(m, gx - e, gz) - hi_height(m, gx + e, gz)), 2 * e * sp, (hi_height(m, gx, gz - e) - hi_height(m, gx, gz + e))));
+        hi_surface(m, gx, gz, p.y, rgb, &land);
+        /* the smooth surface can dip where the coast is steep: land stays over the sea's plane */
+        if (m->sea && land >= 0.5f && p.y < m->water_level + 0.3f) p.y = m->water_level + 0.3f;
+        uint32_t col = ((uint32_t)rgb[0] << 16) | ((uint32_t)rgb[1] << 8) | (uint32_t)rgb[2];
+        put(&tverts[ntverts++], p, n, col, (uint8_t)lroundf(clampf(land, 0, 1) * 255));
+        continue;
+      }
       vec3 p = v3(m->origin_x + i * sp, hs(m, i, j), m->origin_z + j * sp);
       /* smooth normal from the neighbours */
       vec3 n = v3_norm(v3(hs(m, i - 1, j) - hs(m, i + 1, j), 2 * sp, hs(m, i, j - 1) - hs(m, i, j + 1)));
@@ -409,8 +558,8 @@ static void build_terrain(const Map *m) {
         }
       put(&tverts[ntverts++], p, n, m->pal[mi].color, water ? 0 : 255);
     }
-  for (int j = 0; j < MAP_CELLS; j++)
-    for (int i = 0; i < MAP_CELLS; i++) {
+  for (int j = 0; j < cells; j++)
+    for (int i = 0; i < cells; i++) {
       uint32_t a = (uint32_t)(j * N + i), b = a + 1, c = a + 1 + (uint32_t)N, d = a + (uint32_t)N;
       uint32_t q[6] = { a, b, c, a, c, d };
       memcpy(&tidx[ntidx], q, sizeof q);
@@ -475,13 +624,13 @@ void gpu_view_begin(vec3 pos, vec3 r, vec3 u, vec3 f, float vx, float vy, float 
   rgbf(v->vd.skyTop, env->sky_top, env->stars);
   rgbf(v->vd.skyHor, env->sky_hor, env->map ? env->map->water_level : 0);
   rgbf(v->vd.fogCol, env->fog, fog_density(env->fog_range));
-  set4(v->vd.misc, fog_begin(env->fog_start), env->classic ? 1.0f : 0.0f, 0, 1.0f);
+  set4(v->vd.misc, fog_begin(env->fog_start), env->classic ? 1.0f : 0.0f, 0, env->film_sea ? 3.0f : quality >= GQ_ULTRA ? 2.0f : 1.0f);
   rgbf(v->vd.haze, env->far_ground, env->indoor ? -1.0f : env->fog_max > 0 ? env->fog_max : 1.0f); /* < 0: the hangar backdrop */
   v->m0 = v->m1 = nminst;
   v->s0 = v->s1 = nspr;
   v->l0 = v->l1 = nlines;
   v->q0 = v->q1 = nquads;
-  if (env->map != terrain_map) build_terrain(env->map);
+  if (env->map != terrain_map || (env->map && terrain_sub != (quality >= GQ_ULTRA ? HI_SUB : 1))) build_terrain(env->map);
 }
 
 void gpu_mesh(const Mesh *m, vec3 pos, vec3 r, vec3 u, vec3 f, float scale, float dim, float gloss, bool cull_island) {

@@ -541,7 +541,7 @@ def export(m, out):
         if k == 'day': v.update(m.tint)
         tod[k] = v
     doc = dict(
-        format='ace4combat-map', version=1, id=m.id, name=m.name, request=m.request, blurb=m.blurb,
+        format='tailonlock-map', version=1, id=m.id, name=m.name, request=m.request, blurb=m.blurb,
         axes='metres; +X right, +Y up, +Z from the blue base toward the red base (same as the browser game)',
         arena=ARENA, water_level=m.water_level, water_sky_mix=0.25, sky_far_ground=m.sky_far,
         heightmap=dict(samples=N, spacing=SP, origin=[X0, X0], encoding='int16le', scale=HSCALE,

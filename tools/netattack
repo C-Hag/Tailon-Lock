@@ -35,13 +35,13 @@ PT = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(PT)
 
 OUT = os.path.join(ROOT, 'build', 'netattack')
-PORT = 28960   # the host's port here (A4C_NET_PORT): off the ports real games and the other test runs use
+PORT = 28960   # the host's port here (TL_NET_PORT): off the ports real games and the other test runs use
 WATCH = 28962  # the watch stream's
 
 
 def env_port(home, log):
     e = PT.game_env(home, log)
-    e['A4C_NET_PORT'] = str(PORT)
+    e['TL_NET_PORT'] = str(PORT)
     return e
 VERSION = 5
 T_STATE, T_WELCOME, T_BYE, T_JOIN = 4, 3, 5, 12
@@ -82,7 +82,7 @@ class Attacker(PT.BadNet):
 
     def _junk(self):
         n = self.rnd.choice([0, 1, 4, 5, 13, 29, 60, 300, 1400, 1500, 9000])
-        head = b'A4C' + bytes([VERSION]) if self.rnd.random() < 0.5 else b''
+        head = b'TL' + bytes([VERSION]) if self.rnd.random() < 0.5 else b''
         return (head + bytes(self.rnd.randrange(256) for _ in range(n)))[:65000]
 
     def _attacks(self):
@@ -225,7 +225,7 @@ def watch_stream(exe, seed, work):
     home = os.path.join(d, 'home')
     os.makedirs(home, exist_ok=True)
     env = PT.game_env(home, blog)
-    env['A4C_VIDEO'] = 'offscreen'
+    env['TL_VIDEO'] = 'offscreen'
     b = subprocess.Popen([exe, '--watch', '--broadcast', str(WATCH), '--seconds', '40'], env=env, stdout=subprocess.DEVNULL,
                          stderr=subprocess.STDOUT, cwd=d)
     code = PT.wait_code(blog, b, pattern=re.compile(r'watch code ([A-Z0-9]{16})'))
@@ -233,7 +233,7 @@ def watch_stream(exe, seed, work):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind(('127.0.0.1', 0))
     s.settimeout(1)
-    hello = b'A4C' + bytes([VERSION, 30]) + bytes(16)
+    hello = b'TL' + bytes([VERSION, 30]) + bytes(16)
     s.sendto(hello, ('127.0.0.1', WATCH))
     try:
         chal, _ = s.recvfrom(2048)
@@ -244,7 +244,7 @@ def watch_stream(exe, seed, work):
         chal = b''
     # answer the challenge without the code: a made-up seal
     if chal:
-        s.sendto(b'A4C' + bytes([VERSION, 32]) + bytes(8) + chal[5:21] + bytes(16), ('127.0.0.1', WATCH))
+        s.sendto(b'TL' + bytes([VERSION, 32]) + bytes(8) + chal[5:21] + bytes(16), ('127.0.0.1', WATCH))
     got = 0
     end = time.time() + 3
     while time.time() < end:
@@ -259,7 +259,7 @@ def watch_stream(exe, seed, work):
     # a viewer with the right code, then old packets of its stream sent to it again
     vlog = os.path.join(d, 'v.log')
     venv = PT.game_env(os.path.join(d, 'vhome'), vlog)
-    venv['A4C_VIDEO'] = 'offscreen'
+    venv['TL_VIDEO'] = 'offscreen'
     os.makedirs(os.path.join(d, 'vhome'), exist_ok=True)
     v = subprocess.Popen([exe, '--spectate', '127.0.0.1:%d' % WATCH, '--code', code or 'X' * 16, '--seconds', '12'], env=venv,
                          stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, cwd=d)

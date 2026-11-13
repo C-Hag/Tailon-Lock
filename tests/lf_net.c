@@ -2,7 +2,7 @@
  * the LAN beacons, the relay's answers, the handshake (CPace hello,
  * challenge, sealed join, reject), the welcome, the match's state and events,
  * and the watch stream's hello, answer, INFO, STATE and SHOTS. Original code
- * for this project. Build with -DA4C_LIBFUZZER=ON (clang); run it under ASan
+ * for this project. Build with -DTL_LIBFUZZER=ON (clang); run it under ASan
  * and UBSan.
  *
  * An input is a phase byte, an option byte and packets (net_fuzz in net.c
@@ -10,7 +10,7 @@
  * calls, with no socket. The platform here is a stand-in (lf_common.h, and
  * "random" numbers that start the same for every input, so a crash replays).
  *
- * A4C_LF_SEEDS=DIR lf_net writes the seeds (packets from the game's own
+ * TL_LF_SEEDS=DIR lf_net writes the seeds (packets from the game's own
  * builders, net_fuzz_seed) into DIR and stops: tests/corpus/net was made so. */
 #include "lf_common.h" /* first: it asks for POSIX */
 #include <stdbool.h>
@@ -47,7 +47,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv);
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
   (void)argc, (void)argv;
   lf_folder(NULL);
-  const char *dir = getenv("A4C_LF_SEEDS");
+  const char *dir = getenv("TL_LF_SEEDS");
   if (!dir) return 0;
   static uint8_t seed[1 << 16];
   size_t n;

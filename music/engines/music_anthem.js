@@ -1,5 +1,5 @@
 // ---- anthem music start ----
-// "Nose 2 Nose Anthem": original Ace4Combat track on the I–V–vi–IV progression (C–G–Am–F), played by the same live
+// "Nose 2 Nose Anthem": original Tailon Lock track on the I–V–vi–IV progression (C–G–Am–F), played by the same live
 // band as Nose 2 Nose: funk groove drums with fills, big synth bass, electric guitar lead and power chords, with synth
 // pianos and brass behind. Intro, verse, chorus, then a whole-step lift to D major (D–A–Bm–G) for the last chorus.
 const AnthemMusic = (() => {

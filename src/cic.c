@@ -184,7 +184,9 @@ static void board(const RoomScreen *s, const char *title, int ncol, const char *
 }
 /* the operator's radar repeater: range rings and bearings, the sweep, sea clutter, own ship and the CAP station, the
  * two contacts closing with the echoes each sweep leaves, then the hook and its readout */
-static void scope(void) {
+/* full: the scope fills the picture, so its sweep needs finer steps, its contacts room between them and a name, and
+ * there is no glass to see */
+static void scope(bool full) {
   float dw = 500, dh = 330, rx = dw * 0.42f, ry = dh * 0.5f, rr = dh * 0.44f;
   static const float RK[4] = { 0.25f, 0.5f, 0.75f, 1 };
   for (int i = 0; i < 4; i++) ring_c(rx, ry, rr * RK[i], RGBA(60, 255, 140, 0.25f), 1.2f);
@@ -198,9 +200,10 @@ static void scope(void) {
     mono(BL[i], rx + sinf(a) * rr * 1.1f, ry - cosf(a) * rr * 1.1f, 11, RGBA(80, 220, 140, 0.7f), ALIGN_CENTER);
   }
   float sw = ((T - 2.2f) / 2.6f) * PI_F * 2;
-  for (int i = 0; i < 30; i++) {
-    float a = sw - i * 0.03f;
-    line_c(rx, ry, rx + sinf(a) * rr, ry - cosf(a) * rr, RGBA(80, 255, 150, 0.4f * (1 - i / 30.0f)), 3);
+  int steps = full ? 120 : 30;
+  for (int i = 0; i < steps; i++) {
+    float a = sw - i * (0.9f / steps);
+    line_c(rx, ry, rx + sinf(a) * rr, ry - cosf(a) * rr, RGBA(80, 255, 150, 0.4f * (30.0f / steps) * (1 - (float)i / steps)), full ? 1.5f : 3);
   }
   R.state = 4711;
   for (int i = 0; i < 40; i++) { /* sea clutter */
@@ -210,7 +213,7 @@ static void scope(void) {
   PColor own = RGBA(110, 170, 255, 0.95f);
   ring_c(rx, ry, 6, own, 2);
   p_begin(P), p_ellipse(P, rx + rr * 0.3f, ry - rr * 0.42f, 7, 7, 0, PI_F, 0), stroke_c(own, 2);
-  static const float CT[2][2] = { { -10, 0.84f }, { -7, 0.9f } };
+  float CT[2][2] = { { full ? -24.0f : -10, 0.84f }, { full ? -9.0f : -7, 0.9f } };
   for (int i = 0; i < 2; i++) {
     float a = CT[i][0] * PI_F / 180, d = range_at(CT[i][1], T), hx = rx + sinf(a) * rr * d, hy = ry - cosf(a) * rr * d;
     for (int j = 5; j >= 1; j--) {
@@ -223,20 +226,21 @@ static void scope(void) {
     PColor hc = RGBA(255, 80, 64, 0.55f + 0.45f * k);
     p_begin(P), p_move(P, hx - 8, hy + 4), p_line(P, hx, hy - 7), p_line(P, hx + 8, hy + 4), stroke_c(hc, 2.5f);
     line_c(hx, hy, hx + 3, hy + 30, hc, 2.5f);
+    if (full) mono(i ? "BOGEY 2" : "BOGEY 1", i ? hx + 26 : hx - 14, hy - 8, 10, hc, i ? ALIGN_LEFT : ALIGN_RIGHT); /* clear of the hook on bogey 2 */
   }
   if (T > 5.9f) {
-    float a = -8.5f * PI_F / 180, d = range_at(0.87f, T), hx = rx + sinf(a) * rr * d, hy = ry - cosf(a) * rr * d, hs = 20;
+    float a = (full ? -9.0f : -8.5f) * PI_F / 180, d = range_at(full ? 0.9f : 0.87f, T), hx = rx + sinf(a) * rr * d, hy = ry - cosf(a) * rr * d, hs = 20;
     stroke_rect(hx - hs, hy - hs, hs * 2, hs * 2, RGBA(255, 220, 90, 0.9f), 1.5f);
     float bx = dw * 0.79f, by = 26;
     rect_c(bx - 8, by - 14, 112, 128, RGBA(0, 30, 15, 0.85f));
     static const char *const HK[7] = { "HOOK 7402", "HOSTILE AIR", "BRG  350", "RNG  62", "SPD  540", "ALT  2000", "CPA  4 MIN" };
     for (int i = 0; i < 7; i++) mono(HK[i], bx, by + i * 17, 11, i < 2 ? HEX(0xff8a72) : RGBA(120, 255, 170, 0.9f), ALIGN_LEFT);
   }
-  rect_c(0, 0, dw, dh * 0.4f, RGBA(160, 255, 200, 0.03f)); /* the glass */
+  if (!full) rect_c(0, 0, dw, dh * 0.4f, RGBA(160, 255, 200, 0.03f)); /* the glass */
 }
 static void screen_content(const RoomScreen *s) {
   switch (s->kind) {
-  case RS_SCOPE: scope(); break;
+  case RS_SCOPE: scope(false); break;
   case RS_PPI: ppi(s); break;
   case RS_ALPHA: {
     const char *const *rows = ALPHA[s->bay % 7];
@@ -420,6 +424,10 @@ static void crew3d(FigSpec *f, float crown_x, float crown_y, float s, float yaw,
 }
 
 void cic_draw(Framebuffer *out, float t, float t0, float t1) {
+  /* the scene's own clock: its lines, looks and gestures are timed for a take from 5.2 to 9.0 s, so a take anywhere
+   * else in the film plays them on that clock (without this they were all over before the take began) */
+  if (t1 > t0) t = 5.2f + (t - t0) / (t1 - t0) * 3.8f;
+  t0 = 5.2f, t1 = 9.0f;
   T = t;
   S0 = t0, S1 = t1;
   float u = clampf_((t - t0) / (t1 - t0), 0, 1);
@@ -428,7 +436,8 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
   R.state = 4711;
   int W = out->w, H = out->h;
   /* it opens tight on the two contacts on the scope, then pulls out to the operator and the officers behind him */
-  float zo = ease(clampf_((t - 6.25f) / 1.35f, 0, 1)), zw = 1.04f + 0.1f * ease(u), zc = 3.6f + 0.35f * (t - t0);
+  /* (no move out from the scope: the radar shot before it has the bogeys, and a second zoom on them was one too many) */
+  float zo = 1, zw = 1.04f + 0.1f * ease(u), zc = 3.6f + 0.35f * (t - t0);
   float sc = H / 900.0f, z = expf(logf(zc) + (logf(zw) - logf(zc)) * zo);
   float wx = 760 + 260 * ease(u) + 120 * ease(clampf_((t - L3[0]) / 1.1f, 0, 1)), wy = 450 + 10 * sinf(t * 0.7f);
   float camx = 272 + (wx - 272) * zo, camy = 392 + (wy - 392) * zo;
@@ -440,16 +449,24 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
   room_lamps(scr, n_scr, alert, gq, &lamps);
   /* the room on its own layer, softly out of focus behind the people, with the plotter behind the air board writing
    * up the new contacts */
-  if (!fb_resize(&bg, W, H)) return;
+  /* it is soft and hardly moves: half the size and a third as often costs a sixth or so, and looks the same */
+  static int bg_age;
+  static float bg_t = -1;
+  const int BQ = H > 1200 ? 2 : 1, bw = (W + BQ - 1) / BQ, bh = (H + BQ - 1) / BQ;
+  bool new_bg = bg.w != bw || bg.h != bh || bg_age % 3 == 0 || t < bg_t || t > bg_t + 0.25f;
+  bg_age++;
+  if (new_bg) {
+  bg_t = t;
+  if (!fb_resize(&bg, bw, bh)) return;
   fb_clip_reset(&bg);
   fb_clear(&bg, hexc(0x030507));
   if (!P) P = painter_new(&bg);
   if (!P) return;
   painter_begin(P, &bg);
-  p_translate(P, W / 2.0f, H / 2.0f);
-  p_scale(P, sc * z, sc * z);
+  p_translate(P, bw / 2.0f, bh / 2.0f);
+  p_scale(P, sc * z / BQ, sc * z / BQ);
   p_translate(P, -camx, -camy);
-  seam = 0.6f / (sc * z);
+  seam = 0.6f * BQ / (sc * z);
   room_light(room_far, lit_far, n_far, &lamps);
   {
     FigSpec pl, sup;
@@ -474,8 +491,9 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
     FigLight L = { { -0.62f, 0.36f, -0.7f }, { k.v[0], k.v[1], k.v[2] }, { blue_rim.v[0], blue_rim.v[1], blue_rim.v[2] } };
     fig_draw_meshes(m, 2, &CAM, &L, fill_tri, NULL);
   }
-  p_blur(&bg, (int)lroundf(1.3f * sc) > 0 ? (int)lroundf(1.3f * sc) : 1, 0.85f);
-  memcpy(out->px, bg.px, sizeof(uint32_t) * (size_t)W * H);
+  p_blur(&bg, (int)lroundf(1.3f * sc / BQ) > 0 ? (int)lroundf(1.3f * sc / BQ) : 1, 0.85f);
+  }
+  fb_scale_up(out, &bg, BQ);
   /* the people and the console, sharp, over it */
   painter_begin(P, out);
   p_translate(P, W / 2.0f, H / 2.0f);
@@ -545,6 +563,35 @@ void cic_draw(Framebuffer *out, float t, float t0, float t1) {
   p_additive(P, false);
   p_reset_transform(P);
   Paint vig = RG(W / 2.0f, H / 2.0f, H * 0.4f, W * 0.75f, S_(0, RGBA(0, 0, 0, 0)), S_(1, RGBA(0, 0, 0, 0.7f)));
+  p_fill_rect(P, 0, 0, (float)W, (float)H, &vig);
+}
+
+/* The radar scope alone, filling the picture: the sweep finds the two contacts closing (it once pushed in) as
+ * the operator hooks one (the film, before the alert). */
+void cic_radar_draw(Framebuffer *out, float t, float t0, float t1) {
+  int W = out->w, H = out->h;
+  float u = clampf_((t - t0) / (t1 - t0), 0, 1);
+  /* the scope's own clock: the hook comes up about two thirds of the way through the shot */
+  T = 5.9f + (u - 0.66f) * (t1 - t0);
+  S0 = 5.9f - 0.66f * (t1 - t0), S1 = S0 + (t1 - t0);
+  R.state = 4711;
+  fb_clip_reset(out);
+  fb_clear(out, hexc(0x020806));
+  if (!P) P = painter_new(out);
+  if (!P) return;
+  painter_begin(P, out);
+  /* inside the letterbox: the 500 x 330 screen, centred on the scope and moving to the contacts as it pushes in */
+  /* (it holds still: the control room's own move out from the scope is the one zoom on the bogeys) */
+  float k = 0 * ease(u), sc = H * 0.72f / 330 * (1 + 0.28f * k), cx = 250 - 40 * k, cy = 165 - 55 * k;
+  p_translate(P, W / 2.0f, H / 2.0f);
+  p_scale(P, sc, sc);
+  p_translate(P, -cx, -cy);
+  scope(true);
+  p_additive(P, true);
+  glow(210, 165, 240, v3c(40, 180, 90), 0.10f);
+  p_additive(P, false);
+  p_reset_transform(P);
+  Paint vig = RG(W / 2.0f, H / 2.0f, H * 0.35f, W * 0.7f, S_(0, RGBA(0, 0, 0, 0)), S_(1, RGBA(0, 0, 0, 0.75f)));
   p_fill_rect(P, 0, 0, (float)W, (float)H, &vig);
 }
 

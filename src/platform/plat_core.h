@@ -9,8 +9,8 @@
  *
  * A backend owns the window, the picture, the clock, the sound device and the
  * system's pads; it reports what happens through the calls below. */
-#ifndef A4C_PLAT_CORE_H
-#define A4C_PLAT_CORE_H
+#ifndef TL_PLAT_CORE_H
+#define TL_PLAT_CORE_H
 
 #include "platform/plat.h"
 
@@ -30,7 +30,7 @@ void plat_os_pad_close(int id);
 /* Each backend's main() calls it: runs the game's PlatApp to the end and returns its exit code. */
 int plat_run(int argc, char **argv);
 /* Records why something failed, for plat_error(). */
-void plat_core_fail(const char *fmt, ...) A4C_PRINTF(1, 2);
+void plat_core_fail(const char *fmt, ...) TL_PRINTF(1, 2);
 /* An event for the game (keys also update the held state plat_key_down reads). */
 void plat_core_event(const PlatEvent *ev);
 /* All keys up (focus lost). */
@@ -45,7 +45,7 @@ void plat_core_pad_state(int id, const bool buttons[PPAD_BUTTONS], const int axe
 /* It is gone: PE_PAD_REMOVED. */
 void plat_core_pad_remove(int id);
 
-/* The mode switches, from the environment once: A4C_VIDEO=offscreen (also "dummy"), A4C_AUDIO=dummy. */
+/* The mode switches, from the environment once: TL_VIDEO=offscreen (also "dummy"), TL_AUDIO=dummy. */
 bool plat_core_video_off(void);
 /* The display's pacing, for a backend whose present waits for it: plat_core_pace_probe says whether to wait for the
  * display on this frame (always, while it paces; one frame in PACE_PROBE once the loop paces itself, to see whether

@@ -175,7 +175,10 @@ static uint8_t *pack(const uint8_t *src, uint32_t n, int kind, int param, int de
   filter(b, n, kind, param, 1);
   int o2 = o2_bits_for(n);
   Enc *e = calloc(1, sizeof *e);
-  model_init(&e->m, o2);
+  if (!model_init(&e->m, o2)) {
+    fprintf(stderr, "tlpk: out of memory\n");
+    exit(1);
+  }
   rc_init(&e->r);
   for (int i = 0; i < TLPK_HEADER; i++) rc_put(&e->r, 0); /* the header, filled in below */
   e->r.cache_size = 1;

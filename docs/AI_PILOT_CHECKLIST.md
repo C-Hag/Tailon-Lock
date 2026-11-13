@@ -9,14 +9,14 @@ a fix, and the round is run again.
 ## How a round runs
 
 ```
-A4C_AUDIT_DEATHS=1 TailonLock --audit --out audit.log                         # data sheets, systems, 1008 matches
+TL_AUDIT_DEATHS=1 TailonLock --audit --out audit.log                         # data sheets, systems, 1008 matches
 TailonLock --audit --part views --shots views/ --out views.log               # the pictures
 tools/playtest solo --games 56 --per-run 1 --jobs N                          # every mode with every jet, drawn
 tools/playtest local --games 40 --per-pair 4 --ways address,relay,bad-address,bad-relay --jobs N
 tools/certify digest audit.log                                               # the same bits as every system
 ```
 
-`--audit --part sorties --only ID --from K --sorties 1` replays one match exactly; `A4C_AUDIT_TRACE=NAME` traces
+`--audit --part sorties --only ID --from K --sorties 1` replays one match exactly; `TL_AUDIT_TRACE=NAME` traces
 one pilot every quarter second.
 
 ## 1. Getting airborne
@@ -30,7 +30,7 @@ one pilot every quarter second.
 
 - [ ] No crash into the ground that was not caused by being hit (`CRASHED` deaths with no attacker within 6 s): at
       most 1 in 50 matches, before sudden death. Crashes after it are reported on their own line and do not count:
-      nobody can refuel then, by the rules, so jets run dry (the owner, 2026-11-05)
+      nobody can refuel then, by the rules, so jets run dry 
 - [ ] At the map's edge the jet turns back without flying into the ground or leaving the arena
 - [ ] Over hills the terrain avoidance clears every ridge; in realistic handling too
 - [ ] No pilot pulls more g than its jet allows; G-LOC only where the rules have G effects on, and rare
@@ -59,9 +59,7 @@ one pilot every quarter second.
 
 - [ ] Every match ends: no timeout in the audit, no unfinished match in the play tests
 - [ ] Matches are short: the audit's length lines average 7.30 minutes at most, and at most 5 % of the matches reach
-      the 30-minute sudden death (the share over 10 minutes is reported). (It was 6.5; the owner, 2026-11-03: "6.5 to
-      7 is okay", when the CPU's landing rework made fewer jets lost on the way home and the matches longer; then
-      2026-11-04: "Yes 7.25", when the runway rule (no landing on a busy runway) took the mean to 7.21; 2026-11-06: "Raise the limit" to 7.30, for 0.2.0 at 7.267.)
+      the 30-minute sudden death (the share over 10 minutes is reported).
 - [ ] Every mode works with every jet: 1P, 2P, co-op, defend, defend1, drone, drone2
 - [ ] Ground targets get attacked and destroyed in the modes that have them
 - [ ] Defend mode: the carrier is defended and the waves come; the match ends either way
@@ -71,7 +69,7 @@ one pilot every quarter second.
 
 - [ ] The audit's digest matches `tests/golden/audit.sha256` (`tools/certify digest`) on this system
 - [ ] Every network match agrees on both computers, through the bad-internet proxy too
-- [ ] No physics fault (`A4C_CHECK`): no NaN, no jet under the ground, no speed or g out of bounds
+- [ ] No physics fault (`TL_CHECK`): no NaN, no jet under the ground, no speed or g out of bounds
 
 ## 7. What the pilot sees
 
@@ -86,7 +84,7 @@ Each round adds a block to the review log (kept with the round's logs, and summa
 ```
 Round N, commit abcdef123456, system macos|linux|windows, date
   ticked: 1 2 3 4 5 6 7 (or the boxes left open)
-  findings: what, where (map, jet, mode, seed, sortie), the log line, the owner (sim/AI or renderer/panels/tools)
+  findings: what, where (map, jet, mode, seed, sortie), the log line, the part (sim/AI or renderer/panels/tools)
   fixed: commit, and the case that proves it (the replayed sortie or match)
 ```
 

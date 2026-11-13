@@ -1,6 +1,6 @@
 /* input.h - keyboard sets per seat and gamepads (JS BIND, readHuman, pads). */
-#ifndef A4C_INPUT_H
-#define A4C_INPUT_H
+#ifndef TL_INPUT_H
+#define TL_INPUT_H
 
 #include <stdbool.h>
 

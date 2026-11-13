@@ -1,8 +1,8 @@
 /* mesh.h - meshes: the built-in ones (JS jetMesh, targetMesh, MESH) and the
  * selectable jets loaded from assets/jets.json. One colour per face, as in
  * the JS. Arrays are allocated once at start-up and never freed. */
-#ifndef A4C_MESH_H
-#define A4C_MESH_H
+#ifndef TL_MESH_H
+#define TL_MESH_H
 
 #include <stdint.h>
 #include <stdio.h>
@@ -26,6 +26,7 @@ typedef struct Mesh {
   int    nv, nf, capv, capf;
   float  rad;
   const struct Mesh *lod; /* far version, or NULL */
+  const struct Mesh *hi;  /* a detailed version, for the eye only at ULTRA, or NULL */
 } Mesh;
 
 enum { TGT_SAM, TGT_FUEL, TGT_RADAR, TGT_HANGAR, TGT_SHIP, TGT_RUBBLE, TGT_TYPES };

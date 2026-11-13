@@ -2,8 +2,8 @@
  * The 3D world is handed over as a display list per view (render3d.c fills
  * it); the HUD, menus and 2D screens stay software-drawn into the
  * framebuffer, which is composited on top with its alpha. */
-#ifndef A4C_GPU_H
-#define A4C_GPU_H
+#ifndef TL_GPU_H
+#define TL_GPU_H
 
 #include <stdbool.h>
 
@@ -18,6 +18,7 @@ enum { GQ_LOW, GQ_MEDIUM, GQ_HIGH, GQ_ULTRA, GQ_COUNT };
 bool gpu_init(const void *window, int quality); /* window: plat_native_window() */
 void gpu_quit(void);
 bool gpu_active(void);
+bool gpu_ultra(void); /* at ULTRA: the fine terrain, sea and clouds */
 const char *gpu_driver(void);
 void gpu_set_quality(int q);
 
@@ -27,6 +28,7 @@ typedef struct {
   float sun_intensity, ambient_intensity, fog_start, fog_range, stars;
   float fog_max; /* the most the ground and sea fade into the fog (the horizon stays where the HUD puts it) */
   uint32_t far_ground; /* the ground beyond what is drawn, under the horizon */
+  bool film_sea; /* the opening film's sea */
   vec3 sun;
   const Map *map; /* terrain and sea, or NULL for the classic arena */
   bool classic;

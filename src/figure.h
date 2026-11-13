@@ -3,8 +3,8 @@
  * their bones; uniforms and kit are colours and small parts made the same way. The same engine as the browser game's
  * (assets/figure/figure.js); both make the same triangles. Original code for this project. Units: metres, y up,
  * z forward (the way the figure faces), x to the figure's left. */
-#ifndef A4C_FIGURE_H
-#define A4C_FIGURE_H
+#ifndef TL_FIGURE_H
+#define TL_FIGURE_H
 
 #include <stdbool.h>
 #include <stddef.h>

@@ -3,8 +3,8 @@
  * packed 0xAARRGGBB (shown as 0xXXRRGGBB by plat_present). Every
  * primitive clips to the current clip rectangle, and optionally to a circle
  * (the radar scope and attitude ball). */
-#ifndef A4C_RASTER_H
-#define A4C_RASTER_H
+#ifndef TL_RASTER_H
+#define TL_RASTER_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -26,6 +26,8 @@ static inline uint32_t hexc(uint32_t c) { return 0xFF000000u | c; }
 
 /* (Re)allocates when the size changes. Returns 0 on failure. */
 int  fb_resize(Framebuffer *fb, int w, int h);
+/* src, k times smaller than dst, scaled up onto dst with bilinear filtering (opaque) */
+void fb_scale_up(Framebuffer *dst, const Framebuffer *src, int k);
 void fb_free(Framebuffer *fb);
 void fb_clear(Framebuffer *fb, uint32_t c);
 

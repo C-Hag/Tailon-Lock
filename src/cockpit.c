@@ -4,7 +4,7 @@
  * ECF-90's three colour displays, the JA 46's Swedish analog panel, the
  * SY-26's wide LCD, the Vk-33's turquoise Soviet panel, the Ks-55's Russian
  * glass and the NF-24's 1970s Navy panel with its wing-sweep gauge. The
- * built-in jet keeps the original panel (from Ace4Combat, the game's old name).
+ * built-in jet keeps the original panel (from Tailon Lock, the game's old name).
  *
  * Everything is laid out on a 320x64 grid that is scaled to the panel. */
 #include <math.h>
@@ -604,7 +604,7 @@ static void read_ins(Ins *I, Game *g, Plane *p, bool metric) {
 /* a number on a gauge, rounded: a macro, so each format string is a literal the compiler checks */
 #define fmt(b, n, f, v) snprintf(b, n, f, (int)roundf((float)(v)))
 
-/* ---- 0: the original panel (from Ace4Combat) -------------------------------- */
+/* ---- 0: the original panel (from Tailon Lock) -------------------------------- */
 static void panel_classic(const Pan *P, const Ins *I) {
   Plane *p = I->p;
   char buf[48];

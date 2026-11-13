@@ -48,7 +48,7 @@ static void pads_stop(void);
 
 bool plat_os_init(unsigned parts) {
   if ((parts & PLAT_VIDEO) && !plat_core_video_off() && !have_ws) {
-    const char *want = getenv("A4C_VIDEO");
+    const char *want = getenv("TL_VIDEO");
     bool x_only = want && !strcmp(want, "x11"), wl_only = want && !strcmp(want, "wayland");
     have_ws = (!x_only && plat_wayland_window(&ws)) || (!wl_only && plat_x11_window(&ws));
     if (!have_ws) return plat_core_fail("no display: neither Wayland nor X11 could be opened"), false;
@@ -215,10 +215,10 @@ static bool load_alsa(void) {
   return ok;
 }
 
-/* the device (A4C_ALSA_DEVICE: another one than the default; the tests use "null"), set up for audio_rate */
+/* the device (TL_ALSA_DEVICE: another one than the default; the tests use "null"), set up for audio_rate */
 static snd_pcm_t *open_pcm(int *err) {
   snd_pcm_t *p = NULL;
-  const char *dev = getenv("A4C_ALSA_DEVICE");
+  const char *dev = getenv("TL_ALSA_DEVICE");
   int r = snd_pcm_open(&p, dev && *dev ? dev : "default", 0 /* playback */, 0);
   /* 32-bit float, interleaved, stereo; about 40 ms of buffer */
   if (r >= 0) r = snd_pcm_set_params(p, 14 /* FLOAT_LE */, 3 /* RW_INTERLEAVED */, 2, (unsigned)audio_rate, 1, 40000);

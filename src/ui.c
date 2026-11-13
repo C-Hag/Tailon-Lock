@@ -33,7 +33,7 @@ enum {
   ROW_MODE, ROW_MATCH, ROW_SIZE, ROW_STARTAT, ROW_JET1, ROW_JET2, ROW_MAP, ROW_TOD, ROW_WX, ROW_DIFF, ROW_RULES, ROW_HANDLING,
   ROW_SCEN, ROW_LIVES, ROW_CRASH, ROW_HITS,
   ROW_GFORCE, ROW_RENDER, ROW_GFX, ROW_INVERT, ROW_SOUND, ROW_VOLUME, ROW_HEARING, ROW_MUSIC, ROW_THEME, ROW_INTRO,
-  ROW_HSEAT, ROW_HJET, ROW_HEAT, ROW_RADAR, ROW_AGM,
+  ROW_HSEAT, ROW_HJET, ROW_HEAT, ROW_RADAR, ROW_AGM, ROW_HSIGHT,
   ROW_NROLE, ROW_NMATCH, ROW_NVIA, ROW_NGAME, ROW_NADDR, ROW_NRELAY, ROW_NCODE, ROW_NNAME,
   ROW_START, ROW_HANGAR, ROW_SETTINGS, ROW_NETWORK, ROW_WATCH, ROW_EDITOR, ROW_EXIT, ROW_BACK, ROW_HINFO, ROW_HSTART, ROW_DONE, ROW_NGO, ROW_NBACK,
   ROW_IJET, ROW_IBACK, ROWS
@@ -67,7 +67,7 @@ static const char *const NET_KINDS[4] = { "VERSUS", "CO-OP", "DRONE: GUEST FLIES
 static int row_page(int r) {
   if ((r >= ROW_NROLE && r <= ROW_NNAME) || r == ROW_NGO || r == ROW_NBACK) return PAGE_NET;
   if (r >= ROW_GFORCE && r <= ROW_INTRO) return PAGE_SETTINGS;
-  if ((r >= ROW_HSEAT && r <= ROW_AGM) || (r >= ROW_HINFO && r <= ROW_DONE)) return PAGE_HANGAR;
+  if ((r >= ROW_HSEAT && r <= ROW_HSIGHT) || (r >= ROW_HINFO && r <= ROW_DONE)) return PAGE_HANGAR;
   if (r == ROW_IJET || r == ROW_IBACK) return PAGE_INFO;
   if (r == ROW_BACK) return PAGE_SETTINGS;
   return PAGE_MAIN;
@@ -275,8 +275,9 @@ UiAction ui_nav(Screen s, Settings *st, Nav n) {
       sel = ROW_HSTART;
       return UI_NONE;
     }
-    A4C_FALLTHROUGH;
+    TL_FALLTHROUGH;
   case ROW_IJET:   if (change) st->jets[hseat] = (st->jets[hseat] + d + NJETS) % NJETS; break;
+  case ROW_HSIGHT: if (change) st->sight[hseat] = (st->sight[hseat] + d + SIGHT_COUNT) % SIGHT_COUNT; break;
   case ROW_HEAT:
   case ROW_RADAR:
   case ROW_AGM:
@@ -599,13 +600,15 @@ static void draw_hangar(Framebuffer *fb, const Settings *st) {
   y += 10;
   hheading(&b, "LOADOUT", x0, y, 208);
   y += 14;
-  const int rows[] = { ROW_HSEAT, ROW_HEAT, ROW_RADAR, ROW_AGM };
-  const char *lab[] = { "SEAT", "HEAT-SEEKERS", "RADAR-GUIDED", "AIR-TO-GROUND" };
-  for (int i = 0; i < 4; i++) {
+  const int rows[] = { ROW_HSEAT, ROW_HEAT, ROW_RADAR, ROW_AGM, ROW_HSIGHT };
+  const char *lab[] = { "SEAT", "HEAT-SEEKERS", "RADAR-GUIDED", "AIR-TO-GROUND", "GUNSIGHT" };
+  static const char *const sights[SIGHT_COUNT] = { "OFF", "CROSS", "CIRCLE", "CIRCLE AND DOT", "TRIANGLE", "DOT" };
+  for (int i = 0; i < 5; i++) {
     int r = rows[i];
     if (!row_visible(st, r)) continue;
     bool on = sel == r;
     if (r == ROW_HSEAT) snprintf(v, sizeof v, "PLAYER %d", hseat + 1);
+    else if (r == ROW_HSIGHT) snprintf(v, sizeof v, "%s", sights[st->sight[hseat] >= 0 && st->sight[hseat] < SIGHT_COUNT ? st->sight[hseat] : SIGHT_CROSS]);
     else snprintf(v, sizeof v, "%d", st->load[hseat][r - ROW_HEAT]);
     if (on) fb_rect_a(fb, b.x + (x0 - 4) * k, b.y + (y - 5) * k, 216 * k, 10 * k, hexc(0xffffff), 0.1f);
     btext(&b, lab[i], x0, y, 1, on ? H_FG : H_MUTED, ALIGN_LEFT);
@@ -773,7 +776,7 @@ static void draw_net(Framebuffer *fb, const Settings *st, float time) {
     y = wrap_text(&b, v, y, 46, C_INK);
     help = st->net_via == NV_LAN ? "PLAYERS ON YOUR NETWORK FIND YOUR GAME IN THEIR LIST AND JOIN WITH THE CODE. THE MAIN MENU SETS THE MAP AND RULES."
            : st->net_via == NV_ADDRESS ? "FORWARD UDP PORT 27960 ON YOUR ROUTER TO THIS COMPUTER, THEN GIVE YOUR FRIEND YOUR PUBLIC IP ADDRESS AND THE CODE."
-                                       : "NO PORT FORWARDING: BOTH CONNECT TO THE RELAY (A4C_RELAY, UDP 27970), WHICH ONLY PASSES ON ENCRYPTED PACKETS.";
+                                       : "NO PORT FORWARDING: BOTH CONNECT TO THE RELAY (TL_RELAY, UDP 27970), WHICH ONLY PASSES ON ENCRYPTED PACKETS.";
   } else {
     help = st->net_via == NV_LAN ? "PICK THE GAME AND TYPE THE 6-DIGIT CODE ITS HOST SEES. YOUR JET AND ARMING ARE PLAYER 1'S IN THE HANGAR."
            : st->net_via == NV_ADDRESS ? "TYPE THE HOST'S ADDRESS, LIKE 203.0.113.7 OR 192.168.1.20:27960, AND THE 6-DIGIT CODE THE HOST SEES."

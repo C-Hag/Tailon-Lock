@@ -21,7 +21,7 @@ KEEP = re.compile(r'^(volume|wave|pulse|filter|instrument|command|track)\b')
 
 
 def convert(text, name):
-    out, desc = ['a4c-sfx 1', 'play ' + PLAY[name]], ''
+    out, desc = ['tl-sfx 1', 'play ' + PLAY[name]], ''
     for line in text.split('\n'):
         if line.startswith('# ' + name + ' - '):
             desc = line[len('# ' + name + ' - '):]

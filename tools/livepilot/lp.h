@@ -1,7 +1,7 @@
 /* lp.h - the live test player (tools/livepilot): a player who sees only the picture the game drew and plays with
  * the keyboard and mouse, as a person does. Original code for this project; C11 and POSIX only.
  *
- * The game hands over every Nth finished picture through its A4C_EYES link (src/eyes.h) with an answer sheet:
+ * The game hands over every Nth finished picture through its TL_EYES link (src/eyes.h) with an answer sheet:
  * what it drew (texts, dials) and what the jet really does. The player reads the picture on its own (see.c) and
  * only then holds what it read against the sheet; a difference is a finding. */
 #ifndef LP_H

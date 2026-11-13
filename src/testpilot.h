@@ -1,8 +1,8 @@
 /* testpilot.h - the test pilots: CPU pilots flown through human hands (four
  * kinds of player), what they measure about how the game flies and fights,
  * the mission checks every jet goes through, and the written report. */
-#ifndef A4C_TESTPILOT_H
-#define A4C_TESTPILOT_H
+#ifndef TL_TESTPILOT_H
+#define TL_TESTPILOT_H
 
 #include <stdio.h>
 
